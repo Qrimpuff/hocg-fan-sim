@@ -1,8 +1,6 @@
 use std;
 use std::fmt::{self, Display};
 
-use serde::{de, ser};
-
 pub type Result<T> = std::result::Result<T, Error>;
 
 // This is a bare-bones implementation. A real library would provide additional
@@ -26,6 +24,7 @@ pub enum Error {
     ExpectedBoolean,
     ExpectedInteger,
     ExpectedString,
+    ExpectedToken,
     ExpectedNull,
     ExpectedArray,
     ExpectedArrayComma,
@@ -37,18 +36,6 @@ pub enum Error {
     ExpectedEnum,
     ExpectedSpace,
     TrailingCharacters,
-}
-
-impl ser::Error for Error {
-    fn custom<T: Display>(msg: T) -> Self {
-        Error::Message(msg.to_string())
-    }
-}
-
-impl de::Error for Error {
-    fn custom<T: Display>(msg: T) -> Self {
-        Error::Message(msg.to_string())
-    }
 }
 
 impl Display for Error {
@@ -71,6 +58,7 @@ impl Display for Error {
             Error::ExpectedEnum => todo!(),
             Error::TrailingCharacters => todo!(),
             Error::ExpectedSpace => todo!(),
+            Error::ExpectedToken => todo!(),
             /* and so forth */
         }
     }

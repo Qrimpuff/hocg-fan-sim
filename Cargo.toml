@@ -4,5 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+lexpr = "0.2.7"
 logos = "0.14.0"
 serde = { version = "1.0.204", features = ["derive"] }
+serde-lexpr = "0.1.3"
