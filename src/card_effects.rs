@@ -1,6 +1,6 @@
 mod effects;
-mod parse;
 mod error;
+mod parse;
 
 pub use effects::*;
 pub use error::*;

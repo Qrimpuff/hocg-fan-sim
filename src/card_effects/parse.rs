@@ -1,23 +1,16 @@
 use super::error::Error;
 use std::collections::VecDeque;
+use std::fmt::Display;
 use std::str::FromStr;
 
-pub trait ParseTokens {
-    fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self, Error>
-    where
-        Self: Sized;
+pub trait ParseTokens: Sized {
+    fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self, Error>;
 
-    fn from_str(s: &str) -> Result<Self, Error>
-    where
-        Self: Sized,
-    {
+    fn from_str(s: &str) -> Result<Self, Error> {
         Self::from_tokens(s.parse()?)
     }
 
-    fn from_tokens(tokens: Tokens) -> Result<Self, Error>
-    where
-        Self: Sized,
-    {
+    fn from_tokens(tokens: Tokens) -> Result<Self, Error> {
         let mut tokens = match tokens {
             t @ Tokens::Token(_) => VecDeque::from([t]),
             Tokens::List(v) => v,
@@ -111,6 +104,42 @@ where
 pub enum Tokens {
     Token(String),
     List(VecDeque<Tokens>),
+}
+
+impl From<&str> for Tokens {
+    fn from(value: &str) -> Self {
+        Self::Token(value.into())
+    }
+}
+
+impl<const N: usize> From<[Tokens; N]> for Tokens {
+    fn from(value: [Tokens; N]) -> Self {
+        Self::List(value.into())
+    }
+}
+
+impl<T: Into<Tokens>> From<Vec<T>> for Tokens {
+    fn from(value: Vec<T>) -> Self {
+        Self::List(value.into_iter().map(Into::into).collect())
+    }
+}
+
+impl Display for Tokens {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Tokens::Token(t) => write!(f, "{t}"),
+            Tokens::List(v) => {
+                write!(
+                    f,
+                    "({})",
+                    v.into_iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                )
+            }
+        }
+    }
 }
 
 impl FromStr for Tokens {
