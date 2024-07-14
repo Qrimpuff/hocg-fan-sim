@@ -57,8 +57,8 @@ impl ParseTokens for Var {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self, Error> {
         dbg!(&tokens);
         let s = Self::take_string(tokens)?;
-        if s.starts_with("$") {
-            Ok(Var(s.into()))
+        if s.starts_with('$') {
+            Ok(Var(s))
         } else {
             Self::return_string(tokens, s);
             Err(Error::Message("TODO expected var".into()))
@@ -123,7 +123,7 @@ impl From<Target> for Tokens {
 
 #[derive(Debug, PartialEq)]
 pub enum Action {
-    NoAction,
+    Noop,
     For(Target, Box<Action>),
     Buff(Buff, LifeTime),
     Debuff(Debuff, LifeTime),
@@ -137,7 +137,7 @@ impl ParseTokens for Action {
         dbg!(&tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
-            "no_action" => Action::NoAction,
+            "no_action" => Action::Noop,
             "for" => Action::For(tokens.take_param()?, Box::new(tokens.take_param()?)),
             "buff" => Action::Buff(tokens.take_param()?, tokens.take_param()?),
             "debuff" => Action::Debuff(tokens.take_param()?, tokens.take_param()?),
@@ -154,7 +154,7 @@ impl ParseTokens for Action {
 impl From<Action> for Tokens {
     fn from(value: Action) -> Self {
         match value {
-            Action::NoAction => "no_action".into(),
+            Action::Noop => "no_action".into(),
             Action::For(a, b) => ["for".into(), a.into(), (*b).into()].into(),
             Action::Buff(t, l) => ["buff".into(), t.into(), l.into()].into(),
             Action::Debuff(b, l) => ["debuff".into(), b.into(), l.into()].into(),

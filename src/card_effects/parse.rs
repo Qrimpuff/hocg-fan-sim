@@ -132,7 +132,7 @@ impl Display for Tokens {
                 write!(
                     f,
                     "({})",
-                    v.into_iter()
+                    v.iter()
                         .map(ToString::to_string)
                         .collect::<Vec<_>>()
                         .join(" ")

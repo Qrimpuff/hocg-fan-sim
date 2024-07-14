@@ -2,10 +2,21 @@
 #![allow(unused_imports)]
 
 mod card_effects;
+mod cards;
+mod gameplay;
+mod temp;
 
-use std::{env, fmt::Display, iter::Peekable, str::FromStr};
+use std::{
+    env,
+    fmt::Display,
+    iter::{self, Peekable},
+    str::FromStr,
+};
 
 use card_effects::*;
+use cards::*;
+use gameplay::Game;
+use temp::TEST_LIBRARY;
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -14,24 +25,31 @@ const TEST_TEXT: &str = "for active_holo buff more_def 1 next_turn";
 fn main() {
     env::set_var("RUST_BACKTRACE", "1");
 
-    let _buff = Action::For(
-        Target::BuiltIn(BuiltIn::ActiveHoloMember),
-        Box::new(Action::Buff(
-            Buff::MoreDefence(Value::For(
-                Target::BuiltIn(BuiltIn::CurrentCard),
-                Box::new(Value::Get(Property::HealtPoint)),
-            )),
-            LifeTime::NextTurn,
-        )),
-    );
-    // let buff2 = Action::Heal(Value::Get(Property::HealtPoint));
+    let player_1 = Loadout {
+        oshi: "Sora-Oshi".into(),
+        main_deck: Vec::from_iter(
+            iter::repeat("Sora-Debut".into())
+                .take(10)
+                .chain(iter::repeat("Sora-1".into()).take(10))
+                .chain(iter::repeat("Sora-2".into()).take(5))
+                .chain(iter::repeat("Support-1".into()).take(25)),
+        ),
+        cheer_deck: Vec::from_iter(iter::repeat("White-Cheer".into()).take(20)),
+    };
+    let player_2 = Loadout {
+        oshi: "AZKi-Oshi".into(),
+        main_deck: Vec::from_iter(
+            iter::repeat("AZKi-Debut".into())
+                .take(10)
+                .chain(iter::repeat("AZKi-1".into()).take(10))
+                .chain(iter::repeat("AZKi-2".into()).take(5))
+                .chain(iter::repeat("Support-1".into()).take(25)),
+        ),
+        cheer_deck: Vec::from_iter(iter::repeat("Green-Cheer".into()).take(20)),
+    };
 
-    // let s = "for active_holo buff more_def for self get hp next_turn";
-    let s = "let $1 100 let $var for self get r_cost when eq (for self get hp) $1 for active_holo (buff more_def $var next_turn)";
-    let a = Vec::<Action>::from_str(s);
-    // let a = Action::from_tokens(action.unwrap());
-    let _ = dbg!(&a);
-
-    let s = serialize_actions(a.unwrap());
-    println!("{s}");
+    let mut game = Game::setup(TEST_LIBRARY.clone(), &player_1, &player_2);
+    // dbg!(&game);
+    game.start_game();
+    // dbg!(&game);
 }

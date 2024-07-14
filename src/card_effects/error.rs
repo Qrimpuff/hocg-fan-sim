@@ -1,4 +1,3 @@
-use std;
 use std::fmt::{self, Display};
 
 pub type Result<T> = std::result::Result<T, Error>;
