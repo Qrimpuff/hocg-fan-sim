@@ -52,7 +52,14 @@ impl Game {
         uuid
     }
 
-    fn active_board(&mut self) -> &mut GameBoard {
+    fn active_board(&self) -> &GameBoard {
+        match self.active_player {
+            Player::One => &self.player_1,
+            Player::Two => &self.player_2,
+            _ => panic!("both players cannot be active at the same time"),
+        }
+    }
+    fn active_board_mut(&mut self) -> &mut GameBoard {
         match self.active_player {
             Player::One => &mut self.player_1,
             Player::Two => &mut self.player_2,
@@ -97,6 +104,7 @@ impl Game {
 
         // - rock/paper/scissor to choose first (coin flip?)
         // TODO rps (prompt)
+        println!("prompt rps");
         self.active_player = Player::One;
 
         // - draw 7 cards from main deck
@@ -111,6 +119,7 @@ impl Game {
         loop {
             let force_mulligan_1 = self.need_mulligan(&self.player_1);
             // TODO mulligan  (prompt)
+            println!("prompt mulligan 1");
             let mulligan_1 = force_mulligan_1 || 1 == 2;
             if !mulligan_1 {
                 break;
@@ -134,6 +143,7 @@ impl Game {
         loop {
             let force_mulligan_2 = self.need_mulligan(&self.player_2);
             // TODO mulligan  (prompt)
+            println!("prompt mulligan 2");
             let mulligan_2 = force_mulligan_2 || 1 == 2;
             if !mulligan_2 {
                 break;
@@ -156,6 +166,7 @@ impl Game {
 
         // - place debut member center face down
         // TODO select debut member (prompt)
+        println!("prompt debut 1");
         let debut_1 = self
             .player_1
             .hand
@@ -171,6 +182,7 @@ impl Game {
             .unwrap()
             .0;
         self.player_1.send_to_zone(*debut_1, Zone::MainStageCenter);
+        println!("prompt debut 2");
         let debut_2 = self
             .player_2
             .hand
@@ -189,6 +201,7 @@ impl Game {
 
         // - place other debut members backstage
         // TODO select debut members (prompt)
+        println!("prompt other debut 1");
         let other_debut_1: Vec<_> = self
             .player_1
             .hand
@@ -206,6 +219,7 @@ impl Game {
             .collect();
         self.player_1
             .send_many_to_zone(other_debut_1, Zone::BackStage);
+        println!("prompt other debut 2");
         let other_debut_2: Vec<_> = self
             .player_2
             .hand
@@ -248,10 +262,10 @@ impl Game {
         self.player_2.add_life(oshi_2.life);
 
         // - game start (live start?)
-        self.next_phase();
+        println!("active player: {:?}", self.active_player);
     }
 
-    pub fn next_phase(&mut self) {
+    pub fn next_phase(&mut self) -> bool {
         self.active_phase = match self.active_phase {
             Phase::Setup => Phase::Refresh,
             Phase::Refresh => Phase::Draw,
@@ -265,13 +279,35 @@ impl Game {
                     Player::Two => Player::One,
                     _ => panic!("both players cannot be active at the same time"),
                 };
+                println!("active player: {:?}", self.active_player);
                 Phase::Refresh
             }
+            Phase::GameOver => {
+                println!("the game is over");
+                return false;
+            }
         };
-        // TODO trigger phase change effects
+
+        println!("active phase: {:?}", self.active_phase);
+
+        self.check_loss_conditions();
+        match self.active_phase {
+            Phase::Setup => panic!("should not setup more than once"),
+            Phase::Refresh => self.refresh_phase(),
+            Phase::Draw => self.draw_phase(),
+            Phase::Cheer => self.cheer_phase(),
+            Phase::Main => self.main_phase(),
+            Phase::Art => self.art_phase(),
+            Phase::End => self.end_phase(),
+            Phase::GameOver => return false,
+        }
+
+        true
     }
 
     fn refresh_phase(&mut self) {
+        // TODO trigger phase change effects
+
         // - all members from rest to active
         for mem in self.active_board().all_members_on_stage() {
             self.awake_card(mem);
@@ -284,6 +320,12 @@ impl Game {
         }
         // - if no center, backstage to center
         // TODO select member (prompt)
+        println!("prompt new center member");
+        if self.active_board().main_center.is_none() {
+            self.active_board_mut()
+                .send_from_zone(Zone::BackStage, Zone::MainStageCenter, 1);
+        }
+
         //   - no backstage lose game
         if self.active_board().main_center.is_none() {
             self.lose_game();
@@ -291,31 +333,124 @@ impl Game {
         }
     }
     fn draw_phase(&mut self) {
+        // TODO trigger phase change effects
+
         // - draw 1 card from main deck
+        self.active_board_mut().draw(1);
     }
     fn cheer_phase(&mut self) {
+        // TODO trigger phase change effects
+
         // - draw 1 card from cheer deck, attach it
-        // - main stage or backstage
+        if let Some(cheer) = self
+            .active_board_mut()
+            .get_zone(Zone::CheerDeck)
+            .peek_top_card()
+        {
+            // TODO show card
+            // TODO select member (prompt)
+            println!("prompt member for cheer");
+            //   - main stage or backstage
+            if let Some(mem) = self.active_board().main_center {
+                self.active_board_mut().attach_to_card(cheer, mem);
+            }
+        }
     }
     fn main_phase(&mut self) {
-        // - place debut member on backstage
-        // - bloom member (evolve e.g. debut -> 1st )
-        //   - bloom effect
-        //   - can't bloom on same turn as placed
-        // - use support card
-        //   - only one limited per turn
-        //   - otherwise unlimited
-        // - put backstage member in collab
-        //   - can be done on first turn?
-        //   - draw down card from deck into power zone
-        // - retreat switch (baton pass)
-        //   - switch center with backstage
-        //   - remove attached cheer for cost
-        // - use abilities (including oshi)
-        //   - oshi power uses card in power zone
-        //   - once per turn / once per game?
+        // TODO trigger phase change effects
+
+        //TODO choose main phase action (prompt)
+        println!("prompt main phase action");
+        let debut = self
+            .active_board()
+            .hand
+            .iter()
+            .filter_map(|c| {
+                if let Card::HoloMember(m) = self.lookup_card(*c) {
+                    Some((c, m))
+                } else {
+                    None
+                }
+            })
+            .find(|(_, m)| m.rank == HoloMemberRank::Debut);
+        let action = debut.map(|c| MainPhaseAction::BackstageMember(*c.0));
+
+        // TODO prompt iterator?
+        for action in action.into_iter() {
+            match action {
+                MainPhaseAction::BackstageMember(uuid) => {
+                    // TODO verify backstage member action
+
+                    // - place debut member on backstage
+                    self.active_board_mut().send_to_zone(uuid, Zone::BackStage);
+                }
+                MainPhaseAction::BloomMember(bloom, uuid) => {
+                    // TODO verify bloom member action
+
+                    // - bloom member (evolve e.g. debut -> 1st )
+                    //   - bloom effect
+                    //   - can't bloom on same turn as placed
+                    self.active_board_mut().attach_to_card(bloom, uuid);
+                    self.active_board_mut().promote_attachment(bloom);
+                }
+                MainPhaseAction::UseSupportCard(uuid) => {
+                    // TODO verify use support card action
+
+                    // - use support card
+                    //   - only one limited per turn
+                    //   - otherwise unlimited
+
+                    // TODO implement effect
+                    self.active_board_mut().send_to_zone(uuid, Zone::Archive);
+                }
+                MainPhaseAction::CollabMember(uuid) => {
+                    // TODO verify collab member action
+
+                    // - put backstage member in collab
+                    //   - can be done on first turn?
+                    //   - draw down card from deck into power zone
+                    self.active_board_mut()
+                        .send_to_zone(uuid, Zone::MainStageCollab);
+                    self.active_board_mut()
+                        .send_from_zone(Zone::MainDeck, Zone::HoloPower, 1);
+                }
+                MainPhaseAction::BatonPass(uuid) => {
+                    // TODO verify baton pass action
+
+                    // - retreat switch (baton pass)
+                    //   - switch center with backstage
+                    //   - remove attached cheer for cost
+                    let center = self
+                        .active_board()
+                        .main_center
+                        .expect("there should always be a card in the center");
+                    self.pay_baton_pass_cost(center);
+                    self.active_board_mut()
+                        .send_to_zone(center, Zone::BackStage);
+                    self.active_board_mut()
+                        .send_to_zone(uuid, Zone::MainStageCenter);
+                }
+                MainPhaseAction::UseAbilities(_, _) => {
+                    // TODO verify use abilities action
+
+                    // - use abilities (including oshi)
+                    //   - oshi power uses card in power zone
+                    //   - once per turn / once per game?
+                    // TODO implement effect
+                }
+            }
+
+            self.check_loss_conditions();
+            if self.active_phase == Phase::GameOver {
+                break;
+            }
+        }
+
+        // attack can be preloaded at this point
     }
     fn art_phase(&mut self) {
+        // TODO trigger phase change effects
+
         // - can use 2 attacks (center, collab)
         // - can choose target (center, collab)
         // - need required attached cheers to attack
@@ -323,8 +458,11 @@ impl Game {
         // - remove member if defeated
         //   - lose 1 life
         //   - attach lost life (cheer)
+        // TODO implement effect
     }
     fn end_phase(&mut self) {
+        // TODO trigger phase change effects
+
         // - any end phase effect
     }
 
@@ -334,6 +472,8 @@ impl Game {
             Player::Two => println!("player 2 wins"),
             _ => panic!("both players cannot be active at the same time"),
         };
+        // stop the game
+        self.active_phase = Phase::GameOver;
     }
     fn lose_game(&mut self) {
         self.active_player = match self.active_player {
@@ -344,11 +484,67 @@ impl Game {
         self.win_game();
     }
 
+    fn check_loss_conditions(&mut self) {
+        let mut lose_player = None;
+        for (player, board) in [(Player::One, &self.player_1), (Player::Two, &self.player_2)] {
+            // - life is 0
+            if board.life.count() == 0 {
+                lose_player = Some(player);
+            }
+
+            // - deck is 0 on draw phase
+            if board.main_deck.count() == 0 {
+                lose_player = Some(player);
+            }
+
+            // - 0 member in play
+            if board.back_stage.count() + board.main_center.count() + board.main_collab.count() == 0
+            {
+                lose_player = Some(player);
+            }
+
+            if lose_player.is_some() {
+                break;
+            }
+        }
+
+        if let Some(lose_player) = lose_player {
+            self.active_player = lose_player;
+            self.lose_game();
+        }
+    }
+
     pub fn lookup_card(&self, uuid: CardUuid) -> &Card {
         let (_, card_ref) = self.card_map.get(&uuid).expect("should be in the map");
         self.library
             .lookup_card(card_ref)
             .expect("should be in the library")
+    }
+
+    pub fn pay_baton_pass_cost(&mut self, uuid: CardUuid) {
+        let card = self.lookup_card(uuid);
+        if let Card::HoloMember(mem) = card {
+            // TODO cost should be a choice when multiple cheers color
+            let cheers: Vec<_> = self
+                .active_board()
+                .attachments
+                .iter()
+                .filter(|(_, v)| **v == uuid)
+                .filter_map(|(k, _)| {
+                    if let Card::Cheer(_) = self.lookup_card(*k) {
+                        Some(k)
+                    } else {
+                        None
+                    }
+                })
+                .take(mem.baton_pass.into())
+                .copied()
+                .collect();
+
+            self.active_board_mut().remove_many_attachments(cheers);
+        } else {
+            panic!("cannot pay baton pas cost for non member");
+        }
     }
 
     pub fn find_buffs(&self, uuid: CardUuid) -> Vec<&Buff> {
@@ -400,6 +596,7 @@ pub struct GameBoard {
     holo_power: Vec<CardUuid>,
     archive: Vec<CardUuid>,
     hand: Vec<CardUuid>,
+    attachments: HashMap<CardUuid, CardUuid>,
 }
 
 impl GameBoard {
@@ -427,6 +624,7 @@ impl GameBoard {
             holo_power: Vec::new(),
             archive: Vec::new(),
             hand: Vec::new(),
+            attachments: HashMap::new(),
         }
     }
 
@@ -447,10 +645,65 @@ impl GameBoard {
             .collect()
     }
 
+    pub fn is_attached(&self, attachment: CardUuid) -> bool {
+        self.attachments.contains_key(&attachment)
+    }
+
+    pub fn attach_to_card(&mut self, attachment: CardUuid, uuid: CardUuid) {
+        let current_zone = self.find_card_zone(attachment);
+        if let Some(zone) = current_zone {
+            self.get_zone(zone).remove_card(attachment);
+        } else if self.attachments.contains_key(&uuid) {
+            panic!("cannot attach to attachment");
+        }
+
+        self.attachments.insert(attachment, uuid);
+    }
+
+    pub fn remove_attachment(&mut self, attachment: CardUuid) {
+        self.send_to_zone(attachment, Zone::Archive);
+    }
+    pub fn remove_many_attachments(&mut self, attachments: impl IntoIterator<Item = CardUuid>) {
+        self.send_many_to_zone(attachments, Zone::Archive);
+    }
+
+    pub fn send_all_attachments_to_zone(&mut self, uuid: CardUuid, target_zone: Zone) {
+        let attached: Vec<_> = self
+            .attachments
+            .iter()
+            .filter_map(|(k, v)| if *v == uuid { Some(k) } else { None })
+            .copied()
+            .collect();
+        self.send_many_to_zone(attached, target_zone)
+    }
+
+    pub fn promote_attachment(&mut self, attachment: CardUuid) {
+        if let Some(parent) = self.attachments.get(&attachment).copied() {
+            if let Some(current_zone) = self.find_card_zone(parent) {
+                // replace with attachment
+                self.get_zone(current_zone).replace_card(parent, attachment);
+
+                // remove from attachments
+                self.attachments.remove(&attachment);
+
+                // attach the parent
+                self.attach_to_card(parent, attachment);
+
+                // change the parent of other attachments
+                for (_, v) in self.attachments.iter_mut().filter(|(_, v)| **v == parent) {
+                    *v = attachment;
+                }
+            }
+        }
+    }
+
     pub fn send_to_zone(&mut self, uuid: CardUuid, target_zone: Zone) {
         let current_zone = self.find_card_zone(uuid);
         if let Some(zone) = current_zone {
             self.get_zone(zone).remove_card(uuid);
+            self.get_zone(target_zone).add_top_card(uuid);
+        } else if self.is_attached(uuid) {
+            self.attachments.remove(&uuid);
             self.get_zone(target_zone).add_top_card(uuid);
         }
     }
@@ -528,6 +781,7 @@ trait ZoneControl {
     fn remove_card(&mut self, uuid: CardUuid);
     fn add_top_card(&mut self, uuid: CardUuid);
     fn add_bottom_card(&mut self, uuid: CardUuid);
+    fn replace_card(&mut self, from_uuid: CardUuid, to_uuid: CardUuid);
     fn is_in_zone(&self, uuid: CardUuid) -> bool;
 }
 
@@ -551,7 +805,7 @@ impl ZoneControl for Option<CardUuid> {
     }
 
     fn add_top_card(&mut self, uuid: CardUuid) {
-        if !self.is_in_zone(uuid) {
+        if self.is_none() {
             self.replace(uuid);
         } else {
             panic!("there is already a card in this zone");
@@ -560,6 +814,14 @@ impl ZoneControl for Option<CardUuid> {
 
     fn add_bottom_card(&mut self, uuid: CardUuid) {
         self.add_top_card(uuid)
+    }
+
+    fn replace_card(&mut self, from_uuid: CardUuid, to_uuid: CardUuid) {
+        if self.is_in_zone(from_uuid) {
+            self.replace(to_uuid);
+        } else {
+            panic!("card is not already in this zone");
+        }
     }
 
     fn is_in_zone(&self, uuid: CardUuid) -> bool {
@@ -598,6 +860,14 @@ impl ZoneControl for Vec<CardUuid> {
         }
     }
 
+    fn replace_card(&mut self, from_uuid: CardUuid, to_uuid: CardUuid) {
+        if let Some(index) = self.iter().position(|c| *c == from_uuid) {
+            *self.get_mut(index).expect("card is already in the zone") = to_uuid;
+        } else {
+            panic!("card is not already in this zone");
+        }
+    }
+
     fn is_in_zone(&self, uuid: CardUuid) -> bool {
         self.iter().any(|c| *c == uuid)
     }
@@ -628,6 +898,18 @@ pub enum Phase {
     Main,
     Art,
     End,
+    GameOver,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+
+pub enum MainPhaseAction {
+    BackstageMember(CardUuid),
+    BloomMember(CardUuid, CardUuid),
+    UseSupportCard(CardUuid),
+    CollabMember(CardUuid),
+    BatonPass(CardUuid),
+    UseAbilities(CardUuid, usize),
 }
 
 #[derive(Debug)]

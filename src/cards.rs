@@ -122,6 +122,7 @@ pub type OshiAbilityCost = u8;
 pub type CardEffect = ();
 pub type HoloMemberHp = u16;
 pub type HoloMemberTag = String;
+pub type HoloMemberBatonPassCost = u8;
 pub type HoloMemberAttackCost = String;
 pub type HoloMemberAttackDamage = HoloMemberHp;
 
@@ -169,7 +170,7 @@ pub struct HoloMemberCard {
     pub hp: HoloMemberHp,
     pub rank: HoloMemberRank,
     pub tags: Vec<HoloMemberTag>,
-    pub baton_pass: HoloMemberAttackCost,
+    pub baton_pass: HoloMemberBatonPassCost,
     pub abilities: Vec<MemberAbility>,
     pub attacks: Vec<MemberAttack>,
 }

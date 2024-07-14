@@ -16,7 +16,7 @@ use std::{
 use card_effects::*;
 use cards::*;
 use gameplay::Game;
-use temp::TEST_LIBRARY;
+use temp::test_library;
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -48,8 +48,11 @@ fn main() {
         cheer_deck: Vec::from_iter(iter::repeat("Green-Cheer".into()).take(20)),
     };
 
-    let mut game = Game::setup(TEST_LIBRARY.clone(), &player_1, &player_2);
+    let mut game = Game::setup(test_library().clone(), &player_1, &player_2);
     // dbg!(&game);
     game.start_game();
-    // dbg!(&game);
+    dbg!(&game);
+
+    while game.next_phase() {}
+    dbg!(&game);
 }
