@@ -138,7 +138,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         hp: 50,
                         rank: HoloMemberRank::Debut,
                         tags: vec!["gen 0".into()],
-                        baton_pass: 1,
+                        baton_pass_cost: 1,
                         abilities: vec![],
                         attacks: vec![MemberAttack {
                             name: "attack 1".into(),
@@ -161,7 +161,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         hp: 80,
                         rank: HoloMemberRank::First,
                         tags: vec!["gen 0".into()],
-                        baton_pass: 1,
+                        baton_pass_cost: 1,
                         abilities: vec![],
                         attacks: vec![MemberAttack {
                             name: "attack 1b".into(),
@@ -184,7 +184,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         hp: 120,
                         rank: HoloMemberRank::Second,
                         tags: vec!["gen 0".into()],
-                        baton_pass: 1,
+                        baton_pass_cost: 1,
                         abilities: vec![MemberAbility {
                             kind: MemberAbilityKind::Unknown,
                             name: "ability 1".into(),
@@ -212,7 +212,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         hp: 50,
                         rank: HoloMemberRank::Debut,
                         tags: vec!["gen 0".into()],
-                        baton_pass: 1,
+                        baton_pass_cost: 1,
                         abilities: vec![],
                         attacks: vec![MemberAttack {
                             name: "attack 1".into(),
@@ -235,7 +235,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         hp: 80,
                         rank: HoloMemberRank::First,
                         tags: vec!["gen 0".into()],
-                        baton_pass: 1,
+                        baton_pass_cost: 1,
                         abilities: vec![],
                         attacks: vec![MemberAttack {
                             name: "attack 1b".into(),
@@ -258,7 +258,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         hp: 120,
                         rank: HoloMemberRank::Second,
                         tags: vec!["gen 0".into()],
-                        baton_pass: 1,
+                        baton_pass_cost: 1,
                         abilities: vec![MemberAbility {
                             kind: MemberAbilityKind::Unknown,
                             name: "ability 1".into(),

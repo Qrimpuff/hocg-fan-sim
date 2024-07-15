@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::Display};
 
 /**
  * Cards:
@@ -170,7 +170,7 @@ pub struct HoloMemberCard {
     pub hp: HoloMemberHp,
     pub rank: HoloMemberRank,
     pub tags: Vec<HoloMemberTag>,
-    pub baton_pass: HoloMemberBatonPassCost,
+    pub baton_pass_cost: HoloMemberBatonPassCost,
     pub abilities: Vec<MemberAbility>,
     pub attacks: Vec<MemberAttack>,
 }
