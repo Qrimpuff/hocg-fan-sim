@@ -4,6 +4,7 @@
 mod card_effects;
 mod cards;
 mod gameplay;
+mod modifiers;
 mod temp;
 
 use std::{
@@ -59,5 +60,5 @@ fn main() {
     // dbg!(&game);
 
     while game.next_phase() {}
-    // dbg!(&game);
+    println!("{:#?}", &game);
 }

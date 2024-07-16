@@ -2,14 +2,27 @@ use std::fmt::Display;
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use super::cards::*;
+use super::modifiers::*;
 use rand::seq::IteratorRandom;
 use rand::seq::SliceRandom;
 use rand::{thread_rng, Rng};
 
-type CardUuid = u32;
-
 const STARTING_HAND_SIZE: usize = 7;
-const MAX_BACK_STAGE_SIZE: usize = 5;
+const MAX_MEMBERS_ON_STAGE: usize = 6;
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CardUuid(usize);
+
+impl Debug for CardUuid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c_{:016x}", self.0)
+    }
+}
+impl Display for CardUuid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Player {
@@ -18,12 +31,22 @@ pub enum Player {
     Both,
 }
 
+impl Player {
+    pub fn opponent(self) -> Player {
+        match self {
+            Player::One => Player::Two,
+            Player::Two => Player::One,
+            Player::Both => panic!("both players is not valid"),
+        }
+    }
+}
+
 fn register_card(
     player: Player,
     card_ref: &CardRef,
     card_map: &mut HashMap<CardUuid, (Player, CardRef)>,
 ) -> CardUuid {
-    let card: CardUuid = thread_rng().gen();
+    let card = CardUuid((thread_rng().gen::<usize>() << 4) + (player as usize));
     card_map.insert(card, (player, card_ref.clone()));
     card
 }
@@ -34,15 +57,15 @@ fn shuffle_deck(deck: &mut Vec<CardUuid>) {
 
 #[derive(Debug)]
 pub struct Game<P: Prompter> {
-    library: Arc<GlobalLibrary>,
-    player_1: GameBoard,
-    player_2: GameBoard,
-    card_map: HashMap<CardUuid, (Player, CardRef)>,
-    active_player: Player,
-    active_phase: Phase,
-    zone_buffs: Vec<(Player, Zone, Buff)>,
-    card_buffs: Vec<(CardUuid, Buff)>,
-    prompter: P,
+    pub(crate) library: Arc<GlobalLibrary>,
+    pub(crate) player_1: GameBoard,
+    pub(crate) player_2: GameBoard,
+    pub(crate) card_map: HashMap<CardUuid, (Player, CardRef)>,
+    pub(crate) active_player: Player,
+    pub(crate) active_phase: Phase,
+    pub(crate) zone_modifiers: Vec<(Player, Zone, Modifier)>,
+    pub(crate) card_modifiers: Vec<(CardUuid, Modifier)>,
+    pub(crate) prompter: P,
 }
 
 impl<P: Prompter> Game<P> {
@@ -60,8 +83,8 @@ impl<P: Prompter> Game<P> {
             card_map,
             active_player: Player::One,
             active_phase: Phase::Setup,
-            zone_buffs: Vec::new(),
-            card_buffs: Vec::new(),
+            zone_modifiers: Vec::new(),
+            card_modifiers: Vec::new(),
             prompter,
         }
     }
@@ -86,20 +109,19 @@ impl<P: Prompter> Game<P> {
             _ => unreachable!("both players cannot be active at the same time"),
         }
     }
-    fn board_for_card(&self, card: CardUuid) -> &GameBoard {
-        let player = self
-            .card_map
+
+    pub(crate) fn player_for_card(&self, card: CardUuid) -> Player {
+        self.card_map
             .get(&card)
             .expect("the card should be registered")
-            .0;
+            .0
+    }
+    fn board_for_card(&self, card: CardUuid) -> &GameBoard {
+        let player = self.player_for_card(card);
         self.board(player)
     }
-    fn board_for_card_mut(&mut self, card: CardUuid) -> &GameBoard {
-        let player = self
-            .card_map
-            .get(&card)
-            .expect("the card should be registered")
-            .0;
+    fn board_for_card_mut(&mut self, card: CardUuid) -> &mut GameBoard {
+        let player = self.player_for_card(card);
         self.board_mut(player)
     }
 
@@ -249,7 +271,6 @@ impl<P: Prompter> Game<P> {
         self.player_2.add_life(oshi_2.life);
 
         // - game start (live start?)
-        println!("active player: {:?}", self.active_player);
     }
 
     pub fn next_phase(&mut self) -> bool {
@@ -266,7 +287,6 @@ impl<P: Prompter> Game<P> {
                     Player::Two => Player::One,
                     _ => unreachable!("both players cannot be active at the same time"),
                 };
-                println!("active player: {:?}", self.active_player);
                 Phase::Refresh
             }
             Phase::GameOver => {
@@ -275,9 +295,16 @@ impl<P: Prompter> Game<P> {
             }
         };
 
-        println!("active phase: {:?}", self.active_phase);
+        // start turn
+        if self.active_phase == Phase::Refresh {
+            self.start_turn();
+        }
 
+        println!("- active phase: {:?}", self.active_phase);
+
+        // after phase change
         self.check_loss_conditions();
+
         match self.active_phase {
             Phase::Setup => panic!("should not setup more than once"),
             Phase::Refresh => self.refresh_phase(),
@@ -289,24 +316,41 @@ impl<P: Prompter> Game<P> {
             Phase::GameOver => return false,
         }
 
+        // end turn
+        if self.active_phase == Phase::End {
+            self.end_turn();
+        }
+
         true
+    }
+
+    fn start_turn(&mut self) {
+        println!("active player: {:?}", self.active_player);
+
+        // TODO trigger more turn change effects
+        self.start_turn_modifiers(self.active_player);
+    }
+
+    fn end_turn(&mut self) {
+        // TODO trigger more turn change effects
+        self.end_turn_modifiers();
     }
 
     fn refresh_phase(&mut self) {
         // TODO trigger phase change effects
 
         // - all members from rest to active
-        for mem in self.active_board().all_members_on_stage() {
+        for mem in self.active_board().stages().collect::<Vec<_>>() {
             self.awake_card(mem);
         }
 
         // - collab to back stage in rest
         if let Some(mem) = self.active_board().main_collab {
-            // TODO send to back stage
             self.rest_card(mem);
+            self.active_board_mut().send_to_zone(mem, Zone::BackStage);
         }
         // - if no center, back stage to center
-        if self.active_board().main_center.is_none() {
+        if self.active_board().main_center.is_none() && !self.active_board().back_stage.is_empty() {
             println!("prompt new center member");
             let back = self.prompt_for_back_stage_to_center(self.active_player);
             self.active_board_mut()
@@ -319,12 +363,14 @@ impl<P: Prompter> Game<P> {
             // return;
         }
     }
+
     fn draw_phase(&mut self) {
         // TODO trigger phase change effects
 
         // - draw 1 card from main deck
         self.active_board_mut().draw(1);
     }
+
     fn cheer_phase(&mut self) {
         // TODO trigger phase change effects
 
@@ -341,12 +387,13 @@ impl<P: Prompter> Game<P> {
             self.active_board_mut().attach_to_card(cheer, mem);
         }
     }
+
     fn main_phase(&mut self) {
         // TODO trigger phase change effects
 
         loop {
             println!("prompt main phase action");
-            match self.prompt_for_main_action() {
+            match self.prompt_for_main_action(self.active_player) {
                 MainPhaseAction::BackStageMember(card) => {
                     println!("- action: Back stage member");
                     // TODO verify back stage member action
@@ -361,10 +408,8 @@ impl<P: Prompter> Game<P> {
                     // - bloom member (evolve e.g. debut -> 1st )
                     //   - bloom effect
                     //   - can't bloom on same turn as placed
-                    // FIXME this is not correct, it should prompt for a valid bloom target
-                    let card = self.prompt_for_back_stage_to_center(self.active_player);
-                    self.active_board_mut().attach_to_card(bloom, card);
-                    self.active_board_mut().promote_attachment(bloom);
+                    let card = self.prompt_for_bloom(self.active_player, bloom);
+                    self.bloom_member(bloom, card);
                 }
                 MainPhaseAction::UseSupportCard(card) => {
                     println!("- action: Use support card");
@@ -375,11 +420,14 @@ impl<P: Prompter> Game<P> {
                     //   - otherwise unlimited
 
                     // TODO implement effect
-                    self.active_board_mut().send_to_zone(card, Zone::Archive);
+                    self.send_to_archive(card);
                 }
                 MainPhaseAction::CollabMember(card) => {
                     println!("- action: Collab member");
                     // TODO verify collab member action
+                    if self.is_rested(card) {
+                        panic!("cannot collab a rested member");
+                    }
 
                     // - put back stage member in collab
                     //   - can be done on first turn?
@@ -409,13 +457,15 @@ impl<P: Prompter> Game<P> {
                     self.active_board_mut()
                         .send_to_zone(card, Zone::MainStageCenter);
                 }
-                MainPhaseAction::UseAbilities(_, _) => {
+                MainPhaseAction::UseAbilities(_card, _) => {
                     println!("- action: Use abilities");
                     // TODO verify use abilities action
 
                     // - use abilities (including oshi)
                     //   - oshi power uses card in power zone
                     //   - once per turn / once per game?
+                    // TODO prevent duplicate ability use with (buff)
+                    // TODO ability cost
                     // TODO implement effect
                 }
                 MainPhaseAction::Done => {
@@ -432,6 +482,7 @@ impl<P: Prompter> Game<P> {
 
         // attack can be preloaded at this point
     }
+
     fn art_phase(&mut self) {
         // TODO trigger phase change effects
 
@@ -443,7 +494,22 @@ impl<P: Prompter> Game<P> {
         //   - lose 1 life
         //   - attach lost life (cheer)
         // TODO implement effect
+
+        // TODO only for testing
+        let op = self.active_player.opponent();
+        let target = self
+            .board(op)
+            .main_center
+            .expect("there should always be a member in the center");
+        self.add_damage(target, DamageCounters(1));
+
+        println!("deals damage");
+
+        if self.remaining_hp(target) == 0 {
+            self.send_to_archive(target);
+        }
     }
+
     fn end_phase(&mut self) {
         // TODO trigger phase change effects
 
@@ -477,7 +543,10 @@ impl<P: Prompter> Game<P> {
             }
 
             // - deck is 0 on draw phase
-            if board.main_deck.count() == 0 {
+            if board.main_deck.count() == 0
+                && self.active_phase == Phase::Draw
+                && self.active_player == player
+            {
                 lose_player = Some(player);
             }
 
@@ -504,6 +573,19 @@ impl<P: Prompter> Game<P> {
             .lookup_card(card_ref)
             .expect("should be in the library")
     }
+    pub fn lookup_holo_member(&self, card: CardUuid) -> Option<&HoloMemberCard> {
+        if let Card::HoloMember(m) = self.lookup_card(card) {
+            Some(m)
+        } else {
+            None
+        }
+    }
+
+    pub fn bloom_member(&mut self, bloom: CardUuid, card: CardUuid) {
+        self.active_board_mut().attach_to_card(bloom, card);
+        self.active_board_mut().promote_attachment(bloom, card);
+        self.promote_modifiers(bloom, card);
+    }
 
     pub fn pay_baton_pass_cost(&mut self, card: CardUuid) {
         if let Card::HoloMember(mem) = self.lookup_card(card) {
@@ -523,40 +605,12 @@ impl<P: Prompter> Game<P> {
             .collect()
     }
 
-    pub fn find_buffs(&self, card: CardUuid) -> Vec<&Buff> {
-        let (player, _) = self.card_map.get(&card).expect("should be in the map");
-        let buffs = self
-            .card_buffs
-            .iter()
-            .filter(|(c, _)| *c == card)
-            .map(|(_, b)| b);
-        let zone = match player {
-            Player::One => self
-                .player_1
-                .find_card_zone(card)
-                .expect("the card should be on player 1 side"),
-            Player::Two => self
-                .player_2
-                .find_card_zone(card)
-                .expect("the card should be on player 2 side"),
-            Player::Both => unreachable!("a card can't be owned by both player"),
-        };
-        let buffs: Vec<_> = buffs
-            .chain(
-                self.zone_buffs
-                    .iter()
-                    .filter(|(p, z, _)| p == player && *z == zone || *z == Zone::All)
-                    .map(|(_, _, b)| b),
-            )
-            .collect();
-        buffs
-    }
-
-    pub fn rest_card(&mut self, _card: CardUuid) {
-        // TODO probably through debuff
-    }
-    pub fn awake_card(&mut self, _card: CardUuid) {
-        // TODO probably through debuff
+    pub fn send_to_archive(&mut self, card: CardUuid) {
+        self.board_for_card_mut(card)
+            .send_to_zone(card, Zone::Archive);
+        self.board_for_card_mut(card)
+            .send_all_attachments_to_zone(card, Zone::Archive);
+        self.clear_all_modifiers(card);
     }
 
     fn prompt_for_rps(&mut self) -> Rps {
@@ -576,18 +630,13 @@ impl<P: Prompter> Game<P> {
         // TODO extract that filtering to a reusable function
         let debuts: Vec<_> = self
             .board(player)
-            .hand
-            .iter()
-            .filter_map(|c| {
-                if let Card::HoloMember(m) = self.lookup_card(*c) {
-                    Some((c, m))
-                } else {
-                    None
-                }
-            })
+            .hand()
+            .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
             .filter(|(_, m)| m.rank == HoloMemberRank::Debut)
-            .map(|(c, _)| CardDisplay::new(*c, self))
+            .map(|(c, _)| CardDisplay::new(c, self))
             .collect();
+
+        assert!(!debuts.is_empty());
         self.prompter
             .prompt_choice("choose first debut:", debuts)
             .card
@@ -597,41 +646,39 @@ impl<P: Prompter> Game<P> {
         // TODO extract that filtering to a reusable function
         let debuts: Vec<_> = self
             .board(player)
-            .hand
-            .iter()
-            .filter_map(|c| {
-                if let Card::HoloMember(m) = self.lookup_card(*c) {
-                    Some((c, m))
-                } else {
-                    None
-                }
-            })
+            .hand()
+            .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
             .filter(|(_, m)| m.rank == HoloMemberRank::Debut)
-            .map(|(c, _)| CardDisplay::new(*c, self))
+            .map(|(c, _)| CardDisplay::new(c, self))
             .collect();
-        self.prompter
-            .prompt_multi_choices("choose first back stage:", debuts, 0, MAX_BACK_STAGE_SIZE)
-            .into_iter()
-            .map(|c| c.card)
-            .collect()
+
+        if !debuts.is_empty() {
+            self.prompter
+                .prompt_multi_choices(
+                    "choose first back stage:",
+                    debuts,
+                    0,
+                    MAX_MEMBERS_ON_STAGE - 1,
+                )
+                .into_iter()
+                .map(|c| c.card)
+                .collect()
+        } else {
+            vec![]
+        }
     }
 
     fn prompt_for_back_stage_to_center(&mut self, player: Player) -> CardUuid {
         // TODO extract that filtering to a reusable function
         let back: Vec<_> = self
             .board(player)
-            .back_stage
-            .iter()
-            .filter_map(|c| {
-                if let Card::HoloMember(m) = self.lookup_card(*c) {
-                    Some((c, m))
-                } else {
-                    None
-                }
-            })
+            .back_stage()
+            .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
             // TODO check for rest?
-            .map(|(c, _)| CardDisplay::new(*c, self))
+            .map(|(c, _)| CardDisplay::new(c, self))
             .collect();
+
+        assert!(!back.is_empty());
         self.prompter
             .prompt_choice("choose send to center stage:", back)
             .card
@@ -641,73 +688,147 @@ impl<P: Prompter> Game<P> {
         // TODO extract that filtering to a reusable function
         let cheer: Vec<_> = self
             .board(player)
-            .back_stage
-            .iter()
-            .chain(self.board(player).main_center.iter())
-            .chain(self.board(player).main_collab.iter())
-            .filter_map(|c| {
-                if let Card::HoloMember(m) = self.lookup_card(*c) {
-                    Some((c, m))
-                } else {
-                    None
-                }
-            })
+            .stages()
+            .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
             // TODO check for rest?
-            .map(|(c, _)| CardDisplay::new(*c, self))
+            .map(|(c, _)| CardDisplay::new(c, self))
             .collect();
+
+        assert!(!cheer.is_empty());
         self.prompter
             .prompt_choice("choose receive cheer:", cheer)
             .card
     }
 
     #[allow(clippy::unnecessary_filter_map)]
-    fn prompt_for_main_action(&mut self) -> MainPhaseAction {
+    fn prompt_for_main_action(&mut self, player: Player) -> MainPhaseAction {
         // actions from hand
         let mut actions: Vec<_> = self
-            .active_board()
-            .hand
-            .iter()
-            .filter_map(|c| match self.lookup_card(*c) {
+            .board(player)
+            .hand()
+            .filter_map(|c| match self.lookup_card(c) {
                 Card::OshiHoloMember(_) => unreachable!("oshi cannot be in hand"),
                 Card::HoloMember(m) => match m.rank {
-                    // FIXME check condition for back stage
-                    HoloMemberRank::Debut => Some(MainPhaseAction::BackStageMember(*c)),
-                    // FIXME check condition for bloom
-                    HoloMemberRank::First => Some(MainPhaseAction::BloomMember(*c)),
-                    // FIXME check condition for bloom
-                    HoloMemberRank::Second => Some(MainPhaseAction::BloomMember(*c)),
+                    HoloMemberRank::Debut => {
+                        // check condition for back stage
+                        let count = self
+                            .board(player)
+                            .stages()
+                            .filter_map(|c| self.lookup_holo_member(c))
+                            .count();
+                        if count < MAX_MEMBERS_ON_STAGE {
+                            Some(MainPhaseAction::BackStageMember(c))
+                        } else {
+                            None
+                        }
+                    }
+                    HoloMemberRank::First | HoloMemberRank::Second => {
+                        // TODO only once per turn (buff)
+                        // check condition for bloom
+                        let bloom_lookup = match m.rank {
+                            HoloMemberRank::Debut => panic!("can only bloom from first or second"),
+                            // TODO better match, maybe with (tags)
+                            HoloMemberRank::First => (HoloMemberRank::Debut, &m.name),
+                            HoloMemberRank::Second => (HoloMemberRank::First, &m.name),
+                        };
+                        let can_bloom = self
+                            .board(player)
+                            .stages()
+                            .filter_map(|c| self.lookup_holo_member(c))
+                            .any(|m| bloom_lookup == (m.rank, &m.name));
+                        if can_bloom {
+                            Some(MainPhaseAction::BloomMember(c))
+                        } else {
+                            None
+                        }
+                    }
                 },
                 // TODO check condition to play support
-                Card::Support(_) => Some(MainPhaseAction::UseSupportCard(*c)),
+                Card::Support(_) => Some(MainPhaseAction::UseSupportCard(c)),
                 Card::Cheer(_) => unreachable!("cheer cannot be in hand"),
             })
             .map(|a| MainPhaseActionDisplay::new(a, self))
             .collect();
 
         // actions from board
-        // abilities
+        // collab
         actions.extend(
-            self.active_board()
+            self.board(player)
+                .back_stage()
+                .filter_map(|c| {
+                    match self.lookup_card(c) {
+                        Card::OshiHoloMember(_) => unreachable!("oshi cannot be in the back stage"),
+                        Card::HoloMember(_) => {
+                            // check condition for collab
+                            if self.is_rested(c) {
+                                return None;
+                            }
+
+                            if self.board(player).main_collab.is_none() {
+                                Some(MainPhaseAction::CollabMember(c))
+                            } else {
+                                None
+                            }
+                        }
+                        Card::Support(_) => unreachable!("support cannot be in the back stage"),
+                        Card::Cheer(_) => unreachable!("cheer cannot be in the back stage"),
+                    }
+                })
+                .map(|a| MainPhaseActionDisplay::new(a, self)),
+        );
+        // baton pass
+        actions.extend(
+            self.board(player)
                 .main_center
                 .iter()
-                .chain(self.active_board().main_collab.iter())
-                .chain(self.active_board().back_stage.iter())
-                .chain(self.active_board().oshi.iter())
+                .copied()
+                .filter_map(|c| {
+                    match self.lookup_card(c) {
+                        Card::OshiHoloMember(_) => {
+                            unreachable!("oshi cannot be in the center stage")
+                        }
+                        Card::HoloMember(m) => {
+                            // check condition for baton pass
+                            let cheer_count = self.attached_cheers(c).len();
+                            let back_stage_count = self
+                                .board(player)
+                                .back_stage()
+                                .filter_map(|c| self.lookup_holo_member(c))
+                                .count();
+
+                            if cheer_count >= m.baton_pass_cost as usize && back_stage_count > 0 {
+                                Some(MainPhaseAction::BatonPass(c))
+                            } else {
+                                None
+                            }
+                        }
+                        Card::Support(_) => unreachable!("support cannot be in the center stage"),
+                        Card::Cheer(_) => unreachable!("cheer cannot be in the center stage"),
+                    }
+                })
+                .map(|a| MainPhaseActionDisplay::new(a, self)),
+        );
+        // abilities
+        actions.extend(
+            self.board(player)
+                .stages()
                 .flat_map(|c| {
-                    match self.lookup_card(*c) {
+                    match self.lookup_card(c) {
                         Card::OshiHoloMember(o) => o
                             .abilities
                             .iter()
                             .enumerate()
                             // TODO check condition for ability
-                            .map(|(i, _a)| MainPhaseAction::UseAbilities(*c, i))
+                            // TODO prevent duplicate ability use with (buff)
+                            .map(|(i, _a)| MainPhaseAction::UseAbilities(c, i))
                             .collect::<Vec<_>>(),
                         Card::HoloMember(m) => m
                             .abilities
                             .iter()
                             .enumerate()
                             // TODO check condition for ability
-                            .map(|(i, _a)| MainPhaseAction::UseAbilities(*c, i))
+                            // TODO prevent duplicate ability use with (buff)
+                            .map(|(i, _a)| MainPhaseAction::UseAbilities(c, i))
                             .collect::<Vec<_>>(),
                         Card::Support(_) => todo!("support could maybe have ability once attached"),
                         Card::Cheer(_) => todo!("cheer could maybe have ability once attached"),
@@ -715,30 +836,40 @@ impl<P: Prompter> Game<P> {
                 })
                 .map(|a| MainPhaseActionDisplay::new(a, self)),
         );
-        // baton pass
-        actions.extend(
-            self.active_board()
-                .main_center
-                .iter()
-                .filter_map(|c| {
-                    match self.lookup_card(*c) {
-                        Card::OshiHoloMember(_) => {
-                            unreachable!("oshi cannot be in the center stage")
-                        }
-                        // FIXME check condition for baton pass
-                        Card::HoloMember(_) => Some(MainPhaseAction::BatonPass(*c)),
-                        Card::Support(_) => unreachable!("support cannot be in the center stage"),
-                        Card::Cheer(_) => unreachable!("cheer cannot be in the center stage"),
-                    }
-                })
-                .map(|a| MainPhaseActionDisplay::new(a, self)),
-        );
 
         actions.push(MainPhaseActionDisplay::new(MainPhaseAction::Done, self));
+        actions.sort();
 
+        assert!(!actions.is_empty());
         self.prompter
             .prompt_choice("main phase action:", actions)
             .action
+    }
+
+    fn prompt_for_bloom(&mut self, player: Player, card: CardUuid) -> CardUuid {
+        // TODO extract that filtering to a reusable function
+        let Card::HoloMember(bloom) = self.lookup_card(card) else {
+            panic!("can only bloom from member")
+        };
+
+        let bloom_lookup = match bloom.rank {
+            HoloMemberRank::Debut => panic!("can only bloom from first or second"),
+            // TODO better match, maybe with (tags)
+            HoloMemberRank::First => (HoloMemberRank::Debut, &bloom.name),
+            HoloMemberRank::Second => (HoloMemberRank::First, &bloom.name),
+        };
+
+        let stage: Vec<_> = self
+            .board(player)
+            .stages()
+            .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
+            .filter(|(_, m)| bloom_lookup == (m.rank, &m.name))
+            // TODO check for rest?
+            .map(|(c, _)| CardDisplay::new(c, self))
+            .collect();
+
+        assert!(!stage.is_empty());
+        self.prompter.prompt_choice("choose for bloom:", stage).card
     }
 
     fn prompt_for_baton_pass(
@@ -747,16 +878,31 @@ impl<P: Prompter> Game<P> {
         cost: HoloMemberBatonPassCost,
     ) -> Vec<CardUuid> {
         // TODO extract that filtering to a reusable function
-        let cheers = self
+        let cheers: Vec<_> = self
             .attached_cheers(card)
             .into_iter()
             .map(|c| CardDisplay::new(c, self))
             .collect();
-        self.prompter
-            .prompt_multi_choices("choose cheers to remove:", cheers, cost.into(), cost.into())
-            .into_iter()
-            .map(|c| c.card)
-            .collect()
+
+        if !cheers.is_empty() {
+            self.prompter
+                .prompt_multi_choices("choose cheers to remove:", cheers, cost.into(), cost.into())
+                .into_iter()
+                .map(|c| c.card)
+                .collect()
+        } else {
+            vec![]
+        }
+    }
+
+    fn prompt_for_art(&mut self, card: CardUuid) -> CardUuid {
+        // TODO extract that filtering to a reusable function
+        todo!()
+    }
+
+    fn prompt_for_art_target(&mut self, card: CardUuid) -> CardUuid {
+        // TODO extract that filtering to a reusable function
+        todo!()
     }
 }
 
@@ -804,21 +950,29 @@ impl GameBoard {
         }
     }
 
+    pub fn hand(&self) -> impl Iterator<Item = CardUuid> + '_ {
+        self.hand.iter().copied()
+    }
+    pub fn stages(&self) -> impl Iterator<Item = CardUuid> + '_ {
+        self.main_stage().chain(self.back_stage())
+    }
+    pub fn main_stage(&self) -> impl Iterator<Item = CardUuid> + '_ {
+        self.main_center
+            .iter()
+            .chain(self.main_collab.iter())
+            .chain(self.oshi.iter())
+            .copied()
+    }
+    pub fn back_stage(&self) -> impl Iterator<Item = CardUuid> + '_ {
+        self.back_stage.iter().copied()
+    }
+
     pub fn draw(&mut self, amount: usize) {
         self.send_from_zone(Zone::MainDeck, Zone::Hand, amount);
     }
 
     pub fn add_life(&mut self, amount: u8) {
         self.send_from_zone(Zone::CheerDeck, Zone::Life, amount.into());
-    }
-
-    pub fn all_members_on_stage(&self) -> Vec<CardUuid> {
-        self.back_stage
-            .iter()
-            .chain(&self.main_center)
-            .chain(&self.main_collab)
-            .cloned()
-            .collect()
     }
 
     pub fn is_attached(&self, attachment: CardUuid) -> bool {
@@ -848,22 +1002,20 @@ impl GameBoard {
         self.send_many_to_zone(attached, target_zone)
     }
 
-    pub fn promote_attachment(&mut self, attachment: CardUuid) {
-        if let Some(parent) = self.attachments.get(&attachment).copied() {
-            if let Some(current_zone) = self.find_card_zone(parent) {
-                // replace with attachment
-                self.get_zone(current_zone).replace_card(parent, attachment);
+    pub fn promote_attachment(&mut self, attachment: CardUuid, parent: CardUuid) {
+        if let Some(current_zone) = self.find_card_zone(parent) {
+            // replace with attachment
+            self.get_zone(current_zone).replace_card(parent, attachment);
 
-                // remove from attachments
-                self.attachments.remove(&attachment);
+            // remove from attachments
+            self.attachments.remove(&attachment);
 
-                // attach the parent
-                self.attach_to_card(parent, attachment);
+            // attach the parent
+            self.attach_to_card(parent, attachment);
 
-                // change the parent of other attachments
-                for (_, v) in self.attachments.iter_mut().filter(|(_, v)| **v == parent) {
-                    *v = attachment;
-                }
+            // change the parent of other attachments
+            for (_, v) in self.attachments.iter_mut().filter(|(_, v)| **v == parent) {
+                *v = attachment;
             }
         }
     }
@@ -1116,7 +1268,7 @@ impl Display for Rps {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 
 pub enum MainPhaseAction {
     BackStageMember(CardUuid),
@@ -1128,6 +1280,7 @@ pub enum MainPhaseAction {
     Done,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct MainPhaseActionDisplay {
     action: MainPhaseAction,
     text: String,
@@ -1188,9 +1341,6 @@ impl Display for MainPhaseActionDisplay {
         write!(f, "{}", self.text)
     }
 }
-
-#[derive(Debug)]
-pub struct Buff {}
 
 #[derive(Debug)]
 pub struct DefaultPrompter {}
@@ -1310,6 +1460,7 @@ pub trait Prompter: Debug {
     // fn prompt_attack_choice();
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct CardDisplay {
     card: CardUuid,
     text: String,
@@ -1321,9 +1472,10 @@ impl CardDisplay {
             Card::OshiHoloMember(o) => format!("{} ({} life)", o.name, o.life),
             Card::HoloMember(m) => {
                 format!(
-                    "{} ({:?}) (?/{}) ({} cheers) (?) ({})",
+                    "{} ({:?}) ({}/{}) ({} cheers) (?) ({})",
                     m.name,
                     m.rank,
+                    game.remaining_hp(card),
                     m.hp,
                     game.attached_cheers(card).len(),
                     m.id
