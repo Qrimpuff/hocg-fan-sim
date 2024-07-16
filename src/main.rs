@@ -50,9 +50,9 @@ fn main() {
         &player_2,
         RandomPrompter::new(),
     );
-    // dbg!(&game);
+    // println!("{:#?}", &game);
     game.start_game();
-    // dbg!(&game);
+    // println!("{:#?}", &game);
 
     while game.next_phase() {}
     println!("{:#?}", &game);

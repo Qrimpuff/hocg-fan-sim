@@ -16,11 +16,14 @@ for def_holo (debuff less_atk (mul 10 (for self get dmg_count)) this_attack)
 for target discard_all_cheer
 */
 
+use crate::gameplay::{CardUuid, Game, Player, Prompter};
+
 use super::error::Error;
 use super::parse::*;
 use std::collections::VecDeque;
+use std::str::FromStr;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum BuiltIn {
     CurrentCard,
     ActiveHoloMember,
@@ -28,7 +31,7 @@ pub enum BuiltIn {
 
 impl ParseTokens for BuiltIn {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self, Error> {
-        dbg!(&tokens);
+        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
             "self" => BuiltIn::CurrentCard,
@@ -50,12 +53,12 @@ impl From<BuiltIn> for Tokens {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Var(String);
+#[derive(Debug, Clone, PartialEq)]
+pub struct Var(pub String);
 
 impl ParseTokens for Var {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self, Error> {
-        dbg!(&tokens);
+        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         if s.starts_with('$') {
             Ok(Var(s))
@@ -72,12 +75,12 @@ impl From<Var> for Tokens {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Number(u32);
+#[derive(Debug, Clone, PartialEq)]
+pub struct Number(pub u32);
 
 impl ParseTokens for Number {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self, Error> {
-        dbg!(&tokens);
+        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         if let Ok(n) = s.parse() {
             Ok(Number(n))
@@ -94,7 +97,7 @@ impl From<Number> for Tokens {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Target {
     BuiltIn(BuiltIn),
     Var(Var),
@@ -102,7 +105,7 @@ pub enum Target {
 
 impl ParseTokens for Target {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self, Error> {
-        dbg!(&tokens);
+        println!("{:#?}", &tokens);
         if let Ok(b) = BuiltIn::take_param(tokens) {
             Ok(Target::BuiltIn(b))
         } else if let Ok(v) = Var::take_param(tokens) {
@@ -112,6 +115,7 @@ impl ParseTokens for Target {
         }
     }
 }
+
 impl From<Target> for Tokens {
     fn from(value: Target) -> Self {
         match value {
@@ -121,7 +125,7 @@ impl From<Target> for Tokens {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     Noop,
     For(Target, Box<Action>),
@@ -130,11 +134,12 @@ pub enum Action {
     Heal(Value),
     Let(Var, Value),
     When(Condition, Box<Action>),
+    Draw(Value),
 }
 
 impl ParseTokens for Action {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self, Error> {
-        dbg!(&tokens);
+        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
             "no_action" => Action::Noop,
@@ -144,6 +149,7 @@ impl ParseTokens for Action {
             "heal" => Action::Heal(tokens.take_param()?),
             "let" => Action::Let(tokens.take_param()?, tokens.take_param()?),
             "when" => Action::When(tokens.take_param()?, Box::new(tokens.take_param()?)),
+            "draw" => Action::Draw(tokens.take_param()?),
             _ => {
                 Self::return_string(tokens, s);
                 return Err(Error::Message("TODO expected action".into()));
@@ -151,6 +157,7 @@ impl ParseTokens for Action {
         })
     }
 }
+
 impl From<Action> for Tokens {
     fn from(value: Action) -> Self {
         match value {
@@ -161,6 +168,7 @@ impl From<Action> for Tokens {
             Action::Heal(v) => ["heal".into(), v.into()].into(),
             Action::Let(r, v) => ["let".into(), r.into(), v.into()].into(),
             Action::When(c, a) => ["when".into(), c.into(), (*a).into()].into(),
+            Action::Draw(d) => ["draw".into(), d.into()].into(),
         }
     }
 }
@@ -179,7 +187,26 @@ pub fn serialize_actions(actions: Vec<Action>) -> String {
         .join("\n")
 }
 
-#[derive(Debug, PartialEq)]
+impl EvaluateEffect for Action {
+    type Value = ();
+
+    fn evaluate<P: Prompter>(&self, ctx: &mut EvaluateContext<P>) -> Self::Value {
+        match self {
+            crate::Action::Noop => {
+                println!("nothing happens")
+            }
+            crate::Action::Draw(d) => {
+                let draw = d.evaluate(ctx);
+
+                println!("draw {} card(s)", draw);
+                ctx.game.active_board_mut().draw(draw as usize);
+            }
+            _ => todo!("more actions"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     For(Target, Box<Value>),
     Get(Property),
@@ -189,7 +216,7 @@ pub enum Value {
 
 impl ParseTokens for Value {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self, Error> {
-        dbg!(&tokens);
+        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
             "for" => Value::For(tokens.take_param()?, Box::new(tokens.take_param()?)),
@@ -207,6 +234,7 @@ impl ParseTokens for Value {
         })
     }
 }
+
 impl From<Value> for Tokens {
     fn from(value: Value) -> Self {
         match value {
@@ -218,8 +246,21 @@ impl From<Value> for Tokens {
     }
 }
 
-#[derive(Debug, PartialEq)]
+impl EvaluateEffect for Value {
+    type Value = u32;
+
+    fn evaluate<P: Prompter>(&self, _ctx: &mut EvaluateContext<P>) -> Self::Value {
+        match self {
+            crate::Value::Number(n) => n.0,
+            _ => todo!("more values"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Condition {
+    Always,
+    OncePerTurn,
     Equals(Value, Value),
     Has(Target, Tag),
     NotEquals(Value, Value),
@@ -227,12 +268,14 @@ pub enum Condition {
 
 impl ParseTokens for Condition {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self, Error> {
-        dbg!(&tokens);
+        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
+            "always" => Condition::Always,
+            "once_per_turn" => Condition::OncePerTurn,
             "eq" => Condition::Equals(tokens.take_param()?, tokens.take_param()?),
-            "has" => Condition::Equals(tokens.take_param()?, tokens.take_param()?),
-            "neq" => Condition::Equals(tokens.take_param()?, tokens.take_param()?),
+            "has" => Condition::Has(tokens.take_param()?, tokens.take_param()?),
+            "neq" => Condition::NotEquals(tokens.take_param()?, tokens.take_param()?),
             _ => {
                 Self::return_string(tokens, s);
                 return Err(Error::Message("TODO expected condition".into()));
@@ -240,9 +283,12 @@ impl ParseTokens for Condition {
         })
     }
 }
+
 impl From<Condition> for Tokens {
     fn from(value: Condition) -> Self {
         match value {
+            Condition::Always => "always".into(),
+            Condition::OncePerTurn => "once_per_turn".into(),
             Condition::Equals(a, b) => ["eq".into(), a.into(), b.into()].into(),
             Condition::Has(a, b) => ["has".into(), a.into(), b.into()].into(),
             Condition::NotEquals(a, b) => ["neq".into(), a.into(), b.into()].into(),
@@ -250,7 +296,29 @@ impl From<Condition> for Tokens {
     }
 }
 
-#[derive(Debug, PartialEq)]
+impl EvaluateEffect for Condition {
+    type Value = bool;
+
+    fn evaluate<P: Prompter>(&self, _ctx: &mut EvaluateContext<P>) -> Self::Value {
+        match self {
+            Condition::Always => true,
+            _ => todo!("more conditions"),
+        }
+    }
+}
+
+impl EvaluateEffect for Option<Condition> {
+    type Value = bool;
+
+    fn evaluate<P: Prompter>(&self, ctx: &mut EvaluateContext<P>) -> Self::Value {
+        match self {
+            Some(c) => c.evaluate(ctx),
+            None => Condition::Always.evaluate(ctx),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Tag {
     // colors
     ColorWhite,
@@ -268,7 +336,7 @@ pub enum Tag {
 
 impl ParseTokens for Tag {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self, Error> {
-        dbg!(&tokens);
+        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
             // colors
@@ -289,6 +357,7 @@ impl ParseTokens for Tag {
         })
     }
 }
+
 impl From<Tag> for Tokens {
     fn from(value: Tag) -> Self {
         match value {
@@ -305,7 +374,7 @@ impl From<Tag> for Tokens {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Property {
     HealthPoint,
     RetreatCost,
@@ -313,7 +382,7 @@ pub enum Property {
 
 impl ParseTokens for Property {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self, Error> {
-        dbg!(&tokens);
+        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
             "hp" => Property::HealthPoint,
@@ -325,6 +394,7 @@ impl ParseTokens for Property {
         })
     }
 }
+
 impl From<Property> for Tokens {
     fn from(value: Property) -> Self {
         match value {
@@ -334,7 +404,7 @@ impl From<Property> for Tokens {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Buff {
     MoreDefense(Value),
     MoreAttack(Value),
@@ -342,7 +412,7 @@ pub enum Buff {
 
 impl ParseTokens for Buff {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self, Error> {
-        dbg!(&tokens);
+        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
             "more_def" => Buff::MoreDefense(tokens.take_param()?),
@@ -354,6 +424,7 @@ impl ParseTokens for Buff {
         })
     }
 }
+
 impl From<Buff> for Tokens {
     fn from(value: Buff) -> Self {
         match value {
@@ -363,7 +434,7 @@ impl From<Buff> for Tokens {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Debuff {
     LessDefense(Value),
     LessAttack(Value),
@@ -371,7 +442,7 @@ pub enum Debuff {
 
 impl ParseTokens for Debuff {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self, Error> {
-        dbg!(&tokens);
+        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
             "less_def" => Debuff::LessDefense(tokens.take_param()?),
@@ -383,6 +454,7 @@ impl ParseTokens for Debuff {
         })
     }
 }
+
 impl From<Debuff> for Tokens {
     fn from(value: Debuff) -> Self {
         match value {
@@ -392,7 +464,7 @@ impl From<Debuff> for Tokens {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LifeTime {
     ThisAttack,
     ThisTurn,
@@ -402,7 +474,7 @@ pub enum LifeTime {
 
 impl ParseTokens for LifeTime {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self, Error> {
-        dbg!(&tokens);
+        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
             "this_attack" => LifeTime::ThisAttack,
@@ -416,6 +488,7 @@ impl ParseTokens for LifeTime {
         })
     }
 }
+
 impl From<LifeTime> for Tokens {
     fn from(value: LifeTime) -> Self {
         match value {
@@ -423,6 +496,45 @@ impl From<LifeTime> for Tokens {
             LifeTime::ThisTurn => "this_turn".into(),
             LifeTime::NextTurn => "next_turn".into(),
             LifeTime::Limitless => "_".into(),
+        }
+    }
+}
+
+pub struct EvaluateContext<'a, P: Prompter> {
+    card_target: CardUuid,
+    player_target: Player,
+    game: &'a mut Game<P>,
+}
+
+impl<'a, P: Prompter> EvaluateContext<'a, P> {
+    pub fn new(game: &'a mut Game<P>, card: CardUuid) -> Self {
+        EvaluateContext {
+            card_target: card,
+            player_target: game.player_for_card(card),
+            game,
+        }
+    }
+}
+
+pub trait EvaluateEffect {
+    type Value;
+
+    fn evaluate<P: Prompter>(&self, ctx: &mut EvaluateContext<P>) -> Self::Value;
+
+    fn start_evaluate<P: Prompter>(&self, game: &mut Game<P>, card: CardUuid) -> Self::Value {
+        self.evaluate(&mut EvaluateContext::new(game, card))
+    }
+}
+
+impl<T> EvaluateEffect for Vec<T>
+where
+    T: EvaluateEffect<Value = ()>,
+{
+    type Value = ();
+
+    fn evaluate<P: Prompter>(&self, ctx: &mut EvaluateContext<P>) -> Self::Value {
+        for action in self {
+            action.evaluate(ctx);
         }
     }
 }

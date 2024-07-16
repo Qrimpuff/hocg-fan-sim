@@ -1,5 +1,8 @@
 use std::fmt::Display;
+use std::num::NonZeroUsize;
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
+
+use crate::{EvaluateContext, EvaluateEffect};
 
 use super::cards::*;
 use super::modifiers::*;
@@ -11,7 +14,7 @@ const STARTING_HAND_SIZE: usize = 7;
 const MAX_MEMBERS_ON_STAGE: usize = 6;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CardUuid(usize);
+pub struct CardUuid(NonZeroUsize);
 
 impl Debug for CardUuid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -46,7 +49,10 @@ fn register_card(
     card_ref: &CardRef,
     card_map: &mut HashMap<CardUuid, (Player, CardRef)>,
 ) -> CardUuid {
-    let card = CardUuid((thread_rng().gen::<usize>() << 4) + (player as usize));
+    let card = CardUuid(
+        NonZeroUsize::new((thread_rng().gen::<usize>() << 4) + (player as usize) + 1)
+            .expect("that plus one makes it non zero"),
+    );
     card_map.insert(card, (player, card_ref.clone()));
     card
 }
@@ -92,7 +98,7 @@ impl<P: Prompter> Game<P> {
     fn active_board(&self) -> &GameBoard {
         self.board(self.active_player)
     }
-    fn active_board_mut(&mut self) -> &mut GameBoard {
+    pub fn active_board_mut(&mut self) -> &mut GameBoard {
         self.board_mut(self.active_player)
     }
     fn board(&self, player: Player) -> &GameBoard {
@@ -327,17 +333,17 @@ impl<P: Prompter> Game<P> {
     fn start_turn(&mut self) {
         println!("active player: {:?}", self.active_player);
 
-        // TODO trigger more turn change effects
+        // TODO (trigger) more turn change effects
         self.start_turn_modifiers(self.active_player);
     }
 
     fn end_turn(&mut self) {
-        // TODO trigger more turn change effects
+        // TODO (trigger) more turn change effects
         self.end_turn_modifiers();
     }
 
     fn refresh_phase(&mut self) {
-        // TODO trigger phase change effects
+        // TODO (trigger) phase change effects
 
         // - all members from rest to active
         for mem in self.active_board().stages().collect::<Vec<_>>() {
@@ -365,14 +371,14 @@ impl<P: Prompter> Game<P> {
     }
 
     fn draw_phase(&mut self) {
-        // TODO trigger phase change effects
+        // TODO (trigger) phase change effects
 
         // - draw 1 card from main deck
         self.active_board_mut().draw(1);
     }
 
     fn cheer_phase(&mut self) {
-        // TODO trigger phase change effects
+        // TODO (trigger) phase change effects
 
         // - draw 1 card from cheer deck, attach it
         if let Some(cheer) = self
@@ -389,7 +395,7 @@ impl<P: Prompter> Game<P> {
     }
 
     fn main_phase(&mut self) {
-        // TODO trigger phase change effects
+        // TODO (trigger) phase change effects
 
         loop {
             println!("prompt main phase action");
@@ -418,9 +424,22 @@ impl<P: Prompter> Game<P> {
                     // - use support card
                     //   - only one limited per turn
                     //   - otherwise unlimited
+                    let sup = self.lookup_card(card);
 
-                    // TODO implement effect
-                    self.send_to_archive(card);
+                    if let Card::Support(sup) = sup {
+                        let condition = sup.condition.clone();
+                        let effect = sup.effect.clone();
+                        if condition.start_evaluate(self, card) {
+                            effect.start_evaluate(self, card);
+
+                            // send the used card to the archive
+                            self.send_to_archive(card);
+                        } else {
+                            unreachable!("support should not be an option, if it's not allowed")
+                        }
+                    } else {
+                        unreachable!("only support card can be used as support card")
+                    }
                 }
                 MainPhaseAction::CollabMember(card) => {
                     println!("- action: Collab member");
@@ -428,6 +447,12 @@ impl<P: Prompter> Game<P> {
                     if self.is_rested(card) {
                         panic!("cannot collab a rested member");
                     }
+
+                    // can only collab from back stage
+                    assert_eq!(
+                        self.board_for_card(card).find_card_zone(card),
+                        Some(Zone::BackStage)
+                    );
 
                     // - put back stage member in collab
                     //   - can be done on first turn?
@@ -452,21 +477,58 @@ impl<P: Prompter> Game<P> {
                     assert_eq!(center, card);
                     self.pay_baton_pass_cost(center);
                     let card = self.prompt_for_back_stage_to_center(self.active_player);
+                    // swap members
                     self.active_board_mut()
                         .send_to_zone(center, Zone::BackStage);
                     self.active_board_mut()
                         .send_to_zone(card, Zone::MainStageCenter);
                 }
-                MainPhaseAction::UseAbilities(_card, _) => {
+                MainPhaseAction::UseAbilities(card, i) => {
                     println!("- action: Use abilities");
                     // TODO verify use abilities action
+
+                    let mem_oshi = self.lookup_card(card);
 
                     // - use abilities (including oshi)
                     //   - oshi power uses card in power zone
                     //   - once per turn / once per game?
-                    // TODO prevent duplicate ability use with (buff)
-                    // TODO ability cost
-                    // TODO implement effect
+                    // TODO prevent duplicate ability use with (buff) (condition)
+                    match mem_oshi {
+                        Card::OshiHoloMember(oshi) => {
+                            let condition = oshi.abilities[i].condition.clone();
+                            let cost = oshi.abilities[i].cost.into();
+                            let effect = oshi.abilities[i].effect.clone();
+
+                            if condition.start_evaluate(self, card) {
+                                // pay the cost of the oshi ability
+                                self.active_board_mut().send_from_zone(
+                                    Zone::HoloPower,
+                                    Zone::Archive,
+                                    cost,
+                                );
+
+                                effect.start_evaluate(self, card);
+                            } else {
+                                unreachable!(
+                                    "oshi ability should not be an option, if it's not allowed"
+                                )
+                            }
+                        }
+                        Card::HoloMember(mem) => {
+                            let condition = mem.abilities[i].condition.clone();
+                            let effect = mem.abilities[i].effect.clone();
+
+                            if condition.start_evaluate(self, card) {
+                                effect.start_evaluate(self, card);
+                            } else {
+                                unreachable!(
+                                    "mem ability should not be an option, if it's not allowed"
+                                )
+                            }
+                        }
+                        Card::Support(_) => unimplemented!("support doesn't have anilities"),
+                        Card::Cheer(_) => unimplemented!("cheer doesn't have anilities"),
+                    }
                 }
                 MainPhaseAction::Done => {
                     println!("- action: Done");
@@ -484,7 +546,7 @@ impl<P: Prompter> Game<P> {
     }
 
     fn art_phase(&mut self) {
-        // TODO trigger phase change effects
+        // TODO (trigger) phase change effects
 
         // - can use 2 attacks (center, collab)
         // - can choose target (center, collab)
@@ -511,7 +573,7 @@ impl<P: Prompter> Game<P> {
     }
 
     fn end_phase(&mut self) {
-        // TODO trigger phase change effects
+        // TODO (trigger) phase change effects
 
         // - any end phase effect
     }

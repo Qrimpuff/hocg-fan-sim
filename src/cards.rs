@@ -1,5 +1,7 @@
 use std::{collections::HashMap, path::Display};
 
+use crate::{Action, Condition};
+
 /**
  * Cards:
 - oshi:
@@ -119,7 +121,8 @@ pub type CardId = String;
 pub type IllustrationPath = String;
 pub type OshiLife = u8;
 pub type OshiAbilityCost = u8;
-pub type CardEffect = ();
+pub type CardEffectCondition = Condition;
+pub type CardEffect = Vec<Action>;
 pub type HoloMemberHp = u16;
 pub type HoloMemberTag = String;
 pub type HoloMemberBatonPassCost = u8;
@@ -148,6 +151,8 @@ pub struct OshiAbility {
     pub kind: OshiAbilityKind,
     pub name: String,
     pub cost: OshiAbilityCost,
+    pub trigger: Option<CardEffectCondition>,
+    pub condition: Option<CardEffectCondition>,
     pub effect: CardEffect,
     pub text: String,
 }
@@ -184,6 +189,8 @@ pub enum MemberAbilityKind {
 pub struct MemberAbility {
     pub kind: MemberAbilityKind,
     pub name: String,
+    pub trigger: Option<CardEffectCondition>,
+    pub condition: Option<CardEffectCondition>,
     pub effect: CardEffect,
     pub text: String,
 }
@@ -193,6 +200,8 @@ pub struct MemberAttack {
     pub name: String,
     pub cost: HoloMemberAttackCost,
     pub damage: HoloMemberAttackDamage,
+    pub trigger: Option<CardEffectCondition>,
+    pub condition: Option<CardEffectCondition>,
     pub effect: CardEffect,
     pub text: String,
 }
@@ -210,6 +219,8 @@ pub struct SupportCard {
     pub illustration: IllustrationPath,
     pub artist: String,
     pub kind: SupportKind,
+    pub trigger: Option<CardEffectCondition>,
+    pub condition: Option<CardEffectCondition>,
     pub effect: CardEffect,
     pub text: String,
     // support_mascot: String,
@@ -224,6 +235,8 @@ pub struct CheerCard {
     pub illustration: IllustrationPath,
     pub artist: String,
     pub color: Color,
+    pub trigger: Option<CardEffectCondition>,
+    pub condition: Option<CardEffectCondition>,
     pub effect: Option<CardEffect>,
     pub text: String,
 }
