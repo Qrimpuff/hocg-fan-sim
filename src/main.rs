@@ -7,12 +7,7 @@ mod gameplay;
 mod modifiers;
 mod temp;
 
-use std::{
-    env,
-    fmt::Display,
-    iter::{self, Peekable},
-    str::FromStr,
-};
+use std::{env, fmt::Display, iter, str::FromStr};
 
 use card_effects::*;
 use cards::*;

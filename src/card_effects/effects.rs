@@ -13,7 +13,7 @@ debuff less_atk (mul 10 get dmg_count) this_attack
 for self (debuff less_atk (mul 10 get dmg_count) this_attack)
 for def_holo (debuff less_atk (mul 10 (for self get dmg_count)) this_attack)
 
-for traget discard_all_cheer
+for target discard_all_cheer
 */
 
 use super::error::Error;
@@ -307,7 +307,7 @@ impl From<Tag> for Tokens {
 
 #[derive(Debug, PartialEq)]
 pub enum Property {
-    HealtPoint,
+    HealthPoint,
     RetreatCost,
 }
 
@@ -316,7 +316,7 @@ impl ParseTokens for Property {
         dbg!(&tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
-            "hp" => Property::HealtPoint,
+            "hp" => Property::HealthPoint,
             "r_cost" => Property::RetreatCost,
             _ => {
                 Self::return_string(tokens, s);
@@ -328,7 +328,7 @@ impl ParseTokens for Property {
 impl From<Property> for Tokens {
     fn from(value: Property) -> Self {
         match value {
-            Property::HealtPoint => "hp".into(),
+            Property::HealthPoint => "hp".into(),
             Property::RetreatCost => "r_cost".into(),
         }
     }
@@ -336,7 +336,7 @@ impl From<Property> for Tokens {
 
 #[derive(Debug, PartialEq)]
 pub enum Buff {
-    MoreDefence(Value),
+    MoreDefense(Value),
     MoreAttack(Value),
 }
 
@@ -345,7 +345,7 @@ impl ParseTokens for Buff {
         dbg!(&tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
-            "more_def" => Buff::MoreDefence(tokens.take_param()?),
+            "more_def" => Buff::MoreDefense(tokens.take_param()?),
             "more_atk" => Buff::MoreAttack(tokens.take_param()?),
             _ => {
                 Self::return_string(tokens, s);
@@ -357,7 +357,7 @@ impl ParseTokens for Buff {
 impl From<Buff> for Tokens {
     fn from(value: Buff) -> Self {
         match value {
-            Buff::MoreDefence(a) => ["more_def".into(), a.into()].into(),
+            Buff::MoreDefense(a) => ["more_def".into(), a.into()].into(),
             Buff::MoreAttack(a) => ["more_atk".into(), a.into()].into(),
         }
     }
@@ -365,7 +365,7 @@ impl From<Buff> for Tokens {
 
 #[derive(Debug, PartialEq)]
 pub enum Debuff {
-    LessDefence(Value),
+    LessDefense(Value),
     LessAttack(Value),
 }
 
@@ -374,7 +374,7 @@ impl ParseTokens for Debuff {
         dbg!(&tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
-            "less_def" => Debuff::LessDefence(tokens.take_param()?),
+            "less_def" => Debuff::LessDefense(tokens.take_param()?),
             "less_atk" => Debuff::LessAttack(tokens.take_param()?),
             _ => {
                 Self::return_string(tokens, s);
@@ -386,7 +386,7 @@ impl ParseTokens for Debuff {
 impl From<Debuff> for Tokens {
     fn from(value: Debuff) -> Self {
         match value {
-            Debuff::LessDefence(a) => ["less_def".into(), a.into()].into(),
+            Debuff::LessDefense(a) => ["less_def".into(), a.into()].into(),
             Debuff::LessAttack(a) => ["less_atk".into(), a.into()].into(),
         }
     }
