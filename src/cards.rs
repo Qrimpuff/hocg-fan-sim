@@ -107,8 +107,10 @@ pub enum Rarity {
     UltraRare,     // UR
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(clippy::enum_variant_names)]
 pub enum Color {
+    ColorLess,
     White,
     Green,
     Blue,
@@ -126,7 +128,7 @@ pub type CardEffect = Vec<Action>;
 pub type HoloMemberHp = u16;
 pub type HoloMemberTag = String;
 pub type HoloMemberBatonPassCost = u8;
-pub type HoloMemberAttackCost = String;
+pub type HoloMemberAttackCost = Vec<Color>;
 pub type HoloMemberAttackDamage = HoloMemberHp;
 
 #[derive(Debug)]

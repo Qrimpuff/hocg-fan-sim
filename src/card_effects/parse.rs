@@ -35,7 +35,6 @@ pub trait ParseTokens: Sized {
         let (ctx, clean) = Self::get_tokens_context(tokens)?;
         let param = T::parse_tokens(ctx);
         if clean {
-            println!("clean param {:#?}", &tokens);
             Self::clean_list(tokens)?;
         }
         param
@@ -54,13 +53,12 @@ pub trait ParseTokens: Sized {
     }
 
     fn get_tokens_context(tokens: &mut VecDeque<Tokens>) -> Result<(&mut VecDeque<Tokens>, bool)> {
-        println!("{:#?}", &tokens);
         let is_list = {
             let t = tokens.get_mut(0).ok_or(Error::ExpectedToken)?;
-            println!("{:#?}", &t);
+
             matches!(t, Tokens::List(_))
         };
-        println!("{:#?}", is_list);
+
         if is_list {
             let Tokens::List(v) = tokens.get_mut(0).ok_or(Error::ExpectedToken)? else {
                 unreachable!()
@@ -73,7 +71,7 @@ pub trait ParseTokens: Sized {
 
     fn clean_list(tokens: &mut VecDeque<Tokens>) -> Result<()> {
         let t = tokens.pop_front().ok_or(Error::ExpectedToken)?;
-        println!("{:#?}", &t);
+
         if let Tokens::List(v) = t {
             assert_eq!(v.len(), 0, "list not empty, shouldn't clean");
         } else {
@@ -199,8 +197,6 @@ impl FromStr for Tokens {
         if !token.is_empty() {
             list.push_back(Tokens::Token(token));
         }
-
-        println!("{:#?}", stack);
 
         if list.len() > 1 {
             Ok(Tokens::List(list))

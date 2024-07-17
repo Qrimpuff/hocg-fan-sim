@@ -8,7 +8,6 @@ use super::parse::*;
 
 impl ParseTokens for BuiltIn {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self> {
-        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
             "self" => BuiltIn::CurrentCard,
@@ -23,7 +22,6 @@ impl ParseTokens for BuiltIn {
 
 impl ParseTokens for Var {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self> {
-        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         if s.starts_with('$') {
             Ok(Var(s))
@@ -36,7 +34,6 @@ impl ParseTokens for Var {
 
 impl ParseTokens for Number {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self> {
-        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         if let Ok(n) = s.parse() {
             Ok(Number(n))
@@ -49,7 +46,6 @@ impl ParseTokens for Number {
 
 impl ParseTokens for Target {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self> {
-        println!("{:#?}", &tokens);
         if let Ok(b) = BuiltIn::take_param(tokens) {
             Ok(Target::BuiltIn(b))
         } else if let Ok(v) = Var::take_param(tokens) {
@@ -62,7 +58,6 @@ impl ParseTokens for Target {
 
 impl ParseTokens for Action {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self> {
-        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
             "no_action" => Action::Noop,
@@ -83,7 +78,6 @@ impl ParseTokens for Action {
 
 impl ParseTokens for Value {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self> {
-        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
             "for" => Value::For(tokens.take_param()?, Box::new(tokens.take_param()?)),
@@ -104,7 +98,6 @@ impl ParseTokens for Value {
 
 impl ParseTokens for Condition {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self> {
-        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
             "always" => Condition::Always,
@@ -122,7 +115,6 @@ impl ParseTokens for Condition {
 
 impl ParseTokens for Tag {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self> {
-        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
             // colors
@@ -146,7 +138,6 @@ impl ParseTokens for Tag {
 
 impl ParseTokens for Property {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self> {
-        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
             "hp" => Property::HealthPoint,
@@ -161,7 +152,6 @@ impl ParseTokens for Property {
 
 impl ParseTokens for Buff {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self> {
-        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
             "more_def" => Buff::MoreDefense(tokens.take_param()?),
@@ -176,7 +166,6 @@ impl ParseTokens for Buff {
 
 impl ParseTokens for Debuff {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self> {
-        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
             "less_def" => Debuff::LessDefense(tokens.take_param()?),
@@ -191,7 +180,6 @@ impl ParseTokens for Debuff {
 
 impl ParseTokens for LifeTime {
     fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self> {
-        println!("{:#?}", &tokens);
         let s = Self::take_string(tokens)?;
         Ok(match s.as_str() {
             "this_attack" => LifeTime::ThisAttack,

@@ -178,6 +178,7 @@ impl<P: Prompter> Game<P> {
 
         if player_draw == 0 {
             self.active_player = player;
+            println!("player {player:?} cannot draw anymore card");
             self.lose_game();
         }
     }
@@ -308,7 +309,7 @@ impl<P: Prompter> Game<P> {
 
         println!("- active phase: {:?}", self.active_phase);
 
-        // after phase change
+        // after phase change, before the phase starts
         self.check_loss_conditions();
 
         match self.active_phase {
@@ -322,9 +323,21 @@ impl<P: Prompter> Game<P> {
             Phase::GameOver => return false,
         }
 
+        // after each phase
+        self.check_loss_conditions();
+        if self.active_phase == Phase::GameOver {
+            return false;
+        }
+
         // end turn
         if self.active_phase == Phase::End {
             self.end_turn();
+        }
+
+        // could lose after the end of the turn
+        self.check_loss_conditions();
+        if self.active_phase == Phase::GameOver {
+            return false;
         }
 
         true
@@ -365,7 +378,7 @@ impl<P: Prompter> Game<P> {
 
         //   - no back stage lose game
         if self.active_board().main_center.is_none() {
-            self.lose_game();
+            self.check_loss_conditions();
             // return;
         }
     }
@@ -386,11 +399,12 @@ impl<P: Prompter> Game<P> {
             .get_zone(Zone::CheerDeck)
             .peek_top_card()
         {
-            // TODO show card
             println!("prompt member for cheer");
+            println!("attach a cheer: {}", CardDisplay::new(cheer, self));
             //   - main stage or back stage
-            let mem = self.prompt_for_cheer(self.active_player);
-            self.active_board_mut().attach_to_card(cheer, mem);
+            if let Some(mem) = self.prompt_for_cheer(self.active_player) {
+                self.active_board_mut().attach_to_card(cheer, mem);
+            }
         }
     }
 
@@ -399,6 +413,8 @@ impl<P: Prompter> Game<P> {
 
         loop {
             println!("prompt main phase action");
+            println!("{} cards in hand", self.active_board().hand().count());
+
             match self.prompt_for_main_action(self.active_player) {
                 MainPhaseAction::BackStageMember(card) => {
                     println!("- action: Back stage member");
@@ -499,6 +515,12 @@ impl<P: Prompter> Game<P> {
                             let cost = oshi.abilities[i].cost.into();
                             let effect = oshi.abilities[i].effect.clone();
 
+                            if self.active_board().holo_power.count() < cost {
+                                unreachable!(
+                                    "oshi ability should not be an option, if the cost could not be payed"
+                                )
+                            }
+
                             if condition.start_evaluate(self, card) {
                                 // pay the cost of the oshi ability
                                 self.active_board_mut().send_from_zone(
@@ -548,6 +570,9 @@ impl<P: Prompter> Game<P> {
     pub fn art_phase(&mut self) {
         // TODO (trigger) phase change effects
 
+        // TODO have art phase actions, similar to main phase
+        // that way the player can choose the attack order. also allow to skip
+
         // - can use 2 attacks (center, collab)
         // - can choose target (center, collab)
         // - need required attached cheers to attack
@@ -563,29 +588,33 @@ impl<P: Prompter> Game<P> {
                 continue;
             }
 
-            let art_idx: usize = self.prompt_for_art(card);
-            let target = self.prompt_for_art_target(op);
-            let mem = self
-                .lookup_holo_member(card)
-                .expect("this should be a valid member");
+            if let Some(art_idx) = self.prompt_for_art(card) {
+                let target = self.prompt_for_art_target(op);
+                let mem = self
+                    .lookup_holo_member(card)
+                    .expect("this should be a valid member");
 
-            let condition = mem.attacks[art_idx].condition.clone();
-            let effect = mem.attacks[art_idx].effect.clone();
+                let condition = mem.attacks[art_idx].condition.clone();
+                let effect = mem.attacks[art_idx].effect.clone();
 
-            // FIXME check cheer requirement
-            println!("deals {} damage", mem.attacks[art_idx].damage);
-            self.add_damage(target, DamageCounters::from_hp(mem.attacks[art_idx].damage));
+                // FIXME check cheer requirement
+                println!("deals {} damage", mem.attacks[art_idx].damage);
+                self.add_damage(target, DamageCounters::from_hp(mem.attacks[art_idx].damage));
 
-            // add effects
-            if condition.start_evaluate(self, card) {
-                effect.start_evaluate(self, card);
-            }
+                // add effects
+                if condition.start_evaluate(self, card) {
+                    effect.start_evaluate(self, card);
+                }
 
-            if self.remaining_hp(target) == 0 {
-                self.send_to_archive(target);
+                if self.remaining_hp(target) == 0 {
+                    self.send_to_archive(target);
 
-                // TODO if there is no more front to attack, do we bring the next one?
-                // FIXME remove from life deck, to attach cheer
+                    // TODO if there is no more front to attack, do we bring the next one?
+                    if !self.lose_life(self.player_for_card(target), 1) {
+                        // the phase is over
+                        return;
+                    }
+                }
             }
         }
     }
@@ -615,11 +644,18 @@ impl<P: Prompter> Game<P> {
     }
 
     pub fn check_loss_conditions(&mut self) {
+        assert_ne!(
+            self.active_phase,
+            Phase::Setup,
+            "requires the game to be setup"
+        );
+
         let mut lose_player = None;
         for (player, board) in [(Player::One, &self.player_1), (Player::Two, &self.player_2)] {
             // - life is 0
             if board.life.count() == 0 {
                 lose_player = Some(player);
+                println!("player {player:?} has no life remaining");
             }
 
             // - deck is 0 on draw phase
@@ -628,12 +664,13 @@ impl<P: Prompter> Game<P> {
                 && self.active_player == player
             {
                 lose_player = Some(player);
+                println!("player {player:?} has no card in their main deck");
             }
 
             // - 0 member in play
-            if board.back_stage.count() + board.main_center.count() + board.main_collab.count() == 0
-            {
+            if board.main_stage().count() + board.back_stage().count() == 0 {
                 lose_player = Some(player);
+                println!("player {player:?} has no more members on stage");
             }
 
             if lose_player.is_some() {
@@ -660,6 +697,13 @@ impl<P: Prompter> Game<P> {
             None
         }
     }
+    pub fn lookup_cheer(&self, card: CardUuid) -> Option<&CheerCard> {
+        if let Card::Cheer(c) = self.lookup_card(card) {
+            Some(c)
+        } else {
+            None
+        }
+    }
 
     pub fn bloom_member(&mut self, bloom: CardUuid, card: CardUuid) {
         self.active_board_mut().attach_to_card(bloom, card);
@@ -677,12 +721,41 @@ impl<P: Prompter> Game<P> {
         }
     }
 
-    pub fn attached_cheers(&self, card: CardUuid) -> Vec<CardUuid> {
+    pub fn attached_cheers(&self, card: CardUuid) -> impl Iterator<Item = CardUuid> + '_ {
         self.board_for_card(card)
             .attachments(card)
             .into_iter()
             .filter(|a| matches!(self.lookup_card(*a), Card::Cheer(_)))
-            .collect()
+    }
+
+    pub fn required_attached_cheers(&self, card: CardUuid, cheers: &[Color]) -> bool {
+        // TODO modify if there is ever a double cheer
+        // count the cheers
+        let mut required = cheers.iter().fold(HashMap::new(), |mut acc, c| {
+            *acc.entry(c).or_insert(0) += 1;
+            acc
+        });
+
+        // remove the required cheers
+        for at_cheer in self
+            .attached_cheers(card)
+            .filter_map(|c| self.lookup_cheer(c))
+        {
+            if let Some(v) = required.get_mut(&at_cheer.color) {
+                *v -= 1;
+                if *v == 0 {
+                    required.remove(&at_cheer.color);
+                }
+            } else if let Some(v) = required.get_mut(&Color::ColorLess) {
+                *v -= 1;
+                if *v == 0 {
+                    required.remove(&Color::ColorLess);
+                }
+            }
+        }
+
+        // removed all the required cheers
+        required.is_empty()
     }
 
     pub fn send_to_archive(&mut self, card: CardUuid) {
@@ -691,6 +764,25 @@ impl<P: Prompter> Game<P> {
         self.board_for_card_mut(card)
             .send_all_attachments_to_zone(card, Zone::Archive);
         self.clear_all_modifiers(card);
+    }
+
+    pub fn lose_life(&mut self, player: Player, amount: usize) -> bool {
+        (0..amount).all(|_| {
+            if let Some(cheer) = self.board(player).life.peek_top_card() {
+                println!("lost a life: {}", CardDisplay::new(cheer, self));
+
+                if let Some(mem) = self.prompt_for_cheer(player) {
+                    self.board_mut(player).attach_to_card(cheer, mem);
+                } else {
+                    self.board_mut(player).send_to_zone(cheer, Zone::Archive);
+                }
+
+                // there is still life, the player is alive
+                self.board(player).life.peek_top_card().is_some()
+            } else {
+                false
+            }
+        })
     }
 
     pub fn prompt_for_rps(&mut self) -> Rps {
@@ -764,9 +856,9 @@ impl<P: Prompter> Game<P> {
             .card
     }
 
-    pub fn prompt_for_cheer(&mut self, player: Player) -> CardUuid {
+    pub fn prompt_for_cheer(&mut self, player: Player) -> Option<CardUuid> {
         // TODO extract that filtering to a reusable function
-        let cheer: Vec<_> = self
+        let mems: Vec<_> = self
             .board(player)
             .stages()
             .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
@@ -774,10 +866,15 @@ impl<P: Prompter> Game<P> {
             .map(|(c, _)| CardDisplay::new(c, self))
             .collect();
 
-        assert!(!cheer.is_empty());
-        self.prompter
-            .prompt_choice("choose receive cheer:", cheer)
-            .card
+        if !mems.is_empty() {
+            Some(
+                self.prompter
+                    .prompt_choice("choose receive cheer:", mems)
+                    .card,
+            )
+        } else {
+            None
+        }
     }
 
     #[allow(clippy::unnecessary_filter_map)]
@@ -869,7 +966,7 @@ impl<P: Prompter> Game<P> {
                         }
                         Card::HoloMember(m) => {
                             // check condition for baton pass
-                            let cheer_count = self.attached_cheers(c).len();
+                            let cheer_count = self.attached_cheers(c).count();
                             let back_stage_count = self
                                 .board(player)
                                 .back_stage()
@@ -898,6 +995,7 @@ impl<P: Prompter> Game<P> {
                             .abilities
                             .iter()
                             .enumerate()
+                            .filter(|(_, a)| self.board(player).holo_power.count() >= a.cost.into())
                             // TODO check condition for ability
                             // TODO prevent duplicate ability use with (buff)
                             .map(|(i, _a)| MainPhaseAction::UseAbilities(c, i))
@@ -960,7 +1058,6 @@ impl<P: Prompter> Game<P> {
         // TODO extract that filtering to a reusable function
         let cheers: Vec<_> = self
             .attached_cheers(card)
-            .into_iter()
             .map(|c| CardDisplay::new(c, self))
             .collect();
 
@@ -971,11 +1068,11 @@ impl<P: Prompter> Game<P> {
                 .map(|c| c.card)
                 .collect()
         } else {
-            vec![]
+            panic!("baton pass should not be an option, if there is no cheers")
         }
     }
 
-    pub fn prompt_for_art(&mut self, card: CardUuid) -> usize {
+    pub fn prompt_for_art(&mut self, card: CardUuid) -> Option<usize> {
         // TODO extract that filtering to a reusable function
         if let Some(mem) = self.lookup_holo_member(card) {
             // breaking into separate part to appease the borrow checker
@@ -983,17 +1080,24 @@ impl<P: Prompter> Game<P> {
                 .attacks
                 .iter()
                 .enumerate()
+                .filter(|(_, a)| self.required_attached_cheers(card, &a.cost))
                 .map(|(i, a)| (i, a.condition.clone()))
                 .collect();
             let arts: Vec<_> = arts
                 .into_iter()
                 .filter(|(_, cond)| cond.start_evaluate(self, card))
                 .collect();
-            let arts = arts
+            let arts: Vec<_> = arts
                 .into_iter()
                 .map(|(i, _)| ArtDisplay::new(card, i, self))
                 .collect();
-            self.prompter.prompt_choice("choose for art:", arts).idx
+            // TODO add skip art, it's not required to use an art
+
+            if !arts.is_empty() {
+                Some(self.prompter.prompt_choice("choose for art:", arts).idx)
+            } else {
+                None
+            }
         } else {
             panic!("only members can have arts")
         }
@@ -1587,7 +1691,11 @@ impl CardDisplay {
                     m.rank,
                     game.remaining_hp(card),
                     m.hp,
-                    game.attached_cheers(card).len(),
+                    game.attached_cheers(card)
+                        .filter_map(|c| game.lookup_cheer(c))
+                        .map(|c| format!("{:?}", c.color))
+                        .collect::<Vec<_>>()
+                        .join(", "),
                     m.id
                 )
             }
@@ -1620,7 +1728,11 @@ impl ArtDisplay {
                 art.name,
                 art.damage,
                 if art.effect.is_empty() { "" } else { "*" },
-                art.cost,
+                art.cost
+                    .iter()
+                    .map(|c| format!("{c:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
             )
         } else {
             unreachable!("only members can have arts")
