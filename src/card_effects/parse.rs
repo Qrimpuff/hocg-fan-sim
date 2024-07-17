@@ -1,26 +1,26 @@
-use super::error::Error;
+use super::error::*;
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::str::FromStr;
 
 pub trait ParseEffect {
-    fn parse_effect<F: ParseTokens>(&self) -> Result<F, Error>;
+    fn parse_effect<F: ParseTokens>(&self) -> Result<F>;
 }
 
 impl ParseEffect for str {
-    fn parse_effect<F: ParseTokens>(&self) -> Result<F, Error> {
+    fn parse_effect<F: ParseTokens>(&self) -> Result<F> {
         ParseTokens::from_str(self)
     }
 }
 
 pub trait ParseTokens: Sized {
-    fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self, Error>;
+    fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self>;
 
-    fn from_str(s: &str) -> Result<Self, Error> {
+    fn from_str(s: &str) -> Result<Self> {
         Self::from_tokens(s.parse()?)
     }
 
-    fn from_tokens(tokens: Tokens) -> Result<Self, Error> {
+    fn from_tokens(tokens: Tokens) -> Result<Self> {
         let mut tokens = match tokens {
             t @ Tokens::Token(_) => VecDeque::from([t]),
             Tokens::List(v) => v,
@@ -31,7 +31,7 @@ pub trait ParseTokens: Sized {
         // TODO check for remaining Tokens
     }
 
-    fn take_param<T: ParseTokens>(tokens: &mut VecDeque<Tokens>) -> Result<T, Error> {
+    fn take_param<T: ParseTokens>(tokens: &mut VecDeque<Tokens>) -> Result<T> {
         let (ctx, clean) = Self::get_tokens_context(tokens)?;
         let param = T::parse_tokens(ctx);
         if clean {
@@ -41,7 +41,7 @@ pub trait ParseTokens: Sized {
         param
     }
 
-    fn take_string(tokens: &mut VecDeque<Tokens>) -> Result<String, Error> {
+    fn take_string(tokens: &mut VecDeque<Tokens>) -> Result<String> {
         let t = tokens.pop_front().ok_or(Error::ExpectedToken)?;
         if let Tokens::Token(s) = t {
             return Ok(s);
@@ -53,9 +53,7 @@ pub trait ParseTokens: Sized {
         tokens.push_front(Tokens::Token(s));
     }
 
-    fn get_tokens_context(
-        tokens: &mut VecDeque<Tokens>,
-    ) -> Result<(&mut VecDeque<Tokens>, bool), Error> {
+    fn get_tokens_context(tokens: &mut VecDeque<Tokens>) -> Result<(&mut VecDeque<Tokens>, bool)> {
         println!("{:#?}", &tokens);
         let is_list = {
             let t = tokens.get_mut(0).ok_or(Error::ExpectedToken)?;
@@ -73,7 +71,7 @@ pub trait ParseTokens: Sized {
         }
     }
 
-    fn clean_list(tokens: &mut VecDeque<Tokens>) -> Result<(), Error> {
+    fn clean_list(tokens: &mut VecDeque<Tokens>) -> Result<()> {
         let t = tokens.pop_front().ok_or(Error::ExpectedToken)?;
         println!("{:#?}", &t);
         if let Tokens::List(v) = t {
@@ -89,7 +87,7 @@ impl<T> ParseTokens for Vec<T>
 where
     T: ParseTokens,
 {
-    fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self, Error> {
+    fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self> {
         let mut v = Vec::new();
         while !tokens.is_empty() {
             v.push(T::take_param(tokens)?);
@@ -99,13 +97,13 @@ where
 }
 
 pub trait TakeParam<T> {
-    fn take_param(&mut self) -> Result<T, Error>;
+    fn take_param(&mut self) -> Result<T>;
 }
 impl<T> TakeParam<T> for VecDeque<Tokens>
 where
     T: ParseTokens,
 {
-    fn take_param(&mut self) -> Result<T, Error> {
+    fn take_param(&mut self) -> Result<T> {
         T::take_param(self)
     }
 }
@@ -155,7 +153,7 @@ impl Display for Tokens {
 impl FromStr for Tokens {
     type Err = Error;
 
-    fn from_str(s: &str) -> Result<Self, <Self as FromStr>::Err> {
+    fn from_str(s: &str) -> Result<Self> {
         // FIXME check balanced bracket
 
         let mut stack = VecDeque::new();

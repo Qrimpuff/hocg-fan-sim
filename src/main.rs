@@ -28,7 +28,8 @@ fn main() {
                 .take(10)
                 .chain(iter::repeat("Sora-1".into()).take(10))
                 .chain(iter::repeat("Sora-2".into()).take(5))
-                .chain(iter::repeat("Support-1".into()).take(25)),
+                .chain(iter::repeat("Support-1".into()).take(10))
+                .chain(iter::repeat("Support-2".into()).take(15)),
         ),
         cheer_deck: Vec::from_iter(iter::repeat("White-Cheer".into()).take(20)),
     };
@@ -39,7 +40,8 @@ fn main() {
                 .take(10)
                 .chain(iter::repeat("AZKi-1".into()).take(10))
                 .chain(iter::repeat("AZKi-2".into()).take(5))
-                .chain(iter::repeat("Support-1".into()).take(25)),
+                .chain(iter::repeat("Support-1".into()).take(10))
+                .chain(iter::repeat("Support-2".into()).take(15)),
         ),
         cheer_deck: Vec::from_iter(iter::repeat("Green-Cheer".into()).take(20)),
     };

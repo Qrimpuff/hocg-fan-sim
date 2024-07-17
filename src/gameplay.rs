@@ -2,7 +2,7 @@ use std::fmt::Display;
 use std::num::NonZeroUsize;
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
-use crate::{EvaluateContext, EvaluateEffect};
+use crate::card_effects::evaluate::{EvaluateContext, EvaluateEffect};
 
 use super::cards::*;
 use super::modifiers::*;
@@ -44,7 +44,7 @@ impl Player {
     }
 }
 
-fn register_card(
+pub fn register_card(
     player: Player,
     card_ref: &CardRef,
     card_map: &mut HashMap<CardUuid, (Player, CardRef)>,
@@ -57,21 +57,21 @@ fn register_card(
     card
 }
 
-fn shuffle_deck(deck: &mut Vec<CardUuid>) {
+pub fn shuffle_deck(deck: &mut Vec<CardUuid>) {
     deck.shuffle(&mut thread_rng());
 }
 
 #[derive(Debug)]
 pub struct Game<P: Prompter> {
-    pub(crate) library: Arc<GlobalLibrary>,
-    pub(crate) player_1: GameBoard,
-    pub(crate) player_2: GameBoard,
-    pub(crate) card_map: HashMap<CardUuid, (Player, CardRef)>,
-    pub(crate) active_player: Player,
-    pub(crate) active_phase: Phase,
-    pub(crate) zone_modifiers: Vec<(Player, Zone, Modifier)>,
-    pub(crate) card_modifiers: Vec<(CardUuid, Modifier)>,
-    pub(crate) prompter: P,
+    pub library: Arc<GlobalLibrary>,
+    pub player_1: GameBoard,
+    pub player_2: GameBoard,
+    pub card_map: HashMap<CardUuid, (Player, CardRef)>,
+    pub active_player: Player,
+    pub active_phase: Phase,
+    pub zone_modifiers: Vec<(Player, Zone, Modifier)>,
+    pub card_modifiers: Vec<(CardUuid, Modifier)>,
+    pub prompter: P,
 }
 
 impl<P: Prompter> Game<P> {
@@ -95,20 +95,20 @@ impl<P: Prompter> Game<P> {
         }
     }
 
-    fn active_board(&self) -> &GameBoard {
+    pub fn active_board(&self) -> &GameBoard {
         self.board(self.active_player)
     }
     pub fn active_board_mut(&mut self) -> &mut GameBoard {
         self.board_mut(self.active_player)
     }
-    fn board(&self, player: Player) -> &GameBoard {
+    pub fn board(&self, player: Player) -> &GameBoard {
         match player {
             Player::One => &self.player_1,
             Player::Two => &self.player_2,
             _ => unreachable!("both players cannot be active at the same time"),
         }
     }
-    fn board_mut(&mut self, player: Player) -> &mut GameBoard {
+    pub fn board_mut(&mut self, player: Player) -> &mut GameBoard {
         match player {
             Player::One => &mut self.player_1,
             Player::Two => &mut self.player_2,
@@ -116,22 +116,22 @@ impl<P: Prompter> Game<P> {
         }
     }
 
-    pub(crate) fn player_for_card(&self, card: CardUuid) -> Player {
+    pub fn player_for_card(&self, card: CardUuid) -> Player {
         self.card_map
             .get(&card)
             .expect("the card should be registered")
             .0
     }
-    fn board_for_card(&self, card: CardUuid) -> &GameBoard {
+    pub fn board_for_card(&self, card: CardUuid) -> &GameBoard {
         let player = self.player_for_card(card);
         self.board(player)
     }
-    fn board_for_card_mut(&mut self, card: CardUuid) -> &mut GameBoard {
+    pub fn board_for_card_mut(&mut self, card: CardUuid) -> &mut GameBoard {
         let player = self.player_for_card(card);
         self.board_mut(player)
     }
 
-    fn need_mulligan(&self, player: &GameBoard) -> bool {
+    pub fn need_mulligan(&self, player: &GameBoard) -> bool {
         // need to have at least one debut member to place on the stage
         !player
             .hand
@@ -146,7 +146,7 @@ impl<P: Prompter> Game<P> {
             .any(|m| m.rank == HoloMemberRank::Debut)
     }
 
-    fn handle_mulligan(&mut self, player: Player) {
+    pub fn handle_mulligan(&mut self, player: Player) {
         // - draw 7 cards from main deck
         let mut player_draw = STARTING_HAND_SIZE;
         self.board_mut(player).draw(player_draw);
@@ -330,19 +330,19 @@ impl<P: Prompter> Game<P> {
         true
     }
 
-    fn start_turn(&mut self) {
+    pub fn start_turn(&mut self) {
         println!("active player: {:?}", self.active_player);
 
         // TODO (trigger) more turn change effects
         self.start_turn_modifiers(self.active_player);
     }
 
-    fn end_turn(&mut self) {
+    pub fn end_turn(&mut self) {
         // TODO (trigger) more turn change effects
         self.end_turn_modifiers();
     }
 
-    fn refresh_phase(&mut self) {
+    pub fn refresh_phase(&mut self) {
         // TODO (trigger) phase change effects
 
         // - all members from rest to active
@@ -370,14 +370,14 @@ impl<P: Prompter> Game<P> {
         }
     }
 
-    fn draw_phase(&mut self) {
+    pub fn draw_phase(&mut self) {
         // TODO (trigger) phase change effects
 
         // - draw 1 card from main deck
         self.active_board_mut().draw(1);
     }
 
-    fn cheer_phase(&mut self) {
+    pub fn cheer_phase(&mut self) {
         // TODO (trigger) phase change effects
 
         // - draw 1 card from cheer deck, attach it
@@ -394,7 +394,7 @@ impl<P: Prompter> Game<P> {
         }
     }
 
-    fn main_phase(&mut self) {
+    pub fn main_phase(&mut self) {
         // TODO (trigger) phase change effects
 
         loop {
@@ -545,7 +545,7 @@ impl<P: Prompter> Game<P> {
         // attack can be preloaded at this point
     }
 
-    fn art_phase(&mut self) {
+    pub fn art_phase(&mut self) {
         // TODO (trigger) phase change effects
 
         // - can use 2 attacks (center, collab)
@@ -555,30 +555,48 @@ impl<P: Prompter> Game<P> {
         // - remove member if defeated
         //   - lose 1 life
         //   - attach lost life (cheer)
-        // TODO implement effect
-
-        // TODO only for testing
         let op = self.active_player.opponent();
-        let target = self
-            .board(op)
-            .main_center
-            .expect("there should always be a member in the center");
-        self.add_damage(target, DamageCounters(1));
+        let main_stage: Vec<_> = self.active_board().main_stage().collect();
+        for card in main_stage {
+            if self.board(op).main_stage().count() < 1 {
+                println!("no more member to target");
+                continue;
+            }
 
-        println!("deals damage");
+            let art_idx: usize = self.prompt_for_art(card);
+            let target = self.prompt_for_art_target(op);
+            let mem = self
+                .lookup_holo_member(card)
+                .expect("this should be a valid member");
 
-        if self.remaining_hp(target) == 0 {
-            self.send_to_archive(target);
+            let condition = mem.attacks[art_idx].condition.clone();
+            let effect = mem.attacks[art_idx].effect.clone();
+
+            // FIXME check cheer requirement
+            println!("deals {} damage", mem.attacks[art_idx].damage);
+            self.add_damage(target, DamageCounters::from_hp(mem.attacks[art_idx].damage));
+
+            // add effects
+            if condition.start_evaluate(self, card) {
+                effect.start_evaluate(self, card);
+            }
+
+            if self.remaining_hp(target) == 0 {
+                self.send_to_archive(target);
+
+                // TODO if there is no more front to attack, do we bring the next one?
+                // FIXME remove from life deck, to attach cheer
+            }
         }
     }
 
-    fn end_phase(&mut self) {
+    pub fn end_phase(&mut self) {
         // TODO (trigger) phase change effects
 
         // - any end phase effect
     }
 
-    fn win_game(&mut self) {
+    pub fn win_game(&mut self) {
         match self.active_player {
             Player::One => println!("player 1 wins"),
             Player::Two => println!("player 2 wins"),
@@ -587,7 +605,7 @@ impl<P: Prompter> Game<P> {
         // stop the game
         self.active_phase = Phase::GameOver;
     }
-    fn lose_game(&mut self) {
+    pub fn lose_game(&mut self) {
         self.active_player = match self.active_player {
             Player::One => Player::Two,
             Player::Two => Player::One,
@@ -596,7 +614,7 @@ impl<P: Prompter> Game<P> {
         self.win_game();
     }
 
-    fn check_loss_conditions(&mut self) {
+    pub fn check_loss_conditions(&mut self) {
         let mut lose_player = None;
         for (player, board) in [(Player::One, &self.player_1), (Player::Two, &self.player_2)] {
             // - life is 0
@@ -675,20 +693,20 @@ impl<P: Prompter> Game<P> {
         self.clear_all_modifiers(card);
     }
 
-    fn prompt_for_rps(&mut self) -> Rps {
+    pub fn prompt_for_rps(&mut self) -> Rps {
         self.prompter.prompt_choice(
             "choose rock, paper or scissor:",
             vec![Rps::Rock, Rps::Paper, Rps::Scissor],
         )
     }
 
-    fn prompt_for_mulligan(&mut self) -> bool {
+    pub fn prompt_for_mulligan(&mut self) -> bool {
         self.prompter
             .prompt_choice("do you want to mulligan?", vec!["Yes", "No"])
             == "Yes"
     }
 
-    fn prompt_for_first_debut(&mut self, player: Player) -> CardUuid {
+    pub fn prompt_for_first_debut(&mut self, player: Player) -> CardUuid {
         // TODO extract that filtering to a reusable function
         let debuts: Vec<_> = self
             .board(player)
@@ -704,7 +722,7 @@ impl<P: Prompter> Game<P> {
             .card
     }
 
-    fn prompt_for_first_back_stage(&mut self, player: Player) -> Vec<CardUuid> {
+    pub fn prompt_for_first_back_stage(&mut self, player: Player) -> Vec<CardUuid> {
         // TODO extract that filtering to a reusable function
         let debuts: Vec<_> = self
             .board(player)
@@ -730,7 +748,7 @@ impl<P: Prompter> Game<P> {
         }
     }
 
-    fn prompt_for_back_stage_to_center(&mut self, player: Player) -> CardUuid {
+    pub fn prompt_for_back_stage_to_center(&mut self, player: Player) -> CardUuid {
         // TODO extract that filtering to a reusable function
         let back: Vec<_> = self
             .board(player)
@@ -746,7 +764,7 @@ impl<P: Prompter> Game<P> {
             .card
     }
 
-    fn prompt_for_cheer(&mut self, player: Player) -> CardUuid {
+    pub fn prompt_for_cheer(&mut self, player: Player) -> CardUuid {
         // TODO extract that filtering to a reusable function
         let cheer: Vec<_> = self
             .board(player)
@@ -763,7 +781,7 @@ impl<P: Prompter> Game<P> {
     }
 
     #[allow(clippy::unnecessary_filter_map)]
-    fn prompt_for_main_action(&mut self, player: Player) -> MainPhaseAction {
+    pub fn prompt_for_main_action(&mut self, player: Player) -> MainPhaseAction {
         // actions from hand
         let mut actions: Vec<_> = self
             .board(player)
@@ -908,7 +926,7 @@ impl<P: Prompter> Game<P> {
             .action
     }
 
-    fn prompt_for_bloom(&mut self, player: Player, card: CardUuid) -> CardUuid {
+    pub fn prompt_for_bloom(&mut self, player: Player, card: CardUuid) -> CardUuid {
         // TODO extract that filtering to a reusable function
         let Card::HoloMember(bloom) = self.lookup_card(card) else {
             panic!("can only bloom from member")
@@ -934,7 +952,7 @@ impl<P: Prompter> Game<P> {
         self.prompter.prompt_choice("choose for bloom:", stage).card
     }
 
-    fn prompt_for_baton_pass(
+    pub fn prompt_for_baton_pass(
         &mut self,
         card: CardUuid,
         cost: HoloMemberBatonPassCost,
@@ -957,30 +975,60 @@ impl<P: Prompter> Game<P> {
         }
     }
 
-    fn prompt_for_art(&mut self, card: CardUuid) -> CardUuid {
+    pub fn prompt_for_art(&mut self, card: CardUuid) -> usize {
         // TODO extract that filtering to a reusable function
-        todo!()
+        if let Some(mem) = self.lookup_holo_member(card) {
+            // breaking into separate part to appease the borrow checker
+            let arts: Vec<_> = mem
+                .attacks
+                .iter()
+                .enumerate()
+                .map(|(i, a)| (i, a.condition.clone()))
+                .collect();
+            let arts: Vec<_> = arts
+                .into_iter()
+                .filter(|(_, cond)| cond.start_evaluate(self, card))
+                .collect();
+            let arts = arts
+                .into_iter()
+                .map(|(i, _)| ArtDisplay::new(card, i, self))
+                .collect();
+            self.prompter.prompt_choice("choose for art:", arts).idx
+        } else {
+            panic!("only members can have arts")
+        }
     }
 
-    fn prompt_for_art_target(&mut self, card: CardUuid) -> CardUuid {
+    pub fn prompt_for_art_target(&mut self, player: Player) -> CardUuid {
         // TODO extract that filtering to a reusable function
-        todo!()
+        let targets: Vec<_> = self
+            .board(player)
+            .main_stage()
+            .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
+            // TODO check for rest?
+            .map(|(c, _)| CardDisplay::new(c, self))
+            .collect();
+
+        assert!(!targets.is_empty());
+        self.prompter
+            .prompt_choice("choose target for art:", targets)
+            .card
     }
 }
 
 #[derive(Debug)]
 pub struct GameBoard {
-    main_deck: Vec<CardUuid>,
-    oshi: Option<CardUuid>,
-    main_center: Option<CardUuid>,
-    main_collab: Option<CardUuid>,
-    back_stage: Vec<CardUuid>,
-    life: Vec<CardUuid>,
-    cheer_deck: Vec<CardUuid>,
-    holo_power: Vec<CardUuid>,
-    archive: Vec<CardUuid>,
-    hand: Vec<CardUuid>,
-    attachments: HashMap<CardUuid, CardUuid>,
+    pub main_deck: Vec<CardUuid>,
+    pub oshi: Option<CardUuid>,
+    pub main_center: Option<CardUuid>,
+    pub main_collab: Option<CardUuid>,
+    pub back_stage: Vec<CardUuid>,
+    pub life: Vec<CardUuid>,
+    pub cheer_deck: Vec<CardUuid>,
+    pub holo_power: Vec<CardUuid>,
+    pub archive: Vec<CardUuid>,
+    pub hand: Vec<CardUuid>,
+    pub attachments: HashMap<CardUuid, CardUuid>,
 }
 
 impl GameBoard {
@@ -1022,7 +1070,7 @@ impl GameBoard {
         self.main_center
             .iter()
             .chain(self.main_collab.iter())
-            .chain(self.oshi.iter())
+            // .chain(self.oshi.iter())
             .copied()
     }
     pub fn back_stage(&self) -> impl Iterator<Item = CardUuid> + '_ {
@@ -1125,7 +1173,7 @@ impl GameBoard {
         amount
     }
 
-    fn get_zone(&mut self, zone: Zone) -> &mut dyn ZoneControl {
+    pub fn get_zone(&mut self, zone: Zone) -> &mut dyn ZoneControl {
         match zone {
             Zone::All => unreachable!("a card cannot be in all zones"),
             Zone::MainDeck => &mut self.main_deck,
@@ -1168,7 +1216,7 @@ impl GameBoard {
     }
 }
 
-trait ZoneControl {
+pub trait ZoneControl {
     fn count(&self) -> usize;
     fn peek_top_card(&self) -> Option<CardUuid>;
     fn remove_card(&mut self, card: CardUuid);
@@ -1551,6 +1599,37 @@ impl CardDisplay {
 }
 
 impl Display for CardDisplay {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.text)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ArtDisplay {
+    card: CardUuid,
+    idx: usize,
+    text: String,
+}
+
+impl ArtDisplay {
+    pub fn new<P: Prompter>(card: CardUuid, idx: usize, game: &Game<P>) -> ArtDisplay {
+        let text = if let Some(m) = game.lookup_holo_member(card) {
+            let art = &m.attacks[idx];
+            format!(
+                "{} ({}{}) ({})",
+                art.name,
+                art.damage,
+                if art.effect.is_empty() { "" } else { "*" },
+                art.cost,
+            )
+        } else {
+            unreachable!("only members can have arts")
+        };
+        ArtDisplay { card, idx, text }
+    }
+}
+
+impl Display for ArtDisplay {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.text)
     }
