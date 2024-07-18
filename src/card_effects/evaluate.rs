@@ -1,15 +1,15 @@
 use super::effects::*;
-use crate::{gameplay::*, modifiers::DamageCounters};
+use crate::{gameplay::*, modifiers::DamageMarkers, HoloMemberHp};
 
 pub struct EvaluateContext<'a, P: Prompter> {
-    active_card: CardUuid,
-    card_target: CardUuid,
+    active_card: CardRef,
+    card_target: CardRef,
     player_target: Player,
     game: &'a mut Game<P>,
 }
 
 impl<'a, P: Prompter> EvaluateContext<'a, P> {
-    pub fn new(game: &'a mut Game<P>, card: CardUuid) -> Self {
+    pub fn new(game: &'a mut Game<P>, card: CardRef) -> Self {
         EvaluateContext {
             active_card: card,
             card_target: card,
@@ -24,7 +24,7 @@ pub trait EvaluateEffect {
 
     fn evaluate<P: Prompter>(&self, ctx: &mut EvaluateContext<P>) -> Self::Value;
 
-    fn start_evaluate<P: Prompter>(&self, game: &mut Game<P>, card: CardUuid) -> Self::Value {
+    fn start_evaluate<P: Prompter>(&self, game: &mut Game<P>, card: CardRef) -> Self::Value {
         self.evaluate(&mut EvaluateContext::new(game, card))
     }
 }
@@ -43,7 +43,7 @@ where
 }
 
 impl EvaluateEffect for Target {
-    type Value = CardUuid;
+    type Value = CardRef;
 
     fn evaluate<P: Prompter>(&self, ctx: &mut EvaluateContext<P>) -> Self::Value {
         match self {
@@ -52,7 +52,8 @@ impl EvaluateEffect for Target {
                 BuiltIn::CenterHoloMember => ctx
                     .game
                     .board(ctx.player_target)
-                    .main_center
+                    .get_zone(Zone::MainStageCenter)
+                    .peek_top_card()
                     .expect("there should be a center member"),
             },
             Target::Var(_) => todo!(),
@@ -88,7 +89,7 @@ impl EvaluateEffect for Action {
 
                 println!("heal {} for card {}", heal, mem.name);
                 ctx.game
-                    .remove_damage(card, DamageCounters::from_hp(heal as u16));
+                    .remove_damage(card, DamageMarkers::from_hp(heal as HoloMemberHp));
             }
             Action::Let(_, _) => todo!(),
             Action::When(_, _) => todo!(),

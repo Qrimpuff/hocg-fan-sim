@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::Display};
 
-use crate::{Action, Condition};
+use crate::{modifiers::DamageMarkers, Action, Condition, DamageModifier, Trigger};
 
 /**
  * Cards:
@@ -66,24 +66,22 @@ use crate::{Action, Condition};
   - text
  */
 
-pub type CardRef = CardId;
-
 #[derive(Debug)]
 pub struct Loadout {
-    pub oshi: CardRef,
-    pub main_deck: Vec<CardRef>,
-    pub cheer_deck: Vec<CardRef>,
+    pub oshi: CardNumber,
+    pub main_deck: Vec<CardNumber>,
+    pub cheer_deck: Vec<CardNumber>,
     // cosmetic...
 }
 
 #[derive(Debug)]
 pub struct GlobalLibrary {
-    pub cards: HashMap<CardRef, Card>,
+    pub cards: HashMap<CardNumber, Card>,
 }
 
 impl GlobalLibrary {
-    pub fn lookup_card(&self, card_ref: &CardRef) -> Option<&Card> {
-        self.cards.get(card_ref)
+    pub fn lookup_card(&self, card_number: &CardNumber) -> Option<&Card> {
+        self.cards.get(card_number)
     }
 }
 
@@ -119,44 +117,62 @@ pub enum Color {
     Yellow,
 }
 
-pub type CardId = String;
+pub type CardNumber = String;
 pub type IllustrationPath = String;
 pub type OshiLife = u8;
-pub type OshiAbilityCost = u8;
-pub type CardEffectCondition = Condition;
-pub type CardEffect = Vec<Action>;
 pub type HoloMemberHp = u16;
-pub type HoloMemberTag = String;
+pub type OshiSkillCost = u8;
+pub type HoloMemberArtCost = Vec<Color>;
+pub type CardEffectTrigger = Trigger;
+pub type CardEffectCondition = Condition;
+pub type CardEffectDamageModifier = DamageModifier;
+pub type CardEffect = Vec<Action>;
 pub type HoloMemberBatonPassCost = u8;
-pub type HoloMemberAttackCost = Vec<Color>;
-pub type HoloMemberAttackDamage = HoloMemberHp;
 
 #[derive(Debug)]
 pub struct OshiHoloMemberCard {
-    pub id: CardId,
+    pub card_number: CardNumber,
     pub name: String,
+    pub color: Color,
+    pub life: OshiLife,
+    pub skills: Vec<OshiSkill>,
     pub rarity: Rarity,
     pub illustration: IllustrationPath,
     pub artist: String,
-    pub color: Color,
-    pub life: OshiLife,
-    pub abilities: Vec<OshiAbility>,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum OshiAbilityKind {
-    Unknown,
 }
 
 #[derive(Debug)]
-pub struct OshiAbility {
-    pub kind: OshiAbilityKind,
+pub struct OshiSkill {
+    pub kind: OshiSkillKind,
     pub name: String,
-    pub cost: OshiAbilityCost,
-    pub trigger: Option<CardEffectCondition>,
+    pub cost: OshiSkillCost,
+    pub text: String,
+    pub trigger: Option<CardEffectTrigger>,
     pub condition: Option<CardEffectCondition>,
     pub effect: CardEffect,
-    pub text: String,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum OshiSkillKind {
+    Normal,
+    Special,
+}
+
+#[derive(Debug)]
+pub struct HoloMemberCard {
+    pub card_number: CardNumber,
+    pub name: String,
+    pub color: Color,
+    pub hp: HoloMemberHp,
+    pub rank: HoloMemberRank,
+    pub tags: Vec<HoloMemberTag>,
+    pub baton_pass_cost: HoloMemberBatonPassCost,
+    pub abilities: Vec<HoloMemberAbility>,
+    pub arts: Vec<HoloMemberArt>,
+    pub extra: Option<String>, // TODO will probably be an enum
+    pub rarity: Rarity,
+    pub illustration: IllustrationPath,
+    pub artist: String,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -164,81 +180,88 @@ pub enum HoloMemberRank {
     Debut,
     First,
     Second,
+    Spot,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum HoloMemberTag {
+    JP,
+    ID,
+    EN,
+    Generation0,
+    Generation1,
+    Generation2,
+    Generation3,
+    Generation4,
+    Generation5,
 }
 
 #[derive(Debug)]
-pub struct HoloMemberCard {
-    pub id: CardId,
+pub struct HoloMemberAbility {
+    pub kind: MemberAbilityKind,
     pub name: String,
-    pub rarity: Rarity,
-    pub illustration: IllustrationPath,
-    pub artist: String,
-    pub color: Color,
-    pub hp: HoloMemberHp,
-    pub rank: HoloMemberRank,
-    pub tags: Vec<HoloMemberTag>,
-    pub baton_pass_cost: HoloMemberBatonPassCost,
-    pub abilities: Vec<MemberAbility>,
-    pub attacks: Vec<MemberAttack>,
+    pub text: String,
+    pub condition: Option<CardEffectCondition>,
+    pub effect: CardEffect,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum MemberAbilityKind {
-    Unknown,
+    CollabEffect,
+    BloomEffect,
+    Gift(CardEffectTrigger), // TODO verify if gift is correct. what kind of effect they have?
 }
 
 #[derive(Debug)]
-pub struct MemberAbility {
-    pub kind: MemberAbilityKind,
+pub struct HoloMemberArt {
     pub name: String,
-    pub trigger: Option<CardEffectCondition>,
-    pub condition: Option<CardEffectCondition>,
-    pub effect: CardEffect,
+    pub cost: HoloMemberArtCost,
+    pub damage: HoloMemberArtDamage,
     pub text: String,
-}
-
-#[derive(Debug)]
-pub struct MemberAttack {
-    pub name: String,
-    pub cost: HoloMemberAttackCost,
-    pub damage: HoloMemberAttackDamage,
-    pub trigger: Option<CardEffectCondition>,
     pub condition: Option<CardEffectCondition>,
+    pub damage_modifier: Option<CardEffectDamageModifier>,
     pub effect: CardEffect,
-    pub text: String,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub enum SupportKind {
-    Unknown,
+pub enum HoloMemberArtDamage {
+    Basic(HoloMemberHp),
+    Plus(HoloMemberHp),
+    Minus(HoloMemberHp),
+    Uncertain,
 }
 
 #[derive(Debug)]
 pub struct SupportCard {
-    pub id: CardId,
+    pub card_number: CardNumber,
     pub name: String,
+    pub kind: SupportKind,
+    // limited_use: bool, // TODO limited is needed, but not sure how
+    pub text: String,
+    pub trigger: Option<CardEffectTrigger>,
+    pub condition: Option<CardEffectCondition>,
+    pub effect: CardEffect,
     pub rarity: Rarity,
     pub illustration: IllustrationPath,
     pub artist: String,
-    pub kind: SupportKind,
-    pub trigger: Option<CardEffectCondition>,
-    pub condition: Option<CardEffectCondition>,
-    pub effect: CardEffect,
-    pub text: String,
-    // support_mascot: String,
-    // limited_use: String,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum SupportKind {
+    Item,
+    Staff, // TODO verify if this is true
 }
 
 #[derive(Debug)]
 pub struct CheerCard {
-    pub id: CardId,
+    pub card_number: CardNumber,
     pub name: String,
+    pub color: Color,
+    pub text: String,
+    pub trigger: Option<CardEffectTrigger>,
+    pub condition: Option<CardEffectCondition>,
+    pub effect: Option<CardEffect>,
     pub rarity: Rarity,
     pub illustration: IllustrationPath,
     pub artist: String,
-    pub color: Color,
-    pub trigger: Option<CardEffectCondition>,
-    pub condition: Option<CardEffectCondition>,
-    pub effect: Option<CardEffect>,
-    pub text: String,
 }

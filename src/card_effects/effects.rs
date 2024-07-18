@@ -16,7 +16,9 @@ for def_holo (debuff less_atk (mul 10 (for self get dmg_count)) this_attack)
 for target discard_all_cheer
 */
 
-#[derive(Debug, Clone, PartialEq)]
+use crate::{gameplay::Step, HoloMemberHp};
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BuiltIn {
     CurrentCard,
     CenterHoloMember,
@@ -25,7 +27,7 @@ pub enum BuiltIn {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Var(pub String);
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Number(pub u32);
 
 #[derive(Debug, Clone, PartialEq)]
@@ -63,7 +65,25 @@ pub enum Condition {
     NotEquals(Value, Value),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Trigger {
+    AtStartOfTurn,
+    AtEndOfTurn,
+    AtStartOfStep(Step),
+    AtEndOfStep(Step),
+    AtStartOfPerformArt,
+    AtEndOfPerformArt,
+    OnDiceRoll,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DamageModifier {
+    Plus(HoloMemberHp),
+    Minus(HoloMemberHp),
+    Times(HoloMemberHp),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tag {
     // colors
     ColorWhite,
@@ -79,7 +99,7 @@ pub enum Tag {
     //abilities
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Property {
     HealthPoint,
     RetreatCost,
@@ -97,7 +117,7 @@ pub enum Debuff {
     LessAttack(Value),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LifeTime {
     ThisAttack,
     ThisTurn,

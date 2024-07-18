@@ -64,6 +64,6 @@ fn main() {
     game.start_game();
     // println!("{:#?}", &game);
 
-    while game.next_phase() {}
+    while game.next_step() {}
     println!("{:#?}", &game);
 }

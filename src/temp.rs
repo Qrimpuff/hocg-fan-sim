@@ -11,7 +11,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                 (
                     "White-Cheer".into(),
                     Card::Cheer(CheerCard {
-                        id: "White-Cheer".into(),
+                        card_number: "White-Cheer".into(),
                         name: "White Cheer".into(),
                         rarity: Rarity::Common,
                         illustration: "".into(),
@@ -26,7 +26,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                 (
                     "Green-Cheer".into(),
                     Card::Cheer(CheerCard {
-                        id: "Green-Cheer".into(),
+                        card_number: "Green-Cheer".into(),
                         name: "Green Cheer".into(),
                         rarity: Rarity::Common,
                         illustration: "".into(),
@@ -41,7 +41,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                 (
                     "Blue-Cheer".into(),
                     Card::Cheer(CheerCard {
-                        id: "Blue-Cheer".into(),
+                        card_number: "Blue-Cheer".into(),
                         name: "Blue Cheer".into(),
                         rarity: Rarity::Common,
                         illustration: "".into(),
@@ -56,7 +56,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                 (
                     "Red-Cheer".into(),
                     Card::Cheer(CheerCard {
-                        id: "Red-Cheer".into(),
+                        card_number: "Red-Cheer".into(),
                         name: "Red Cheer".into(),
                         rarity: Rarity::Common,
                         illustration: "".into(),
@@ -71,7 +71,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                 (
                     "Purple-Cheer".into(),
                     Card::Cheer(CheerCard {
-                        id: "Purple-Cheer".into(),
+                        card_number: "Purple-Cheer".into(),
                         name: "Purple Cheer".into(),
                         rarity: Rarity::Common,
                         illustration: "".into(),
@@ -86,7 +86,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                 (
                     "Yellow-Cheer".into(),
                     Card::Cheer(CheerCard {
-                        id: "Yellow-Cheer".into(),
+                        card_number: "Yellow-Cheer".into(),
                         name: "Yellow Cheer".into(),
                         rarity: Rarity::Common,
                         illustration: "".into(),
@@ -102,15 +102,15 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                 (
                     "Sora-Oshi".into(),
                     Card::OshiHoloMember(OshiHoloMemberCard {
-                        id: "Sora-Oshi".into(),
+                        card_number: "Sora-Oshi".into(),
                         name: "Sora".into(),
                         rarity: Rarity::OshiSuperRare,
                         illustration: "".into(),
                         artist: "".into(),
                         color: Color::White,
                         life: 5,
-                        abilities: vec![OshiAbility {
-                            kind: OshiAbilityKind::Unknown,
+                        skills: vec![OshiSkill {
+                            kind: OshiSkillKind::Normal,
                             name: "Sora dance".into(),
                             cost: 1,
                             trigger: None,
@@ -123,15 +123,15 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                 (
                     "AZKi-Oshi".into(),
                     Card::OshiHoloMember(OshiHoloMemberCard {
-                        id: "AZKi-Oshi".into(),
+                        card_number: "AZKi-Oshi".into(),
                         name: "AZKi".into(),
                         rarity: Rarity::OshiSuperRare,
                         illustration: "".into(),
                         artist: "".into(),
                         color: Color::Green,
                         life: 5,
-                        abilities: vec![OshiAbility {
-                            kind: OshiAbilityKind::Unknown,
+                        skills: vec![OshiSkill {
+                            kind: OshiSkillKind::Normal,
                             name: "AZKi sing".into(),
                             cost: 1,
                             trigger: None,
@@ -145,7 +145,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                 (
                     "Sora-Debut".into(),
                     Card::HoloMember(HoloMemberCard {
-                        id: "Sora-Debut".into(),
+                        card_number: "Sora-Debut".into(),
                         name: "Sora".into(),
                         rarity: Rarity::Uncommon,
                         illustration: "".into(),
@@ -153,24 +153,25 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         color: Color::White,
                         hp: 50,
                         rank: HoloMemberRank::Debut,
-                        tags: vec!["gen 0".into()],
+                        tags: vec![HoloMemberTag::Generation0],
                         baton_pass_cost: 1,
                         abilities: vec![],
-                        attacks: vec![MemberAttack {
+                        arts: vec![HoloMemberArt {
                             name: "attack 1".into(),
                             cost: vec![Color::ColorLess],
-                            trigger: None,
                             condition: None,
+                            damage_modifier: None,
                             effect: vec![],
                             text: "do something".into(),
-                            damage: 10,
+                            damage: HoloMemberArtDamage::Basic(10),
                         }],
+                        extra: None,
                     }),
                 ),
                 (
                     "Sora-1".into(),
                     Card::HoloMember(HoloMemberCard {
-                        id: "Sora-1".into(),
+                        card_number: "Sora-1".into(),
                         name: "Sora".into(),
                         rarity: Rarity::Rare,
                         illustration: "".into(),
@@ -178,24 +179,25 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         color: Color::White,
                         hp: 80,
                         rank: HoloMemberRank::First,
-                        tags: vec!["gen 0".into()],
+                        tags: vec![HoloMemberTag::Generation0],
                         baton_pass_cost: 1,
                         abilities: vec![],
-                        attacks: vec![MemberAttack {
+                        arts: vec![HoloMemberArt {
                             name: "attack 1-b".into(),
                             cost: vec![Color::White],
-                            trigger: None,
+                            damage_modifier: None,
                             condition: None,
                             effect: vec![],
                             text: "do something".into(),
-                            damage: 30,
+                            damage: HoloMemberArtDamage::Basic(30),
                         }],
+                        extra: None,
                     }),
                 ),
                 (
                     "Sora-2".into(),
                     Card::HoloMember(HoloMemberCard {
-                        id: "Sora-2".into(),
+                        card_number: "Sora-2".into(),
                         name: "Sora".into(),
                         rarity: Rarity::DoubleRare,
                         illustration: "".into(),
@@ -203,42 +205,36 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         color: Color::White,
                         hp: 120,
                         rank: HoloMemberRank::Second,
-                        tags: vec!["gen 0".into()],
+                        tags: vec![HoloMemberTag::Generation0],
                         baton_pass_cost: 1,
-                        abilities: vec![MemberAbility {
-                            kind: MemberAbilityKind::Unknown,
-                            name: "ability 1".into(),
-                            trigger: None,
-                            condition: None,
-                            effect: vec![],
-                            text: "do something".into(),
-                        }],
-                        attacks: vec![
-                            MemberAttack {
+                        abilities: vec![],
+                        arts: vec![
+                            HoloMemberArt {
                                 name: "attack 1-w".into(),
                                 cost: vec![Color::White],
-                                trigger: None,
                                 condition: None,
+                                damage_modifier: None,
                                 effect: vec![],
                                 text: "do something".into(),
-                                damage: 40,
+                                damage: HoloMemberArtDamage::Basic(40),
                             },
-                            MemberAttack {
+                            HoloMemberArt {
                                 name: "attack 1-x".into(),
                                 cost: vec![Color::White, Color::White],
-                                trigger: None,
                                 condition: None,
+                                damage_modifier: None,
                                 effect: vec![],
                                 text: "do something".into(),
-                                damage: 60,
+                                damage: HoloMemberArtDamage::Basic(60),
                             },
                         ],
+                        extra: None,
                     }),
                 ),
                 (
                     "AZKi-Debut".into(),
                     Card::HoloMember(HoloMemberCard {
-                        id: "AZKi-Debut".into(),
+                        card_number: "AZKi-Debut".into(),
                         name: "AZKi".into(),
                         rarity: Rarity::Uncommon,
                         illustration: "".into(),
@@ -246,24 +242,25 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         color: Color::Green,
                         hp: 50,
                         rank: HoloMemberRank::Debut,
-                        tags: vec!["gen 0".into()],
+                        tags: vec![HoloMemberTag::Generation0],
                         baton_pass_cost: 1,
                         abilities: vec![],
-                        attacks: vec![MemberAttack {
+                        arts: vec![HoloMemberArt {
                             name: "attack 1".into(),
                             cost: vec![Color::ColorLess],
-                            trigger: None,
+                            damage_modifier: None,
                             condition: None,
                             effect: vec![],
                             text: "do something".into(),
-                            damage: 20,
+                            damage: HoloMemberArtDamage::Basic(20),
                         }],
+                        extra: None,
                     }),
                 ),
                 (
                     "AZKi-1".into(),
                     Card::HoloMember(HoloMemberCard {
-                        id: "AZKi-1".into(),
+                        card_number: "AZKi-1".into(),
                         name: "AZKi".into(),
                         rarity: Rarity::Rare,
                         illustration: "".into(),
@@ -271,24 +268,25 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         color: Color::Green,
                         hp: 80,
                         rank: HoloMemberRank::First,
-                        tags: vec!["gen 0".into()],
+                        tags: vec![HoloMemberTag::Generation0],
                         baton_pass_cost: 1,
                         abilities: vec![],
-                        attacks: vec![MemberAttack {
+                        arts: vec![HoloMemberArt {
                             name: "attack 1-b".into(),
                             cost: vec![Color::Green],
-                            trigger: None,
+                            damage_modifier: None,
                             condition: None,
                             effect: vec![],
                             text: "do something".into(),
-                            damage: 40,
+                            damage: HoloMemberArtDamage::Basic(40),
                         }],
+                        extra: None,
                     }),
                 ),
                 (
                     "AZKi-2".into(),
                     Card::HoloMember(HoloMemberCard {
-                        id: "AZKi-2".into(),
+                        card_number: "AZKi-2".into(),
                         name: "AZKi".into(),
                         rarity: Rarity::DoubleRare,
                         illustration: "".into(),
@@ -296,48 +294,42 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         color: Color::Green,
                         hp: 120,
                         rank: HoloMemberRank::Second,
-                        tags: vec!["gen 0".into()],
+                        tags: vec![HoloMemberTag::Generation0],
                         baton_pass_cost: 1,
-                        abilities: vec![MemberAbility {
-                            kind: MemberAbilityKind::Unknown,
-                            name: "ability 1".into(),
-                            trigger: None,
-                            condition: None,
-                            effect: vec![],
-                            text: "do something".into(),
-                        }],
-                        attacks: vec![
-                            MemberAttack {
+                        abilities: vec![],
+                        arts: vec![
+                            HoloMemberArt {
                                 name: "attack 1-w".into(),
                                 cost: vec![Color::Green],
-                                trigger: None,
                                 condition: None,
+                                damage_modifier: None,
                                 effect: vec![],
                                 text: "do something".into(),
-                                damage: 40,
+                                damage: HoloMemberArtDamage::Basic(40),
                             },
-                            MemberAttack {
+                            HoloMemberArt {
                                 name: "attack 1-x".into(),
                                 cost: vec![Color::Green, Color::Green],
-                                trigger: None,
                                 condition: None,
+                                damage_modifier: None,
                                 effect: vec![],
                                 text: "do something".into(),
-                                damage: 50,
+                                damage: HoloMemberArtDamage::Basic(50),
                             },
                         ],
+                        extra: None,
                     }),
                 ),
                 // items
                 (
                     "Support-1".into(),
                     Card::Support(SupportCard {
-                        id: "Support-1".into(),
+                        card_number: "Support-1".into(),
                         name: "Heal".into(),
                         rarity: Rarity::Uncommon,
                         illustration: "".into(),
                         artist: "".into(),
-                        kind: SupportKind::Unknown,
+                        kind: SupportKind::Item,
                         trigger: None,
                         condition: None,
                         effect: "for center_mem heal 10".parse_effect().expect("const"),
@@ -347,12 +339,12 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                 (
                     "Support-2".into(),
                     Card::Support(SupportCard {
-                        id: "Support-2".into(),
+                        card_number: "Support-2".into(),
                         name: "Draw".into(),
                         rarity: Rarity::Uncommon,
                         illustration: "".into(),
                         artist: "".into(),
-                        kind: SupportKind::Unknown,
+                        kind: SupportKind::Item,
                         trigger: None,
                         condition: None,
                         effect: "draw 2".parse_effect().expect("const"),
