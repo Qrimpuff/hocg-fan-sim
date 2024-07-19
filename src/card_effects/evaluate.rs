@@ -1,6 +1,8 @@
 use super::effects::*;
 use crate::{gameplay::*, modifiers::DamageMarkers, HoloMemberHp};
 
+// TODO clean up this file after the list of effect is finalized
+
 pub struct EvaluateContext<'a, P: Prompter> {
     active_card: CardRef,
     card_target: CardRef,
@@ -19,44 +21,66 @@ impl<'a, P: Prompter> EvaluateContext<'a, P> {
     }
 }
 
+pub trait CombineEffect {
+    fn combine_effect(self, other: Self) -> Self;
+}
+
+impl CombineEffect for () {
+    fn combine_effect(self, _other: Self) -> Self {}
+}
+impl CombineEffect for bool {
+    fn combine_effect(self, other: Self) -> Self {
+        self && other
+    }
+}
+
 pub trait EvaluateEffect {
     type Value;
 
-    fn evaluate<P: Prompter>(&self, ctx: &mut EvaluateContext<P>) -> Self::Value;
+    fn evaluate<P: Prompter>(self, ctx: &mut EvaluateContext<P>) -> Self::Value;
 
-    fn start_evaluate<P: Prompter>(&self, game: &mut Game<P>, card: CardRef) -> Self::Value {
+    fn start_evaluate<P: Prompter>(self, game: &mut Game<P>, card: CardRef) -> Self::Value
+    where
+        Self: std::marker::Sized,
+    {
         self.evaluate(&mut EvaluateContext::new(game, card))
     }
 }
 
-impl<T> EvaluateEffect for Vec<T>
+impl<I, E, V> EvaluateEffect for I
 where
-    T: EvaluateEffect<Value = ()>,
+    I: IntoIterator<Item = E>,
+    E: EvaluateEffect<Value = V>,
+    V: CombineEffect + Default,
 {
-    type Value = ();
+    type Value = V;
 
-    fn evaluate<P: Prompter>(&self, ctx: &mut EvaluateContext<P>) -> Self::Value {
-        for action in self {
-            action.evaluate(ctx);
-        }
+    fn evaluate<P: Prompter>(self, ctx: &mut EvaluateContext<P>) -> Self::Value {
+        self.into_iter()
+            .map(|e| e.evaluate(ctx))
+            .reduce(|acc, v| acc.combine_effect(v))
+            .unwrap_or_default()
     }
 }
 
 impl EvaluateEffect for Target {
     type Value = CardRef;
 
-    fn evaluate<P: Prompter>(&self, ctx: &mut EvaluateContext<P>) -> Self::Value {
+    fn evaluate<P: Prompter>(self, ctx: &mut EvaluateContext<P>) -> Self::Value {
         match self {
-            Target::BuiltIn(b) => match b {
-                BuiltIn::CurrentCard => ctx.active_card,
-                BuiltIn::CenterHoloMember => ctx
-                    .game
-                    .board(ctx.player_target)
-                    .get_zone(Zone::MainStageCenter)
-                    .peek_top_card()
-                    .expect("there should be a center member"),
-            },
+            Target::CurrentCard => ctx.active_card,
+            Target::CenterHoloMember => ctx
+                .game
+                .board(ctx.player_target)
+                .get_zone(Zone::MainStageCenter)
+                .peek_top_card()
+                .expect("there should be a center member"),
             Target::Var(_) => todo!(),
+            Target::SelectMember(_) => todo!(),
+            Target::MembersOnStage => todo!(),
+            Target::With(_, _) => todo!(),
+            Target::SelectCheersUpTo(_, _) => todo!(),
+            Target::CheersInArchive => todo!(),
         }
     }
 }
@@ -64,7 +88,7 @@ impl EvaluateEffect for Target {
 impl EvaluateEffect for Action {
     type Value = ();
 
-    fn evaluate<P: Prompter>(&self, ctx: &mut EvaluateContext<P>) -> Self::Value {
+    fn evaluate<P: Prompter>(self, ctx: &mut EvaluateContext<P>) -> Self::Value {
         match self {
             Action::Noop => {
                 println!("*nothing happens*")
@@ -99,6 +123,8 @@ impl EvaluateEffect for Action {
                 println!("draw {} card(s)", draw);
                 ctx.game.active_board_mut().draw(draw as usize);
             }
+            Action::NextDiceNumber(_) => todo!(),
+            Action::Attach(_) => todo!(),
         }
     }
 }
@@ -106,7 +132,7 @@ impl EvaluateEffect for Action {
 impl EvaluateEffect for Value {
     type Value = u32;
 
-    fn evaluate<P: Prompter>(&self, ctx: &mut EvaluateContext<P>) -> Self::Value {
+    fn evaluate<P: Prompter>(self, ctx: &mut EvaluateContext<P>) -> Self::Value {
         match self {
             Value::For(_, _) => todo!(),
             Value::Get(_) => todo!(),
@@ -115,6 +141,8 @@ impl EvaluateEffect for Value {
             Value::Add(a, b) => a.evaluate(ctx) + b.evaluate(ctx),
             Value::Subtract(a, b) => a.evaluate(ctx) - b.evaluate(ctx),
             Value::Multiply(a, b) => a.evaluate(ctx) * b.evaluate(ctx),
+            Value::SelectDiceNumber => todo!(),
+            Value::All => u32::MAX,
         }
     }
 }
@@ -122,24 +150,29 @@ impl EvaluateEffect for Value {
 impl EvaluateEffect for Condition {
     type Value = bool;
 
-    fn evaluate<P: Prompter>(&self, _ctx: &mut EvaluateContext<P>) -> Self::Value {
+    fn evaluate<P: Prompter>(self, ctx: &mut EvaluateContext<P>) -> Self::Value {
         match self {
             Condition::Always => true,
             Condition::OncePerTurn => todo!(),
             Condition::Equals(_, _) => todo!(),
             Condition::Has(_, _) => todo!(),
             Condition::NotEquals(_, _) => todo!(),
+            Condition::And(a, b) => a.evaluate(ctx) && b.evaluate(ctx),
+            Condition::Or(a, b) => a.evaluate(ctx) || b.evaluate(ctx),
+
+            Condition::IsHoloMember => todo!(),
+            Condition::OncePerGame => todo!(),
         }
     }
 }
 
-impl EvaluateEffect for Option<Condition> {
-    type Value = bool;
+// impl EvaluateEffect for Option<Condition> {
+//     type Value = bool;
 
-    fn evaluate<P: Prompter>(&self, ctx: &mut EvaluateContext<P>) -> Self::Value {
-        match self {
-            Some(c) => c.evaluate(ctx),
-            None => Condition::Always.evaluate(ctx),
-        }
-    }
-}
+//     fn evaluate<P: Prompter>(&self, ctx: &mut EvaluateContext<P>) -> Self::Value {
+//         match self {
+//             Some(c) => c.evaluate(ctx),
+//             None => Condition::Always.evaluate(ctx),
+//         }
+//     }
+// }

@@ -24,6 +24,7 @@ pub enum Error {
     UnbalancedBrackets,
     NoTokens,
     RemainingTokens,
+    UnexpectedToken(String, String),
 }
 
 impl Display for Error {
@@ -36,7 +37,12 @@ impl Display for Error {
             Error::UnbalancedBrackets => formatter.write_str("Unbalanced brackets"),
             Error::NoTokens => formatter.write_str("No tokens"),
             Error::RemainingTokens => formatter.write_str("Remaining tokens"),
-            /* and so forth */
+            Error::UnexpectedToken(expected, unexpected) => {
+                write!(
+                    formatter,
+                    r#"Unexpected token: "{unexpected}", expected <{expected}>"#
+                )
+            } /* and so forth */
         }
     }
 }

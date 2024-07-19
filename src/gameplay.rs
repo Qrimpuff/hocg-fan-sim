@@ -136,7 +136,7 @@ impl<P: Prompter> Game<P> {
         !player
             .hand()
             .filter_map(|c| self.lookup_holo_member(c))
-            .any(|m| m.rank == HoloMemberRank::Debut)
+            .any(|m| m.level == HoloMemberLevel::Debut)
     }
 
     pub fn handle_mulligan(&mut self, player: Player) {
@@ -804,7 +804,7 @@ impl<P: Prompter> Game<P> {
             .board(player)
             .hand()
             .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
-            .filter(|(_, m)| m.rank == HoloMemberRank::Debut)
+            .filter(|(_, m)| m.level == HoloMemberLevel::Debut)
             .map(|(c, _)| CardDisplay::new(c, self))
             .collect();
 
@@ -820,7 +820,7 @@ impl<P: Prompter> Game<P> {
             .board(player)
             .hand()
             .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
-            .filter(|(_, m)| m.rank == HoloMemberRank::Debut || m.rank == HoloMemberRank::Spot)
+            .filter(|(_, m)| m.level == HoloMemberLevel::Debut || m.level == HoloMemberLevel::Spot)
             .map(|(c, _)| CardDisplay::new(c, self))
             .collect();
 
@@ -884,8 +884,8 @@ impl<P: Prompter> Game<P> {
             .hand()
             .filter_map(|c| match self.lookup_card(c) {
                 Card::OshiHoloMember(_) => unreachable!("oshi cannot be in hand"),
-                Card::HoloMember(m) => match m.rank {
-                    HoloMemberRank::Debut | HoloMemberRank::Spot => {
+                Card::HoloMember(m) => match m.level {
+                    HoloMemberLevel::Debut | HoloMemberLevel::Spot => {
                         // check condition for back stage
                         let count = self
                             .board(player)
@@ -898,20 +898,20 @@ impl<P: Prompter> Game<P> {
                             None
                         }
                     }
-                    HoloMemberRank::First | HoloMemberRank::Second => {
+                    HoloMemberLevel::First | HoloMemberLevel::Second => {
                         // TODO this is duplicated in the bloom prompt
                         // check condition for bloom
                         let bloom_lookup = (
-                            match m.rank {
-                                HoloMemberRank::Debut | HoloMemberRank::Spot => {
+                            match m.level {
+                                HoloMemberLevel::Debut | HoloMemberLevel::Spot => {
                                     panic!("can only bloom from first or second")
                                 }
                                 // will match on multiple names, if the card has them
-                                HoloMemberRank::First => {
-                                    vec![HoloMemberRank::Debut, HoloMemberRank::First]
+                                HoloMemberLevel::First => {
+                                    vec![HoloMemberLevel::Debut, HoloMemberLevel::First]
                                 }
                                 // TODO verify 2nd -> 2nd
-                                HoloMemberRank::Second => vec![HoloMemberRank::First],
+                                HoloMemberLevel::Second => vec![HoloMemberLevel::First],
                             },
                             m.names().collect::<Vec<_>>(),
                         );
@@ -924,8 +924,8 @@ impl<P: Prompter> Game<P> {
                             // TODO cannot bloom the member twice  in a turn
                             // TODO not sure if the name needs to be consistent with debut? e.i. Sora -> Sora/AZKi -> AZKi
                             .any(|m| {
-                                // match on rank
-                                bloom_lookup.0.iter().any(|r| *r == m.rank)
+                                // match on level
+                                bloom_lookup.0.iter().any(|r| *r == m.level)
                                 // match on name
                                     && bloom_lookup
                                         .1
@@ -1042,14 +1042,14 @@ impl<P: Prompter> Game<P> {
         };
 
         let bloom_lookup = (
-            match bloom.rank {
-                HoloMemberRank::Debut | HoloMemberRank::Spot => {
+            match bloom.level {
+                HoloMemberLevel::Debut | HoloMemberLevel::Spot => {
                     panic!("can only bloom from first or second")
                 }
                 // will match on multiple names, if the card has them
-                HoloMemberRank::First => vec![HoloMemberRank::Debut, HoloMemberRank::First],
+                HoloMemberLevel::First => vec![HoloMemberLevel::Debut, HoloMemberLevel::First],
                 // TODO verify 2nd -> 2nd
-                HoloMemberRank::Second => vec![HoloMemberRank::First],
+                HoloMemberLevel::Second => vec![HoloMemberLevel::First],
             },
             bloom.names().collect::<Vec<_>>(),
         );
@@ -1063,8 +1063,8 @@ impl<P: Prompter> Game<P> {
             // TODO cannot bloom the member twice  in a turn
             // TODO not sure if the name needs to be consistent with debut? e.i. Sora -> Sora/AZKi -> AZKi
             .filter(|(_, m)| {
-                // match on rank
-                bloom_lookup.0.iter().any(|r| *r == m.rank)
+                // match on level
+                bloom_lookup.0.iter().any(|r| *r == m.level)
                 // match on name
                     && bloom_lookup
                         .1
@@ -1114,7 +1114,7 @@ impl<P: Prompter> Game<P> {
                 .collect();
             let arts: Vec<_> = arts
                 .into_iter()
-                .filter(|(_, cond)| cond.start_evaluate(self, card))
+                .filter(|(_, cond)| cond.clone().start_evaluate(self, card))
                 .collect();
             let arts: Vec<_> = arts
                 .into_iter()
@@ -1737,7 +1737,7 @@ impl CardDisplay {
                 format!(
                     "{} ({:?}) ({}/{}) ({} cheers) (?) ({})",
                     m.name,
-                    m.rank,
+                    m.level,
                     game.remaining_hp(card),
                     m.hp,
                     game.attached_cheers(card)

@@ -2,15 +2,7 @@ use super::effects::*;
 use super::parse::*;
 
 // TODO try to build a macro for these, or somehow use serde
-
-impl From<BuiltIn> for Tokens {
-    fn from(value: BuiltIn) -> Self {
-        match value {
-            BuiltIn::CurrentCard => "self".into(),
-            BuiltIn::CenterHoloMember => "center_mem".into(),
-        }
-    }
-}
+// TODO clean up this file after the list of effect is finalized
 
 impl From<Var> for Tokens {
     fn from(value: Var) -> Self {
@@ -27,8 +19,16 @@ impl From<Number> for Tokens {
 impl From<Target> for Tokens {
     fn from(value: Target) -> Self {
         match value {
-            Target::BuiltIn(b) => b.into(),
+            Target::CurrentCard => "self".into(),
+            Target::CenterHoloMember => "center_mem".into(),
             Target::Var(v) => v.into(),
+            Target::SelectMember(a) => ["select_member".into(), (*a).into()].into(),
+            Target::MembersOnStage => "members_on_stage".into(),
+            Target::With(a, b) => [(*a).into(), "with".into(), b.into()].into(),
+            Target::SelectCheersUpTo(a, b) => {
+                ["select_cheers_up_to".into(), (*a).into(), (*b).into()].into()
+            }
+            Target::CheersInArchive => "cheers_in_archive".into(),
         }
     }
 }
@@ -58,6 +58,8 @@ impl From<Action> for Tokens {
             Action::Let(r, v) => ["let".into(), r.into(), v.into()].into(),
             Action::When(c, a) => ["when".into(), c.into(), (*a).into()].into(),
             Action::Draw(d) => ["draw".into(), d.into()].into(),
+            Action::NextDiceNumber(a) => ["next_dice_number".into(), a.into()].into(),
+            Action::Attach(a) => ["attach".into(), a.into()].into(),
         }
     }
 }
@@ -72,6 +74,8 @@ impl From<Value> for Tokens {
             Value::Add(a, b) => [(*a).into(), "+".into(), (*b).into()].into(),
             Value::Subtract(a, b) => [(*a).into(), "-".into(), (*b).into()].into(),
             Value::Multiply(a, b) => [(*a).into(), "*".into(), (*b).into()].into(),
+            Value::SelectDiceNumber => "select_dice_number".into(),
+            Value::All => "all".into(),
         }
     }
 }
@@ -84,6 +88,10 @@ impl From<Condition> for Tokens {
             Condition::Equals(a, b) => ["eq".into(), a.into(), b.into()].into(),
             Condition::Has(a, b) => ["has".into(), a.into(), b.into()].into(),
             Condition::NotEquals(a, b) => ["neq".into(), a.into(), b.into()].into(),
+            Condition::And(a, b) => [(*a).into(), "and".into(), (*b).into()].into(),
+            Condition::Or(a, b) => [(*a).into(), "or".into(), (*b).into()].into(),
+            Condition::IsHoloMember => "is_holo_member".into(),
+            Condition::OncePerGame => "once_per_game".into(),
         }
     }
 }
@@ -91,15 +99,15 @@ impl From<Condition> for Tokens {
 impl From<Tag> for Tokens {
     fn from(value: Tag) -> Self {
         match value {
-            Tag::ColorWhite => "c_white".into(),
-            Tag::ColorGreen => "c_green".into(),
-            Tag::ColorBlue => "c_blue".into(),
-            Tag::ColorRed => "c_red".into(),
-            Tag::ColorPurple => "c_purple".into(),
-            Tag::ColorYellow => "c_yellow".into(),
-            Tag::StageDebut => "s_debut".into(),
-            Tag::StageFirst => "s_first".into(),
-            Tag::StageSecond => "s_second".into(),
+            Tag::ColorWhite => "color_white".into(),
+            Tag::ColorGreen => "color_green".into(),
+            Tag::ColorBlue => "color_blue".into(),
+            Tag::ColorRed => "color_red".into(),
+            Tag::ColorPurple => "color_purple".into(),
+            Tag::ColorYellow => "color_yellow".into(),
+            Tag::LevelDebut => "level_debut".into(),
+            Tag::LevelFirst => "level_first".into(),
+            Tag::LevelSecond => "level_second".into(),
         }
     }
 }
@@ -138,6 +146,17 @@ impl From<LifeTime> for Tokens {
             LifeTime::ThisTurn => "this_turn".into(),
             LifeTime::NextTurn => "next_turn".into(),
             LifeTime::Limitless => "_".into(),
+        }
+    }
+}
+
+impl From<DamageModifier> for Tokens {
+    fn from(value: DamageModifier) -> Self {
+        match value {
+            DamageModifier::None => "none".into(),
+            DamageModifier::Plus(a) => ["plus".into(), a.into()].into(),
+            DamageModifier::Minus(a) => ["minus".into(), a.into()].into(),
+            DamageModifier::Times(a) => ["times".into(), a.into()].into(),
         }
     }
 }

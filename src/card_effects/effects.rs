@@ -18,11 +18,7 @@ for target discard_all_cheer
 
 use crate::{gameplay::Step, HoloMemberHp};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum BuiltIn {
-    CurrentCard,
-    CenterHoloMember,
-}
+// TODO clean up this file after the list of effect is finalized
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Var(pub String);
@@ -32,7 +28,13 @@ pub struct Number(pub u32);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Target {
-    BuiltIn(BuiltIn),
+    CurrentCard,
+    CenterHoloMember,
+    SelectMember(Box<Target>),
+    SelectCheersUpTo(Box<Value>, Box<Target>),
+    MembersOnStage,
+    CheersInArchive,
+    With(Box<Target>, Tag),
     Var(Var),
 }
 
@@ -46,6 +48,8 @@ pub enum Action {
     Let(Var, Value),
     When(Condition, Box<Action>),
     Draw(Value),
+    NextDiceNumber(Value),
+    Attach(Target),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -57,19 +61,27 @@ pub enum Value {
     Add(Box<Value>, Box<Value>),
     Subtract(Box<Value>, Box<Value>),
     Multiply(Box<Value>, Box<Value>),
+    SelectDiceNumber,
+    All,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Condition {
     Always,
-    OncePerTurn,
     Equals(Value, Value),
     Has(Target, Tag),
     NotEquals(Value, Value),
+    And(Box<Condition>, Box<Condition>),
+    Or(Box<Condition>, Box<Condition>),
+
+    OncePerTurn,
+    OncePerGame,
+    IsHoloMember,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Trigger {
+    ActivateInMainStep,
     AtStartOfTurn,
     AtEndOfTurn,
     AtStartOfStep(Step),
@@ -82,9 +94,10 @@ pub enum Trigger {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DamageModifier {
-    Plus(HoloMemberHp),
-    Minus(HoloMemberHp),
-    Times(HoloMemberHp),
+    None,
+    Plus(Number),
+    Minus(Number),
+    Times(Number),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -97,9 +110,9 @@ pub enum Tag {
     ColorPurple,
     ColorYellow,
     // stages
-    StageDebut,
-    StageFirst,
-    StageSecond,
+    LevelDebut,
+    LevelFirst,
+    LevelSecond,
     //abilities
 }
 

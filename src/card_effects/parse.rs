@@ -33,6 +33,17 @@ pub fn infix_token_map() -> &'static HashMap<&'static str, &'static str> {
     })
 }
 
+pub trait SerializeEffect {
+    fn serialize_effect(self) -> String;
+}
+
+impl<T: Into<Tokens>> SerializeEffect for T {
+    fn serialize_effect(self) -> String {
+        let tokens: Tokens = self.into();
+        tokens.to_string()
+    }
+}
+
 pub trait ParseEffect {
     fn parse_effect<F: ParseTokens>(&self) -> Result<F>;
 }
@@ -69,7 +80,7 @@ pub trait ParseTokens: Sized {
     fn take_param<T: ParseTokens>(tokens: &mut VecDeque<Tokens>) -> Result<T> {
         let (ctx, clean) = Self::get_tokens_context(tokens)?;
         let param = T::parse_tokens(ctx);
-        if clean {
+        if param.is_ok() && clean {
             Self::clean_list(tokens)?;
         }
         param
@@ -187,17 +198,20 @@ impl FromStr for Tokens {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        fn add_token(list: &mut VecDeque<Tokens>, token: String) {
+        fn add_token(list: &mut VecDeque<Tokens>, token: String) -> Result<()> {
             if !token.is_empty() {
                 // process infix tokens
                 if let Some(replace) = infix_token_map().get(token.as_str()) {
-                    let prev = list.pop_back().expect("infix should be after a token");
+                    let prev = list
+                        .pop_back()
+                        .ok_or(Error::Message("infix should be after a token".into()))?;
                     list.push_back(Tokens::Token((*replace).into()));
                     list.push_back(prev);
                 } else {
                     list.push_back(Tokens::Token(token));
                 }
             }
+            Ok(())
         }
 
         let mut stack = VecDeque::new();
@@ -209,36 +223,31 @@ impl FromStr for Tokens {
             match c {
                 '(' => {
                     bracket_level += 1;
-                    add_token(&mut list, token);
+                    add_token(&mut list, token)?;
                     token = String::new();
                     stack.push_back(list);
                     list = VecDeque::new();
                 }
                 ')' => {
                     bracket_level -= 1;
-                    add_token(&mut list, token);
+                    add_token(&mut list, token)?;
                     token = String::new();
-                    let mut _list = stack
-                        .pop_back()
-                        .ok_or(Error::MissingBracket)?;
+                    let mut _list = stack.pop_back().ok_or(Error::MissingBracket)?;
                     if list.len() > 1 {
                         _list.push_back(Tokens::List(list));
                     } else {
-                        _list.push_back(
-                            list.pop_back()
-                                .ok_or(Error::NoTokens)?,
-                        );
+                        _list.push_back(list.pop_back().ok_or(Error::NoTokens)?);
                     }
                     list = _list;
                 }
                 c if c.is_whitespace() => {
-                    add_token(&mut list, token);
+                    add_token(&mut list, token)?;
                     token = String::new();
                 }
                 c => token.push(c),
             }
         }
-        add_token(&mut list, token);
+        add_token(&mut list, token)?;
 
         // check balanced bracket
         if bracket_level != 0 {
