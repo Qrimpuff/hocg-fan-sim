@@ -106,12 +106,15 @@ impl EvaluateEffect for Action {
 impl EvaluateEffect for Value {
     type Value = u32;
 
-    fn evaluate<P: Prompter>(&self, _ctx: &mut EvaluateContext<P>) -> Self::Value {
+    fn evaluate<P: Prompter>(&self, ctx: &mut EvaluateContext<P>) -> Self::Value {
         match self {
             Value::For(_, _) => todo!(),
             Value::Get(_) => todo!(),
             Value::Number(n) => n.0,
             Value::Var(_) => todo!(),
+            Value::Add(a, b) => a.evaluate(ctx) + b.evaluate(ctx),
+            Value::Subtract(a, b) => a.evaluate(ctx) - b.evaluate(ctx),
+            Value::Multiply(a, b) => a.evaluate(ctx) * b.evaluate(ctx),
         }
     }
 }

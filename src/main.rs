@@ -7,11 +7,12 @@ mod gameplay;
 mod modifiers;
 mod temp;
 
-use std::{env, fmt::Display, iter, str::FromStr};
+use std::{env, fmt::Display, iter, str::FromStr, task::Context};
 
 use card_effects::*;
 use cards::*;
-use gameplay::{DefaultPrompter, Game, RandomPrompter};
+use evaluate::{EvaluateContext, EvaluateEffect};
+use gameplay::{CardRef, DefaultPrompter, Game, RandomPrompter};
 use temp::test_library;
 
 type Result<T> = std::result::Result<T, Error>;

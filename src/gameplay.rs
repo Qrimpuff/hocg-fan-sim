@@ -135,13 +135,7 @@ impl<P: Prompter> Game<P> {
         // need to have at least one debut member to place on the stage
         !player
             .hand()
-            .filter_map(|c| {
-                if let Card::HoloMember(m) = self.lookup_card(c) {
-                    Some(m)
-                } else {
-                    None
-                }
-            })
+            .filter_map(|c| self.lookup_holo_member(c))
             .any(|m| m.rank == HoloMemberRank::Debut)
     }
 
@@ -256,6 +250,7 @@ impl<P: Prompter> Game<P> {
         let other_debut_1: Vec<_> = self.prompt_for_first_back_stage(Player::One);
         self.player_1
             .send_many_to_zone(other_debut_1, Zone::BackStage);
+
         println!("prompt other debut 2");
         let other_debut_2: Vec<_> = self.prompt_for_first_back_stage(Player::Two);
         self.player_2
@@ -265,23 +260,18 @@ impl<P: Prompter> Game<P> {
         // TODO oshi and members reveal
 
         // - draw life cards face down from cheer
-        let Card::OshiHoloMember(oshi_1) = self
+        let oshi_1 = self
             .player_1
             .oshi
-            .map(|c| self.lookup_card(c))
-            .expect("oshi should always be there")
-        else {
-            panic!("card should be oshi")
-        };
+            .and_then(|c| self.lookup_oshi(c))
+            .expect("oshi should always be there");
         self.player_1.add_life(oshi_1.life);
-        let Card::OshiHoloMember(oshi_2) = self
+
+        let oshi_2 = self
             .player_2
             .oshi
-            .map(|c| self.lookup_card(c))
-            .expect("oshi should always be there")
-        else {
-            panic!("card should be oshi")
-        };
+            .and_then(|c| self.lookup_oshi(c))
+            .expect("oshi should always be there");
         self.player_2.add_life(oshi_2.life);
 
         // - game start
@@ -427,7 +417,6 @@ impl<P: Prompter> Game<P> {
                     // - place debut member on back stage
                     self.active_board_mut().send_to_zone(card, Zone::BackStage);
 
-
                     // TODO maybe register for any abilities that could trigger?
                     // TODO remove the registration once they leave the board?
                 }
@@ -448,21 +437,19 @@ impl<P: Prompter> Game<P> {
                     // - use support card
                     //   - only one limited per turn
                     //   - otherwise unlimited
-                    let sup = self.lookup_card(card);
+                    let sup = self
+                        .lookup_support(card)
+                        .expect("only support should be allowed here");
 
-                    if let Card::Support(sup) = sup {
-                        let condition = sup.condition.clone();
-                        let effect = sup.effect.clone();
-                        if condition.start_evaluate(self, card) {
-                            effect.start_evaluate(self, card);
+                    let condition = sup.condition.clone();
+                    let effect = sup.effect.clone();
+                    if condition.start_evaluate(self, card) {
+                        effect.start_evaluate(self, card);
 
-                            // send the used card to the archive
-                            self.send_to_archive(card);
-                        } else {
-                            unreachable!("support should not be an option, if it's not allowed")
-                        }
+                        // send the used card to the archive
+                        self.send_to_archive(card);
                     } else {
-                        unreachable!("only support card can be used as support card")
+                        unreachable!("support should not be an option, if it's not allowed")
                     }
                 }
                 MainStepAction::CollabMember(card) => {
@@ -511,53 +498,35 @@ impl<P: Prompter> Game<P> {
                     println!("- action: Use abilities");
                     // TODO verify use abilities action
 
-                    let mem_oshi = self.lookup_card(card);
+                    let oshi = self
+                        .lookup_oshi(card)
+                        .expect("only oshi should be using abilities");
 
                     // - use abilities (including oshi)
                     //   - oshi power uses card in power zone
                     //   - once per turn / once per game?
                     // TODO prevent duplicate ability use with (buff) (condition)
-                    match mem_oshi {
-                        Card::OshiHoloMember(oshi) => {
-                            let condition = oshi.skills[i].condition.clone();
-                            let cost = oshi.skills[i].cost.into();
-                            let effect = oshi.skills[i].effect.clone();
+                    let condition = oshi.skills[i].condition.clone();
+                    let cost = oshi.skills[i].cost.into();
+                    let effect = oshi.skills[i].effect.clone();
 
-                            if self.active_board().holo_power.count() < cost {
-                                unreachable!(
-                                    "oshi ability should not be an option, if the cost could not be payed"
-                                )
-                            }
+                    if self.active_board().holo_power.count() < cost {
+                        unreachable!(
+                            "oshi ability should not be an option, if the cost could not be payed"
+                        )
+                    }
 
-                            if condition.start_evaluate(self, card) {
-                                // pay the cost of the oshi ability
-                                self.active_board_mut().send_from_zone(
-                                    Zone::HoloPower,
-                                    Zone::Archive,
-                                    cost,
-                                );
+                    if condition.start_evaluate(self, card) {
+                        // pay the cost of the oshi ability
+                        self.active_board_mut().send_from_zone(
+                            Zone::HoloPower,
+                            Zone::Archive,
+                            cost,
+                        );
 
-                                effect.start_evaluate(self, card);
-                            } else {
-                                unreachable!(
-                                    "oshi ability should not be an option, if it's not allowed"
-                                )
-                            }
-                        }
-                        Card::HoloMember(mem) => {
-                            let condition = mem.abilities[i].condition.clone();
-                            let effect = mem.abilities[i].effect.clone();
-
-                            if condition.start_evaluate(self, card) {
-                                effect.start_evaluate(self, card);
-                            } else {
-                                unreachable!(
-                                    "mem ability should not be an option, if it's not allowed"
-                                )
-                            }
-                        }
-                        Card::Support(_) => unimplemented!("support doesn't have anilities"),
-                        Card::Cheer(_) => unimplemented!("cheer doesn't have anilities"),
+                        effect.start_evaluate(self, card);
+                    } else {
+                        unreachable!("oshi ability should not be an option, if it's not allowed")
                     }
                 }
                 MainStepAction::Done => {
@@ -708,9 +677,23 @@ impl<P: Prompter> Game<P> {
             .lookup_card(card_number)
             .expect("should be in the library")
     }
+    pub fn lookup_oshi(&self, card: CardRef) -> Option<&OshiHoloMemberCard> {
+        if let Card::OshiHoloMember(o) = self.lookup_card(card) {
+            Some(o)
+        } else {
+            None
+        }
+    }
     pub fn lookup_holo_member(&self, card: CardRef) -> Option<&HoloMemberCard> {
         if let Card::HoloMember(m) = self.lookup_card(card) {
             Some(m)
+        } else {
+            None
+        }
+    }
+    pub fn lookup_support(&self, card: CardRef) -> Option<&SupportCard> {
+        if let Card::Support(s) = self.lookup_card(card) {
+            Some(s)
         } else {
             None
         }
@@ -730,20 +713,19 @@ impl<P: Prompter> Game<P> {
     }
 
     pub fn pay_baton_pass_cost(&mut self, card: CardRef) {
-        if let Card::HoloMember(mem) = self.lookup_card(card) {
-            // TODO cost should automatic when there is a single cheers color
-            let cheers = self.prompt_for_baton_pass(card, mem.baton_pass_cost);
-            self.active_board_mut().remove_many_attachments(cheers);
-        } else {
-            panic!("cannot pay baton pass cost for non member");
-        }
+        let mem = self
+            .lookup_holo_member(card)
+            .expect("cannot pay baton pass cost for non member");
+        // TODO cost should automatic when there is a single cheers color
+        let cheers = self.prompt_for_baton_pass(card, mem.baton_pass_cost);
+        self.active_board_mut().remove_many_attachments(cheers);
     }
 
     pub fn attached_cheers(&self, card: CardRef) -> impl Iterator<Item = CardRef> + '_ {
         self.board_for_card(card)
             .attachments(card)
             .into_iter()
-            .filter(|a| matches!(self.lookup_card(*a), Card::Cheer(_)))
+            .filter(|a| self.lookup_cheer(*a).is_some())
     }
 
     pub fn required_attached_cheers(&self, card: CardRef, cheers: &[Color]) -> bool {
@@ -880,7 +862,6 @@ impl<P: Prompter> Game<P> {
             .board(player)
             .stage()
             .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
-            // TODO check for rest?
             .map(|(c, _)| CardDisplay::new(c, self))
             .collect();
 
@@ -918,21 +899,39 @@ impl<P: Prompter> Game<P> {
                         }
                     }
                     HoloMemberRank::First | HoloMemberRank::Second => {
-                        // TODO only once per turn (buff)
+                        // TODO this is duplicated in the bloom prompt
                         // check condition for bloom
-                        let bloom_lookup = match m.rank {
-                            HoloMemberRank::Debut | HoloMemberRank::Spot => {
-                                panic!("can only bloom from first or second")
-                            }
-                            // TODO better match, maybe with (tags)
-                            HoloMemberRank::First => (HoloMemberRank::Debut, &m.name),
-                            HoloMemberRank::Second => (HoloMemberRank::First, &m.name),
-                        };
+                        let bloom_lookup = (
+                            match m.rank {
+                                HoloMemberRank::Debut | HoloMemberRank::Spot => {
+                                    panic!("can only bloom from first or second")
+                                }
+                                // will match on multiple names, if the card has them
+                                HoloMemberRank::First => {
+                                    vec![HoloMemberRank::Debut, HoloMemberRank::First]
+                                }
+                                // TODO verify 2nd -> 2nd
+                                HoloMemberRank::Second => vec![HoloMemberRank::First],
+                            },
+                            m.names().collect::<Vec<_>>(),
+                        );
                         let can_bloom = self
                             .board(player)
                             .stage()
                             .filter_map(|c| self.lookup_holo_member(c))
-                            .any(|m| bloom_lookup == (m.rank, &m.name));
+                            // TODO cannot bloom to remaining hp < 0
+                            // TODO cannot bloom on each player first turn
+                            // TODO cannot bloom the member twice  in a turn
+                            // TODO not sure if the name needs to be consistent with debut? e.i. Sora -> Sora/AZKi -> AZKi
+                            .any(|m| {
+                                // match on rank
+                                bloom_lookup.0.iter().any(|r| *r == m.rank)
+                                // match on name
+                                    && bloom_lookup
+                                        .1
+                                        .iter()
+                                        .any(|n| m.names().any(|m_n| *n == m_n))
+                            });
                         if can_bloom {
                             Some(MainStepAction::BloomMember(c))
                         } else {
@@ -1006,9 +1005,10 @@ impl<P: Prompter> Game<P> {
         // abilities
         actions.extend(
             self.board(player)
-                .stage()
+                .oshi
+                .iter()
                 .flat_map(|c| {
-                    match self.lookup_card(c) {
+                    match self.lookup_card(*c) {
                         Card::OshiHoloMember(o) => o
                             .skills
                             .iter()
@@ -1016,19 +1016,11 @@ impl<P: Prompter> Game<P> {
                             .filter(|(_, a)| self.board(player).holo_power.count() >= a.cost.into())
                             // TODO check condition for ability
                             // TODO prevent duplicate ability use with (buff)
-                            .map(|(i, _a)| MainStepAction::UseAbilities(c, i))
+                            .map(|(i, _a)| MainStepAction::UseAbilities(*c, i))
                             .collect::<Vec<_>>(),
-                        // Card::HoloMember(m) => m
-                        //     .abilities
-                        //     .iter()
-                        //     .enumerate()
-                        //     // TODO check condition for ability
-                        //     // TODO prevent duplicate ability use with (buff)
-                        //     .map(|(i, _a)| MainStepAction::UseAbilities(c, i))
-                        //     .collect::<Vec<_>>(),
-                        Card::HoloMember(_) => todo!("member should not have clickable abilities"),
-                        Card::Support(_) => todo!("support could maybe have ability once attached"),
-                        Card::Cheer(_) => todo!("cheer could maybe have ability once attached"),
+                        Card::HoloMember(_) => todo!("members are not in oshi position"),
+                        Card::Support(_) => todo!("supports are not in oshi position"),
+                        Card::Cheer(_) => todo!("cheers are not in oshi position"),
                     }
                 })
                 .map(|a| MainStepActionDisplay::new(a, self)),
@@ -1049,20 +1041,36 @@ impl<P: Prompter> Game<P> {
             panic!("can only bloom from member")
         };
 
-        let bloom_lookup = match bloom.rank {
-            HoloMemberRank::Debut | HoloMemberRank::Spot => {
-                panic!("can only bloom from first or second")
-            }
-            // TODO better match, maybe with (tags)
-            HoloMemberRank::First => (HoloMemberRank::Debut, &bloom.name),
-            HoloMemberRank::Second => (HoloMemberRank::First, &bloom.name),
-        };
+        let bloom_lookup = (
+            match bloom.rank {
+                HoloMemberRank::Debut | HoloMemberRank::Spot => {
+                    panic!("can only bloom from first or second")
+                }
+                // will match on multiple names, if the card has them
+                HoloMemberRank::First => vec![HoloMemberRank::Debut, HoloMemberRank::First],
+                // TODO verify 2nd -> 2nd
+                HoloMemberRank::Second => vec![HoloMemberRank::First],
+            },
+            bloom.names().collect::<Vec<_>>(),
+        );
 
         let stage: Vec<_> = self
             .board(player)
             .stage()
             .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
-            .filter(|(_, m)| bloom_lookup == (m.rank, &m.name))
+            // TODO cannot bloom to remaining hp < 0
+            // TODO cannot bloom on each player first turn
+            // TODO cannot bloom the member twice  in a turn
+            // TODO not sure if the name needs to be consistent with debut? e.i. Sora -> Sora/AZKi -> AZKi
+            .filter(|(_, m)| {
+                // match on rank
+                bloom_lookup.0.iter().any(|r| *r == m.rank)
+                // match on name
+                    && bloom_lookup
+                        .1
+                        .iter()
+                        .any(|n| m.names().any(|m_n| *n == m_n))
+            })
             // TODO check for rest?
             .map(|(c, _)| CardDisplay::new(c, self))
             .collect();

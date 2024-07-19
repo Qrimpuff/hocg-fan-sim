@@ -18,46 +18,24 @@ pub enum Error {
     // Zero or more variants that can be created directly by the Serializer and
     // Deserializer without going through `ser::Error` and `de::Error`. These
     // are specific to the format, in this case JSON.
-    Eof,
-    Syntax,
-    ExpectedBoolean,
-    ExpectedInteger,
     ExpectedString,
     ExpectedToken,
-    ExpectedNull,
-    ExpectedArray,
-    ExpectedArrayComma,
-    ExpectedArrayEnd,
-    ExpectedMap,
-    ExpectedMapColon,
-    ExpectedMapComma,
-    ExpectedMapEnd,
-    ExpectedEnum,
-    ExpectedSpace,
-    TrailingCharacters,
+    MissingBracket,
+    UnbalancedBrackets,
+    NoTokens,
+    RemainingTokens,
 }
 
 impl Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Error::Message(msg) => formatter.write_str(msg),
-            Error::Eof => formatter.write_str("unexpected end of input"),
-            Error::Syntax => todo!(),
-            Error::ExpectedBoolean => todo!(),
-            Error::ExpectedInteger => todo!(),
-            Error::ExpectedString => todo!(),
-            Error::ExpectedNull => todo!(),
-            Error::ExpectedArray => todo!(),
-            Error::ExpectedArrayComma => todo!(),
-            Error::ExpectedArrayEnd => todo!(),
-            Error::ExpectedMap => todo!(),
-            Error::ExpectedMapColon => todo!(),
-            Error::ExpectedMapComma => todo!(),
-            Error::ExpectedMapEnd => todo!(),
-            Error::ExpectedEnum => todo!(),
-            Error::TrailingCharacters => todo!(),
-            Error::ExpectedSpace => todo!(),
-            Error::ExpectedToken => todo!(),
+            Error::ExpectedString => formatter.write_str("Expected string"),
+            Error::ExpectedToken => formatter.write_str("Expected token"),
+            Error::MissingBracket => formatter.write_str("Missing bracket"),
+            Error::UnbalancedBrackets => formatter.write_str("Unbalanced brackets"),
+            Error::NoTokens => formatter.write_str("No tokens"),
+            Error::RemainingTokens => formatter.write_str("Remaining tokens"),
             /* and so forth */
         }
     }

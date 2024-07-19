@@ -69,6 +69,9 @@ impl From<Value> for Tokens {
             Value::Get(a) => ["get".into(), a.into()].into(),
             Value::Number(a) => a.into(),
             Value::Var(a) => a.into(),
+            Value::Add(a, b) => [(*a).into(), "+".into(), (*b).into()].into(),
+            Value::Subtract(a, b) => [(*a).into(), "-".into(), (*b).into()].into(),
+            Value::Multiply(a, b) => [(*a).into(), "*".into(), (*b).into()].into(),
         }
     }
 }

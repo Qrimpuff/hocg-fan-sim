@@ -80,6 +80,27 @@ pub struct GlobalLibrary {
 }
 
 impl GlobalLibrary {
+    /// Any pre-processing of cards that could make my life easier later
+    pub fn pre_process(&mut self) {
+        // add name as tag, for members
+        // useful for AZKi / Sora card
+        for mem in self.cards.values_mut() {
+            if let Card::HoloMember(mem) = mem {
+                mem.tags.push(HoloMemberTag::Name(mem.name.clone()));
+            }
+        }
+
+        // TODO oshi skill once turn
+
+        // TODO special oshi skill once per game
+
+        // TODO enough holo power to pay the cost for oshi skill
+
+        // TODO enough cheers to perform art for members
+
+        // TODO limited support
+    }
+
     pub fn lookup_card(&self, card_number: &CardNumber) -> Option<&Card> {
         self.cards.get(card_number)
     }
@@ -175,6 +196,15 @@ pub struct HoloMemberCard {
     pub artist: String,
 }
 
+impl HoloMemberCard {
+    pub fn names(&self) -> impl Iterator<Item = &String> + '_ {
+        self.tags.iter().filter_map(|t| match t {
+            HoloMemberTag::Name(n) => Some(n),
+            _ => None,
+        })
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum HoloMemberRank {
     Debut,
@@ -183,7 +213,7 @@ pub enum HoloMemberRank {
     Spot,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum HoloMemberTag {
     JP,
     ID,
@@ -194,6 +224,7 @@ pub enum HoloMemberTag {
     Generation3,
     Generation4,
     Generation5,
+    Name(String),
 }
 
 #[derive(Debug)]

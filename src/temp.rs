@@ -5,7 +5,8 @@ use crate::{cards::*, Action, ParseEffect};
 pub fn test_library() -> &'static Arc<GlobalLibrary> {
     static TEST_LIBRARY: OnceLock<Arc<GlobalLibrary>> = OnceLock::new();
     TEST_LIBRARY.get_or_init(|| {
-        Arc::new(GlobalLibrary {
+        // like load from file
+        let mut lib = GlobalLibrary {
             cards: [
                 // Cheers
                 (
@@ -353,6 +354,11 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                 ),
             ]
             .into(),
-        })
+        };
+
+        // pre-process library with implicit conditions and effects
+        lib.pre_process();
+
+        Arc::new(lib)
     })
 }

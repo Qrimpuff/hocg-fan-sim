@@ -1,7 +1,37 @@
 use super::error::*;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fmt::Display;
 use std::str::FromStr;
+use std::sync::OnceLock;
+
+pub fn infix_token_map() -> &'static HashMap<&'static str, &'static str> {
+    static INFIX_TOKEN_MAP: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
+    INFIX_TOKEN_MAP.get_or_init(|| {
+        let mut map = HashMap::new();
+
+        // conditions
+        // TODO not implemented
+        map.insert("==", "_eq");
+        map.insert("!=", "_neq");
+        map.insert("<", "_lt");
+        map.insert("<=", "_lte");
+        map.insert(">", "_gt");
+        map.insert(">=", "_gte");
+        map.insert("and", "_and");
+        map.insert("or", "_or");
+
+        // values
+        map.insert("+", "_add");
+        map.insert("-", "_sub");
+        map.insert("*", "_mul");
+
+        // targets
+        // TODO not implemented
+        map.insert("with", "_with");
+
+        map
+    })
+}
 
 pub trait ParseEffect {
     fn parse_effect<F: ParseTokens>(&self) -> Result<F>;
@@ -26,9 +56,14 @@ pub trait ParseTokens: Sized {
             Tokens::List(v) => v,
         };
 
-        Self::parse_tokens(&mut tokens)
-
-        // TODO check for remaining Tokens
+        Self::parse_tokens(&mut tokens).and_then(|ok| {
+            // check for remaining Tokens
+            if tokens.is_empty() {
+                Ok(ok)
+            } else {
+                Err(Error::RemainingTokens)
+            }
+        })
     }
 
     fn take_param<T: ParseTokens>(tokens: &mut VecDeque<Tokens>) -> Result<T> {
@@ -152,58 +187,68 @@ impl FromStr for Tokens {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        // FIXME check balanced bracket
+        fn add_token(list: &mut VecDeque<Tokens>, token: String) {
+            if !token.is_empty() {
+                // process infix tokens
+                if let Some(replace) = infix_token_map().get(token.as_str()) {
+                    let prev = list.pop_back().expect("infix should be after a token");
+                    list.push_back(Tokens::Token((*replace).into()));
+                    list.push_back(prev);
+                } else {
+                    list.push_back(Tokens::Token(token));
+                }
+            }
+        }
 
         let mut stack = VecDeque::new();
         let mut token = String::new();
         let mut list = VecDeque::new();
+        let mut bracket_level = 0;
+
         for c in s.chars() {
             match c {
                 '(' => {
-                    if !token.is_empty() {
-                        list.push_back(Tokens::Token(token));
-                    }
+                    bracket_level += 1;
+                    add_token(&mut list, token);
                     token = String::new();
                     stack.push_back(list);
                     list = VecDeque::new();
                 }
                 ')' => {
-                    if !token.is_empty() {
-                        list.push_back(Tokens::Token(token));
-                    }
+                    bracket_level -= 1;
+                    add_token(&mut list, token);
                     token = String::new();
                     let mut _list = stack
                         .pop_back()
-                        .ok_or(Error::Message("missing bracket".into()))?;
+                        .ok_or(Error::MissingBracket)?;
                     if list.len() > 1 {
                         _list.push_back(Tokens::List(list));
                     } else {
                         _list.push_back(
                             list.pop_back()
-                                .ok_or(Error::Message("error to be defined 2".into()))?,
+                                .ok_or(Error::NoTokens)?,
                         );
                     }
                     list = _list;
                 }
                 c if c.is_whitespace() => {
-                    if !token.is_empty() {
-                        list.push_back(Tokens::Token(token));
-                    }
+                    add_token(&mut list, token);
                     token = String::new();
                 }
                 c => token.push(c),
             }
         }
-        if !token.is_empty() {
-            list.push_back(Tokens::Token(token));
+        add_token(&mut list, token);
+
+        // check balanced bracket
+        if bracket_level != 0 {
+            return Err(Error::UnbalancedBrackets);
         }
 
         if list.len() > 1 {
             Ok(Tokens::List(list))
         } else {
-            Ok(list
-                .pop_back()
-                .ok_or(Error::Message("error to be defined 3".into()))?)
+            Ok(list.pop_back().ok_or(Error::NoTokens)?)
         }
     }
 }

@@ -54,6 +54,9 @@ pub enum Value {
     Get(Property),
     Number(Number),
     Var(Var),
+    Add(Box<Value>, Box<Value>),
+    Subtract(Box<Value>, Box<Value>),
+    Multiply(Box<Value>, Box<Value>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -73,7 +76,8 @@ pub enum Trigger {
     AtEndOfStep(Step),
     AtStartOfPerformArt,
     AtEndOfPerformArt,
-    OnDiceRoll,
+    OnBeforeDiceRoll,
+    OnAfterDiceRoll,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

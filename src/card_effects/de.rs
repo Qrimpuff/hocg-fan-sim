@@ -82,6 +82,18 @@ impl ParseTokens for Value {
         Ok(match s.as_str() {
             "for" => Value::For(tokens.take_param()?, Box::new(tokens.take_param()?)),
             "get" => Value::Get(tokens.take_param()?),
+            "_add" => Value::Add(
+                Box::new(tokens.take_param()?),
+                Box::new(tokens.take_param()?),
+            ),
+            "_sub" => Value::Subtract(
+                Box::new(tokens.take_param()?),
+                Box::new(tokens.take_param()?),
+            ),
+            "_mul" => Value::Multiply(
+                Box::new(tokens.take_param()?),
+                Box::new(tokens.take_param()?),
+            ),
             _ => {
                 Self::return_string(tokens, s);
                 if let Ok(n) = Number::take_param(tokens) {
