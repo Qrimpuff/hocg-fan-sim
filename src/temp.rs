@@ -344,7 +344,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         artist: "".into(),
                         kind: SupportKind::Item,
                         condition: vec![],
-                        effect: "for center_mem heal 10".parse_effect().expect("const"),
+                        effect: "for center_member heal 10".parse_effect().expect("const"),
                         text: "some support".into(),
                     }),
                 ),

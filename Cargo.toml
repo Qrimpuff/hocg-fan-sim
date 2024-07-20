@@ -3,6 +3,10 @@ name = "hololive-ucg-poc"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+members = ["derive"]
+
 [dependencies]
+hololive-ucg-poc-derive = { version = "*", path = "derive" }
 dialoguer = { version = "0.11.0", features = ["fuzzy-select"] }
 rand = "0.8.5"

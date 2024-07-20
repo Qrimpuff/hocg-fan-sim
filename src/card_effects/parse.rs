@@ -4,35 +4,6 @@ use std::fmt::Display;
 use std::str::FromStr;
 use std::sync::OnceLock;
 
-pub fn infix_token_map() -> &'static HashMap<&'static str, &'static str> {
-    static INFIX_TOKEN_MAP: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
-    INFIX_TOKEN_MAP.get_or_init(|| {
-        let mut map = HashMap::new();
-
-        // conditions
-        // TODO not implemented
-        map.insert("==", "_eq");
-        map.insert("!=", "_neq");
-        map.insert("<", "_lt");
-        map.insert("<=", "_lte");
-        map.insert(">", "_gt");
-        map.insert(">=", "_gte");
-        map.insert("and", "_and");
-        map.insert("or", "_or");
-
-        // values
-        map.insert("+", "_add");
-        map.insert("-", "_sub");
-        map.insert("*", "_mul");
-
-        // targets
-        // TODO not implemented
-        map.insert("with", "_with");
-
-        map
-    })
-}
-
 pub trait SerializeEffect {
     fn serialize_effect(self) -> String;
 }
@@ -125,6 +96,24 @@ pub trait ParseTokens: Sized {
         }
         Ok(())
     }
+
+    fn infix_token_map() -> &'static HashMap<&'static str, &'static str> {
+        static INFIX_TOKEN_MAP: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
+        INFIX_TOKEN_MAP.get_or_init(HashMap::new)
+    }
+
+    fn process_infix_tokens(tokens: &mut VecDeque<Tokens>) {
+        let map = Self::infix_token_map();
+        if map.is_empty() {
+            return;
+        }
+        if let Some(Tokens::Token(second)) = tokens.get(1) {
+            if let Some(token) = map.get(second.as_str()) {
+                tokens.remove(1);
+                tokens.push_front(Tokens::Token(token.to_string()));
+            }
+        }
+    }
 }
 
 impl<T> ParseTokens for Vec<T>
@@ -137,6 +126,15 @@ where
             v.push(T::take_param(tokens)?);
         }
         Ok(v)
+    }
+}
+
+impl<T> ParseTokens for Box<T>
+where
+    T: ParseTokens,
+{
+    fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self> {
+        Ok(Box::new(T::take_param(tokens)?))
     }
 }
 
@@ -176,6 +174,12 @@ impl<T: Into<Tokens>> From<Vec<T>> for Tokens {
     }
 }
 
+impl<T: Into<Tokens>> From<Box<T>> for Tokens {
+    fn from(value: Box<T>) -> Self {
+        (*value).into()
+    }
+}
+
 impl Display for Tokens {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -200,16 +204,7 @@ impl FromStr for Tokens {
     fn from_str(s: &str) -> Result<Self> {
         fn add_token(list: &mut VecDeque<Tokens>, token: String) -> Result<()> {
             if !token.is_empty() {
-                // process infix tokens
-                if let Some(replace) = infix_token_map().get(token.as_str()) {
-                    let prev = list
-                        .pop_back()
-                        .ok_or(Error::Message("infix should be after a token".into()))?;
-                    list.push_back(Tokens::Token((*replace).into()));
-                    list.push_back(prev);
-                } else {
-                    list.push_back(Tokens::Token(token));
-                }
+                list.push_back(Tokens::Token(token));
             }
             Ok(())
         }
