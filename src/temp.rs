@@ -1,6 +1,6 @@
 use std::sync::{Arc, OnceLock};
 
-use crate::{cards::*, Action, Condition, ParseEffect, Trigger};
+use crate::{cards::*, ParseEffect, Trigger};
 
 pub fn test_library() -> &'static Arc<GlobalLibrary> {
     static TEST_LIBRARY: OnceLock<Arc<GlobalLibrary>> = OnceLock::new();

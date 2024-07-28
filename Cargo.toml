@@ -10,3 +10,5 @@ members = ["derive"]
 hololive-ucg-poc-derive = { version = "*", path = "derive" }
 dialoguer = { version = "0.11.0", features = ["fuzzy-select"] }
 rand = "0.8.5"
+enum_dispatch = "0.3.13"
+iter_tools = "0.20.0"

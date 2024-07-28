@@ -274,7 +274,7 @@ mod tests {
         let ast: DeriveInput = parse_quote! {
             pub enum MyEnum {
                 /// Unit variant.
-                #[evt(derive(Clone, Copy, Debug, PartialEq))]
+                #[evt(derive(Clone, Copy, Debug, PartialEq, Eq))]
                 #[holo_ucg(token = "unit", infix = "=")]
                 Unit,
                 /// Tuple variant.

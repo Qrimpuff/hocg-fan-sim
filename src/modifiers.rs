@@ -1,9 +1,11 @@
+use std::collections::HashMap;
+
 use super::cards::*;
 use super::gameplay::*;
 
 use ModifierKind::*;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModifierKind {
     // attributes
     /// an instance of damage received, is added multiple times
@@ -14,7 +16,7 @@ pub enum ModifierKind {
     PreventAbility(usize),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LifeTime {
     /// stays until their player's next end step
     Turns(u8, u8),
@@ -34,9 +36,9 @@ impl LifeTime {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Modifier {
-    kind: ModifierKind,
+    pub kind: ModifierKind,
     life_time: LifeTime,
     turn_count: u8,
     // TODO active on specific player's turn?
@@ -72,7 +74,7 @@ impl Modifier {
     }
 }
 
-impl<P: Prompter> Game<P> {
+impl Game {
     pub fn find_modifiers(&self, card: CardRef) -> impl Iterator<Item = &Modifier> + '_ {
         let (player, _) = self.card_map.get(&card).expect("should be in the map");
 
@@ -107,8 +109,7 @@ impl<P: Prompter> Game<P> {
     }
 
     pub fn add_modifier(&mut self, card: CardRef, kind: ModifierKind, life_time: LifeTime) {
-        self.card_modifiers
-            .push((card, Modifier::new(kind, life_time)));
+        self.add_many_modifiers(card, kind, life_time, 1);
     }
 
     pub fn add_many_modifiers(
@@ -118,8 +119,19 @@ impl<P: Prompter> Game<P> {
         life_time: LifeTime,
         amount: usize,
     ) {
-        self.card_modifiers
-            .extend((0..amount).map(move |_| (card, Modifier::new(kind, life_time))));
+        let player = self.player_for_card(card);
+        let zone = self
+            .board(player)
+            .find_card_zone(card)
+            .expect("the card should be in a zone");
+        self.add_many_modifiers_to_many_cards(
+            player,
+            zone,
+            vec![card],
+            (0..amount)
+                .map(move |_| Modifier::new(kind, life_time))
+                .collect(),
+        )
     }
 
     pub fn remove_modifier(&mut self, card: CardRef, kind: ModifierKind) {
@@ -127,24 +139,42 @@ impl<P: Prompter> Game<P> {
     }
 
     pub fn remove_many_modifiers(&mut self, card: CardRef, kind: ModifierKind, amount: usize) {
-        let mut count = 0;
-        self.card_modifiers.retain(|(c, m)| {
-            if *c != card || m.kind != kind || count >= amount {
-                true
-            } else {
-                count += 1;
-                false
-            }
-        });
+        let player = self.player_for_card(card);
+        let zone = self
+            .board(player)
+            .find_card_zone(card)
+            .expect("the card should be in a zone");
+
+        let modifiers = self
+            .card_modifiers
+            .iter()
+            .filter(|(c, m)| *c == card && m.kind == kind)
+            .map(|(_, m)| m.kind)
+            .take(amount)
+            .collect();
+
+        self.remove_many_modifiers_from_many_cards(player, zone, vec![card], modifiers);
     }
 
     pub fn remove_all_modifiers(&mut self, card: CardRef, kind: ModifierKind) {
-        self.card_modifiers
-            .retain(|(c, m)| *c != card || m.kind != kind);
+        self.remove_many_modifiers(card, kind, usize::MAX);
     }
 
     pub fn clear_all_modifiers(&mut self, card: CardRef) {
-        self.card_modifiers.retain(|(c, _)| *c != card);
+        let player = self.player_for_card(card);
+        let zone = self
+            .board(player)
+            .find_card_zone(card)
+            .expect("the card should be in a zone");
+
+        let modifiers = self
+            .card_modifiers
+            .iter()
+            .filter(|(c, _)| *c == card)
+            .map(|(_, m)| m.kind)
+            .collect();
+
+        self.remove_many_modifiers_from_many_cards(player, zone, vec![card], modifiers);
     }
 
     pub fn promote_modifiers(&mut self, attachment: CardRef, parent: CardRef) {
@@ -180,6 +210,7 @@ impl<P: Prompter> Game<P> {
     }
 
     pub fn end_turn_modifiers(&mut self, player: Player) {
+        // increase the life counter of the card modifiers
         // split in 2 because can't modify and player_for_card at the same time
         let to_modify: Vec<_> = self
             .card_modifiers
@@ -196,6 +227,7 @@ impl<P: Prompter> Game<P> {
                 m.end_turn();
             });
 
+        // increase the life counter of the zone modifiers
         self.zone_modifiers
             .iter_mut()
             .filter(|(p, _, _)| *p == player)
@@ -203,10 +235,39 @@ impl<P: Prompter> Game<P> {
                 m.end_turn();
             });
 
-        self.card_modifiers.retain(|(_, m)| m.survive_end_turn());
-        self.zone_modifiers.retain(|(_, _, m)| m.survive_end_turn());
+        // remove expiring card modifiers
+        let c_mods: HashMap<_, Vec<_>> = self
+            .card_modifiers
+            .iter()
+            .filter(|(_, m)| !m.survive_end_turn())
+            .fold(HashMap::new(), |mut c_m, (c, m)| {
+                let p = self.player_for_card(*c);
+                let z = self
+                    .board(p)
+                    .find_card_zone(*c)
+                    .expect("the card should be in a zone");
+                c_m.entry((p, z, *c)).or_default().push(m.kind);
+                c_m
+            });
+        for ((p, z, c), m) in c_mods {
+            self.remove_many_modifiers_from_many_cards(p, z, vec![c], m);
+        }
+
+        // remove expiring zone modifiers
+        let z_mods: HashMap<_, Vec<_>> = self
+            .zone_modifiers
+            .iter()
+            .filter(|(_, _, m)| !m.survive_end_turn())
+            .fold(HashMap::new(), |mut z_m, (p, z, m)| {
+                z_m.entry((*p, *z)).or_default().push(m.kind);
+                z_m
+            });
+        for ((p, z), m) in z_mods {
+            self.remove_many_modifiers_from_zone(p, z, m);
+        }
     }
 
+    // common modifiers
     pub fn is_rested(&self, card: CardRef) -> bool {
         self.has_modifier(card, Rested)
     }
@@ -237,7 +298,7 @@ impl<P: Prompter> Game<P> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DamageMarkers(pub usize);
 
 impl DamageMarkers {

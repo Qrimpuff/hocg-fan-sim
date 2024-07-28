@@ -1,18 +1,17 @@
 #![allow(dead_code)]
-#![allow(unused_imports)]
 
 mod card_effects;
 mod cards;
+mod events;
 mod gameplay;
 mod modifiers;
 mod temp;
 
-use std::{env, fmt::Display, iter, str::FromStr, task::Context};
+use std::{env, iter};
 
 use card_effects::*;
 use cards::*;
-use evaluate::{EvaluateContext, EvaluateEffect};
-use gameplay::{CardRef, DefaultPrompter, Game, RandomPrompter};
+use gameplay::{Game, RandomPrompter};
 use temp::test_library;
 
 type Result<T> = std::result::Result<T, Error>;

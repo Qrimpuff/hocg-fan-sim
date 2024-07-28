@@ -1,8 +1,7 @@
-use std::{collections::HashMap, path::Display};
+use std::collections::HashMap;
 
 use crate::{
-    modifiers::DamageMarkers, Action, Condition, DamageModifier, Error, ParseEffect, ParseTokens,
-    SerializeEffect, Trigger,
+    Action, Condition, DamageModifier, Error, ParseEffect, ParseTokens, SerializeEffect, Trigger,
 };
 
 /**
@@ -69,7 +68,7 @@ use crate::{
   - text
  */
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Loadout {
     pub oshi: CardNumber,
     pub main_deck: Vec<CardNumber>,
@@ -79,6 +78,7 @@ pub struct Loadout {
 
 #[derive(Debug)]
 pub struct GlobalLibrary {
+    // TODO use a different key because rarity is not include in card number
     pub cards: HashMap<CardNumber, Card>,
 }
 
@@ -230,7 +230,7 @@ pub enum Card {
     Cheer(CheerCard),
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Rarity {
     OshiSuperRare, // OSR
     DoubleRare,    // RR
@@ -289,7 +289,7 @@ pub struct OshiSkill {
     pub effect: CardEffect,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum OshiSkillKind {
     Normal,
     Special,
@@ -323,7 +323,7 @@ impl HoloMemberCard {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum HoloMemberLevel {
     Debut,
     First,
@@ -331,7 +331,7 @@ pub enum HoloMemberLevel {
     Spot,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HoloMemberTag {
     JP,
     ID,
@@ -354,7 +354,7 @@ pub struct HoloMemberAbility {
     pub effect: CardEffect,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MemberAbilityKind {
     CollabEffect,
     BloomEffect,
@@ -372,7 +372,7 @@ pub struct HoloMemberArt {
     pub effect: CardEffect,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum HoloMemberArtDamage {
     Basic(HoloMemberHp),
     Plus(HoloMemberHp),
@@ -394,7 +394,7 @@ pub struct SupportCard {
     pub artist: String,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum SupportKind {
     Item,
     Staff, // TODO verify if this is true

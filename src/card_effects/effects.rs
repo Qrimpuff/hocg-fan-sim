@@ -19,12 +19,13 @@ for target discard_all_cheer
 use std::collections::VecDeque;
 
 use hololive_ucg_poc_derive::HoloUcgEffect;
+use iter_tools::Itertools;
 
-use crate::{gameplay::Step, Error, HoloMemberHp, ParseTokens, Result, Tokens};
+use crate::{gameplay::Step, Error, ParseTokens, Result, Tokens};
 
 // TODO clean up this file after the list of effect is finalized
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Var(pub String);
 
 impl From<Var> for Tokens {
@@ -45,7 +46,7 @@ impl ParseTokens for Var {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Number(pub u32);
 
 impl From<Number> for Tokens {
@@ -66,7 +67,7 @@ impl ParseTokens for Number {
     }
 }
 
-#[derive(HoloUcgEffect, Debug, Clone, PartialEq)]
+#[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
 pub enum Target {
     #[holo_ucg(token = "self")]
     CurrentCard,
@@ -86,7 +87,7 @@ pub enum Target {
     Var(Var),
 }
 
-#[derive(HoloUcgEffect, Debug, Clone, PartialEq)]
+#[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     #[holo_ucg(token = "no_action")]
     Noop,
@@ -120,11 +121,11 @@ pub fn serialize_actions(actions: Vec<Action>) -> String {
             chars.next_back();
             chars.as_str().to_owned()
         })
-        .collect::<Vec<_>>()
+        .collect_vec()
         .join("\n")
 }
 
-#[derive(HoloUcgEffect, Debug, Clone, PartialEq)]
+#[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
 pub enum Value {
     #[holo_ucg(token = "for")]
     For(Target, Box<Value>),
@@ -146,7 +147,7 @@ pub enum Value {
     All,
 }
 
-#[derive(HoloUcgEffect, Debug, Clone, PartialEq)]
+#[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
 pub enum Condition {
     #[holo_ucg(token = "always")]
     Always,
@@ -169,7 +170,7 @@ pub enum Condition {
     IsHoloMember,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Trigger {
     ActivateInMainStep,
     AtStartOfTurn,
@@ -182,7 +183,7 @@ pub enum Trigger {
     OnAfterDiceRoll,
 }
 
-#[derive(HoloUcgEffect, Debug, Clone, Copy, PartialEq)]
+#[derive(HoloUcgEffect, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DamageModifier {
     #[holo_ucg(token = "none")]
     None,
@@ -194,7 +195,7 @@ pub enum DamageModifier {
     Times(Number),
 }
 
-#[derive(HoloUcgEffect, Debug, Clone, Copy, PartialEq)]
+#[derive(HoloUcgEffect, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tag {
     // colors
     #[holo_ucg(token = "color_white")]
@@ -219,7 +220,7 @@ pub enum Tag {
     //abilities
 }
 
-#[derive(HoloUcgEffect, Debug, Clone, Copy, PartialEq)]
+#[derive(HoloUcgEffect, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Property {
     #[holo_ucg(token = "hp")]
     HealthPoint,
@@ -227,7 +228,7 @@ pub enum Property {
     RetreatCost,
 }
 
-#[derive(HoloUcgEffect, Debug, Clone, PartialEq)]
+#[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
 pub enum Buff {
     #[holo_ucg(token = "more_def")]
     MoreDefense(Value),
@@ -235,7 +236,7 @@ pub enum Buff {
     MoreAttack(Value),
 }
 
-#[derive(HoloUcgEffect, Debug, Clone, PartialEq)]
+#[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
 pub enum Debuff {
     #[holo_ucg(token = "less_def")]
     LessDefense(Value),
@@ -243,7 +244,7 @@ pub enum Debuff {
     LessAttack(Value),
 }
 
-#[derive(HoloUcgEffect, Debug, Clone, Copy, PartialEq)]
+#[derive(HoloUcgEffect, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LifeTime {
     #[holo_ucg(token = "this_attack")]
     ThisAttack,

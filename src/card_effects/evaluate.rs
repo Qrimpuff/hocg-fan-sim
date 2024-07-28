@@ -3,15 +3,15 @@ use crate::{gameplay::*, modifiers::DamageMarkers, HoloMemberHp};
 
 // TODO clean up this file after the list of effect is finalized
 
-pub struct EvaluateContext<'a, P: Prompter> {
+pub struct EvaluateContext<'a> {
     active_card: CardRef,
     card_target: CardRef,
     player_target: Player,
-    game: &'a mut Game<P>,
+    game: &'a mut Game,
 }
 
-impl<'a, P: Prompter> EvaluateContext<'a, P> {
-    pub fn new(game: &'a mut Game<P>, card: CardRef) -> Self {
+impl<'a> EvaluateContext<'a> {
+    pub fn new(game: &'a mut Game, card: CardRef) -> Self {
         EvaluateContext {
             active_card: card,
             card_target: card,
@@ -37,9 +37,9 @@ impl CombineEffect for bool {
 pub trait EvaluateEffect {
     type Value;
 
-    fn evaluate<P: Prompter>(self, ctx: &mut EvaluateContext<P>) -> Self::Value;
+    fn evaluate(self, ctx: &mut EvaluateContext) -> Self::Value;
 
-    fn start_evaluate<P: Prompter>(self, game: &mut Game<P>, card: CardRef) -> Self::Value
+    fn start_evaluate(self, game: &mut Game, card: CardRef) -> Self::Value
     where
         Self: std::marker::Sized,
     {
@@ -55,7 +55,7 @@ where
 {
     type Value = V;
 
-    fn evaluate<P: Prompter>(self, ctx: &mut EvaluateContext<P>) -> Self::Value {
+    fn evaluate(self, ctx: &mut EvaluateContext) -> Self::Value {
         self.into_iter()
             .map(|e| e.evaluate(ctx))
             .reduce(|acc, v| acc.combine_effect(v))
@@ -66,7 +66,7 @@ where
 impl EvaluateEffect for Target {
     type Value = CardRef;
 
-    fn evaluate<P: Prompter>(self, ctx: &mut EvaluateContext<P>) -> Self::Value {
+    fn evaluate(self, ctx: &mut EvaluateContext) -> Self::Value {
         match self {
             Target::CurrentCard => ctx.active_card,
             Target::CenterHoloMember => ctx
@@ -88,7 +88,7 @@ impl EvaluateEffect for Target {
 impl EvaluateEffect for Action {
     type Value = ();
 
-    fn evaluate<P: Prompter>(self, ctx: &mut EvaluateContext<P>) -> Self::Value {
+    fn evaluate(self, ctx: &mut EvaluateContext) -> Self::Value {
         match self {
             Action::Noop => {
                 println!("*nothing happens*")
@@ -121,7 +121,9 @@ impl EvaluateEffect for Action {
                 let draw = d.evaluate(ctx);
 
                 println!("draw {} card(s)", draw);
-                ctx.game.active_board_mut().draw(draw as usize);
+                // ctx.game.active_board_mut().draw(draw as usize);
+                ctx.game
+                    .draw_from_main_deck(ctx.player_target, draw as usize);
             }
             Action::NextDiceNumber(_) => todo!(),
             Action::Attach(_) => todo!(),
@@ -132,7 +134,8 @@ impl EvaluateEffect for Action {
 impl EvaluateEffect for Value {
     type Value = u32;
 
-    fn evaluate<P: Prompter>(self, ctx: &mut EvaluateContext<P>) -> Self::Value {
+    #[allow(clippy::only_used_in_recursion)]
+    fn evaluate(self, ctx: &mut EvaluateContext) -> Self::Value {
         match self {
             Value::For(_, _) => todo!(),
             Value::Get(_) => todo!(),
@@ -150,7 +153,8 @@ impl EvaluateEffect for Value {
 impl EvaluateEffect for Condition {
     type Value = bool;
 
-    fn evaluate<P: Prompter>(self, ctx: &mut EvaluateContext<P>) -> Self::Value {
+    #[allow(clippy::only_used_in_recursion)]
+    fn evaluate(self, ctx: &mut EvaluateContext) -> Self::Value {
         match self {
             Condition::Always => true,
             Condition::OncePerTurn => todo!(),
@@ -169,7 +173,7 @@ impl EvaluateEffect for Condition {
 // impl EvaluateEffect for Option<Condition> {
 //     type Value = bool;
 
-//     fn evaluate<P: Prompter>(&self, ctx: &mut EvaluateContext<P>) -> Self::Value {
+//     fn evaluate(&self, ctx: &mut EvaluateContext) -> Self::Value {
 //         match self {
 //             Some(c) => c.evaluate(ctx),
 //             None => Condition::Always.evaluate(ctx),

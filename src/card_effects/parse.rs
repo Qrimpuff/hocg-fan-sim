@@ -1,3 +1,5 @@
+use iter_tools::Itertools;
+
 use super::error::*;
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Display;
@@ -188,10 +190,7 @@ impl Display for Tokens {
                 write!(
                     f,
                     "({})",
-                    v.iter()
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>()
-                        .join(" ")
+                    v.iter().map(ToString::to_string).collect_vec().join(" ")
                 )
             }
         }
