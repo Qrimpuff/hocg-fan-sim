@@ -72,8 +72,10 @@ pub struct Game {
     pub card_map: HashMap<CardRef, (Player, CardNumber)>, // TODO use a different pair because rarity is not include in card number
     pub active_player: Player,
     pub active_step: Step,
-    pub zone_modifiers: Vec<(Player, Zone, Modifier)>,
-    pub card_modifiers: Vec<(CardRef, Modifier)>,
+    pub turn_number: usize,
+    pub zone_modifiers: HashMap<Player, Vec<(Zone, Modifier)>>,
+    pub card_modifiers: HashMap<CardRef, Vec<Modifier>>,
+    pub card_damage_markers: HashMap<CardRef, DamageMarkers>,
     pub prompter: RandomPrompter, // will probably be replace by 2 player send/receive channels
 }
 
@@ -92,8 +94,10 @@ impl Game {
             card_map,
             active_player: Player::One,
             active_step: Step::Setup,
-            zone_modifiers: Vec::new(),
-            card_modifiers: Vec::new(),
+            turn_number: 0,
+            zone_modifiers: HashMap::new(),
+            card_modifiers: HashMap::new(),
+            card_damage_markers: HashMap::new(),
             prompter,
         }
     }
@@ -166,7 +170,8 @@ impl Game {
             );
 
             if force_mulligan && !voluntary {
-                //TODO reveal hand
+                // reveal hand
+                self.reveal_all_cards_in_zone(player, Zone::Hand);
             }
 
             // self.board_mut(player)
@@ -300,8 +305,14 @@ impl Game {
         self.send_from_hand_to_back_stage(Player::Two, other_debut_2);
 
         // - reveal face down oshi and members
-        // TODO oshi and members reveal
+        // oshi and members reveal
         // TODO send (event) reveal
+        self.reveal_all_cards_in_zone(Player::One, Zone::MainStageOshi);
+        self.reveal_all_cards_in_zone(Player::Two, Zone::MainStageOshi);
+        self.reveal_all_cards_in_zone(Player::One, Zone::MainStageCenter);
+        self.reveal_all_cards_in_zone(Player::Two, Zone::MainStageCenter);
+        self.reveal_all_cards_in_zone(Player::One, Zone::BackStage);
+        self.reveal_all_cards_in_zone(Player::Two, Zone::BackStage);
 
         // - draw life cards face down from cheer
         // TODO send (event) put life
@@ -406,6 +417,8 @@ impl Game {
     }
 
     pub fn start_turn(&mut self) {
+        self.turn_number += 1;
+
         // TODO send (event) start turn, before or after modifiers?
         println!("active player: {:?}", self.active_player);
         self.report_start_turn(self.active_player);
@@ -436,7 +449,8 @@ impl Game {
         // TODO send (event) rest card, add modifiers
         if let Some(mem) = self.active_board().collab_stage {
             self.rest_card(mem);
-            self.active_board_mut().send_to_zone(mem, Zone::BackStage);
+            // self.active_board_mut().send_to_zone(mem, Zone::BackStage);
+            self.send_from_collab_to_back_stage(self.active_player, mem);
         }
         // - if no center, back stage to center
         if self.active_board().center_stage.is_none() && !self.active_board().back_stage.is_empty()
@@ -445,8 +459,9 @@ impl Game {
             // TODO send (event) put main stage
             // TODO request (intent)
             let back = self.prompt_for_back_stage_to_center(self.active_player);
-            self.active_board_mut()
-                .send_to_zone(back, Zone::MainStageCenter);
+            // self.active_board_mut()
+            //     .send_to_zone(back, Zone::MainStageCenter);
+            self.send_from_back_stage_to_center_stage(self.active_player, back);
         }
 
         //   - no back stage lose game
@@ -478,14 +493,15 @@ impl Game {
         // TODO send (event) peek cheer ?
         // TODO request (intent) select member
         // TODO send (event) attach / move cheer (player, card, from zone / card, target zone / card)
-        if let Some(cheer) = self.active_board_mut().cheer_deck.peek_top_card() {
-            println!("prompt member for cheer");
-            println!("attach a cheer: {}", CardDisplay::new(cheer, self));
-            //   - main stage or back stage
-            if let Some(mem) = self.prompt_for_cheer(self.active_player) {
-                self.active_board_mut().attach_to_card(cheer, mem);
-            }
-        }
+        // if let Some(cheer) = self.active_board().cheer_deck.peek_top_card() {
+        //     println!("prompt member for cheer");
+        //     println!("attach a cheer: {}", CardDisplay::new(cheer, self));
+        //     //   - main stage or back stage
+        //     if let Some(mem) = self.prompt_for_cheer(self.active_player) {
+        //         self.active_board_mut().attach_to_card(cheer, mem);
+        //     }
+        // }
+        self.attach_cheers_from_zone(self.active_player, Zone::CheerDeck, 1);
 
         // TODO send (event) end step
     }
@@ -523,7 +539,8 @@ impl Game {
                     //   - bloom effect
                     //   - can't bloom on same turn as placed
                     let card = self.prompt_for_bloom(self.active_player, bloom);
-                    self.bloom_member(bloom, card);
+                    // self.bloom_member(bloom, card);
+                    self.bloom_holo_member(self.active_player, bloom, card);
                 }
                 MainStepAction::UseSupportCard(card) => {
                     println!("- action: Use support card");
@@ -544,7 +561,7 @@ impl Game {
 
                         // send the used card to the archive
                         // TODO send (event) put in archive
-                        self.send_to_archive(card);
+                        self.send_cards_to_archive(self.active_player, vec![card]);
                     } else {
                         unreachable!("support should not be an option, if it's not allowed")
                     }
@@ -552,8 +569,8 @@ impl Game {
                 MainStepAction::CollabMember(card) => {
                     println!("- action: Collab member");
                     // TODO verify collab member action
-                    if self.is_rested(card) {
-                        panic!("cannot collab a rested member");
+                    if self.is_resting(card) {
+                        panic!("cannot collab a resting member");
                     }
 
                     // can only collab from back stage
@@ -566,11 +583,12 @@ impl Game {
                     //   - can be done on first turn?
                     //   - draw down card from deck into power zone
                     // TODO send (event) put in collab
-                    self.active_board_mut()
-                        .send_to_zone(card, Zone::MainStageCollab);
+                    // self.active_board_mut()
+                    //     .send_to_zone(card, Zone::MainStageCollab);
                     // TODO send (event) draw to holo power
-                    self.active_board_mut()
-                        .send_from_zone(Zone::MainDeck, Zone::HoloPower, 1);
+                    // self.active_board_mut()
+                    //     .send_from_zone(Zone::MainDeck, Zone::HoloPower, 1);
+                    self.send_from_back_stage_to_collab(self.active_player, card);
                 }
                 MainStepAction::BatonPass(card) => {
                     println!("- action: Baton pass");
@@ -587,16 +605,17 @@ impl Game {
                     assert_eq!(center, card);
                     // TODO request (intent) select attached cheers
                     // TODO send (event) send attached cheer to archive
-                    self.pay_baton_pass_cost(center);
+                    // self.pay_baton_pass_cost(center);
                     // TODO request (intent) select back stage member
-                    let card = self.prompt_for_back_stage_to_center(self.active_player);
+                    let back = self.prompt_for_back_stage_to_center(self.active_player);
                     // swap members
                     // TODO send (event) send member to back stage
-                    self.active_board_mut()
-                        .send_to_zone(center, Zone::BackStage);
+                    // self.active_board_mut()
+                    //     .send_to_zone(center, Zone::BackStage);
                     // TODO send (event) send member to center stage
-                    self.active_board_mut()
-                        .send_to_zone(card, Zone::MainStageCenter);
+                    // self.active_board_mut()
+                    //     .send_to_zone(card, Zone::MainStageCenter);
+                    self.baton_pass_center_stage_to_back_stage(self.active_player, center, back);
                 }
                 MainStepAction::UseAbilities(card, i) => {
                     println!("- action: Use abilities");
@@ -709,13 +728,16 @@ impl Game {
 
                 if self.remaining_hp(target) == 0 {
                     // TODO send (event) send member to archive, from attack
-                    self.send_to_archive(target);
+                    self.send_cards_to_archive(self.player_for_card(target), vec![target]);
 
                     // TODO send (event) lose life
                     // TODO request (intent) select member
                     // TODO send (event) attach cheer to member
-                    if !self.lose_life(self.player_for_card(target), 1) {
-                        // the step is over
+                    // TODO buzz lose 2 lives
+                    self.lose_lives(self.player_for_card(target), 1);
+                    self.check_loss_conditions();
+                    if self.active_step == Step::GameOver {
+                        // TODO send (event) game over
                         return;
                     }
                 }
@@ -735,11 +757,12 @@ impl Game {
         if self.active_board().center_stage.is_none() && !self.active_board().back_stage.is_empty()
         {
             println!("prompt new center member");
-            // TODO request (intent) select back stage member
+            // TODO send (event) put main stage
+            // TODO request (intent)
             let back = self.prompt_for_back_stage_to_center(self.active_player);
-            // TODO send (event) send member to center stage
-            self.active_board_mut()
-                .send_to_zone(back, Zone::MainStageCenter);
+            // self.active_board_mut()
+            //     .send_to_zone(back, Zone::MainStageCenter);
+            self.send_from_back_stage_to_center_stage(self.active_player, back);
         }
 
         // TODO send (event) end step
@@ -772,6 +795,11 @@ impl Game {
             Step::Setup,
             "requires the game to be setup"
         );
+
+        // already game over
+        if self.active_step == Step::GameOver {
+            return;
+        }
 
         let mut lose_player = None;
         for (player, board) in [(Player::One, &self.player_1), (Player::Two, &self.player_2)] {
@@ -810,8 +838,12 @@ impl Game {
         }
     }
 
-    pub fn lookup_card(&self, card: CardRef) -> &Card {
+    pub fn lookup_card_number(&self, card: CardRef) -> &CardNumber {
         let (_, card_number) = self.card_map.get(&card).expect("should be in the map");
+        card_number
+    }
+    pub fn lookup_card(&self, card: CardRef) -> &Card {
+        let card_number = self.lookup_card_number(card);
         self.library
             .lookup_card(card_number)
             .expect("should be in the library")
@@ -845,20 +877,20 @@ impl Game {
         }
     }
 
-    pub fn bloom_member(&mut self, bloom: CardRef, card: CardRef) {
-        self.active_board_mut().attach_to_card(bloom, card);
-        self.active_board_mut().promote_attachment(bloom, card);
-        self.promote_modifiers(bloom, card);
-    }
+    // pub fn bloom_member(&mut self, bloom: CardRef, card: CardRef) {
+    //     self.active_board_mut().attach_to_card(bloom, card);
+    //     self.active_board_mut().promote_attachment(bloom, card);
+    //     self.promote_modifiers(bloom, card);
+    // }
 
-    pub fn pay_baton_pass_cost(&mut self, card: CardRef) {
-        let mem = self
-            .lookup_holo_member(card)
-            .expect("cannot pay baton pass cost for non member");
-        // TODO cost should automatic when there is a single cheers color
-        let cheers = self.prompt_for_baton_pass(card, mem.baton_pass_cost);
-        self.active_board_mut().remove_many_attachments(cheers);
-    }
+    // pub fn pay_baton_pass_cost(&mut self, card: CardRef) {
+    //     let mem = self
+    //         .lookup_holo_member(card)
+    //         .expect("cannot pay baton pass cost for non member");
+    //     // TODO cost should automatic when there is a single cheers color
+    //     let cheers = self.prompt_for_baton_pass(card, mem.baton_pass_cost);
+    //     self.active_board_mut().remove_many_attachments(cheers);
+    // }
 
     pub fn attached_cheers(&self, card: CardRef) -> impl Iterator<Item = CardRef> + '_ {
         self.board_for_card(card)
@@ -897,32 +929,13 @@ impl Game {
         required.is_empty()
     }
 
-    pub fn send_to_archive(&mut self, card: CardRef) {
-        self.board_for_card_mut(card)
-            .send_to_zone(card, Zone::Archive);
-        self.board_for_card_mut(card)
-            .send_all_attachments_to_zone(card, Zone::Archive);
-        self.clear_all_modifiers(card);
-    }
-
-    pub fn lose_life(&mut self, player: Player, amount: usize) -> bool {
-        (0..amount).all(|_| {
-            if let Some(cheer) = self.board(player).life.peek_top_card() {
-                println!("lost a life: {}", CardDisplay::new(cheer, self));
-
-                if let Some(mem) = self.prompt_for_cheer(player) {
-                    self.board_mut(player).attach_to_card(cheer, mem);
-                } else {
-                    self.board_mut(player).send_to_zone(cheer, Zone::Archive);
-                }
-
-                // there is still life, the player is alive
-                self.board(player).life.peek_top_card().is_some()
-            } else {
-                false
-            }
-        })
-    }
+    // pub fn send_to_archive(&mut self, card: CardRef) {
+    //     self.board_for_card_mut(card)
+    //         .send_to_zone(card, Zone::Archive);
+    //     self.board_for_card_mut(card)
+    //         .send_all_attachments_to_zone(card, Zone::Archive);
+    //     self.clear_all_modifiers(card);
+    // }
 
     pub fn prompt_for_rps(&mut self) -> Rps {
         self.prompter.prompt_choice(
@@ -1095,7 +1108,7 @@ impl Game {
                         Card::OshiHoloMember(_) => unreachable!("oshi cannot be in the back stage"),
                         Card::HoloMember(_) => {
                             // check condition for collab
-                            if self.is_rested(c) {
+                            if self.is_resting(c) {
                                 return None;
                             }
 
@@ -1300,6 +1313,7 @@ pub struct GameBoard {
     holo_power: Vec<CardRef>,
     archive: Vec<CardRef>,
     hand: Vec<CardRef>,
+    activate_support: Vec<CardRef>,
     attachments: HashMap<CardRef, CardRef>,
 }
 
@@ -1328,6 +1342,7 @@ impl GameBoard {
             holo_power: Vec::new(),
             archive: Vec::new(),
             hand: Vec::new(),
+            activate_support: Vec::new(),
             attachments: HashMap::new(),
         }
     }
@@ -1361,6 +1376,9 @@ impl GameBoard {
 
     pub fn is_attached(&self, attachment: CardRef) -> bool {
         self.attachments.contains_key(&attachment)
+    }
+    pub fn is_attached_to(&self, attachment: CardRef, card: CardRef) -> bool {
+        self.attachments.get(&attachment) == Some(&card)
     }
 
     pub fn attach_to_card(&mut self, attachment: CardRef, card: CardRef) {
@@ -1463,6 +1481,7 @@ impl GameBoard {
             Zone::HoloPower => &self.holo_power,
             Zone::Archive => &self.archive,
             Zone::Hand => &self.hand,
+            Zone::ActivateSupport => &self.activate_support,
         }
     }
 
@@ -1480,6 +1499,7 @@ impl GameBoard {
             Zone::HoloPower => &mut self.holo_power,
             Zone::Archive => &mut self.archive,
             Zone::Hand => &mut self.hand,
+            Zone::ActivateSupport => &mut self.activate_support,
         }
     }
 
@@ -1504,9 +1524,24 @@ impl GameBoard {
             Some(Zone::Archive)
         } else if self.hand.is_in_zone(card) {
             Some(Zone::Hand)
+        } else if self.activate_support.is_in_zone(card) {
+            Some(Zone::ActivateSupport)
         } else {
             None
         }
+    }
+
+    pub fn group_cards_by_zone(&self, cards: &[CardRef]) -> HashMap<Zone, Vec<CardRef>> {
+        let group = cards
+            .iter()
+            .fold(HashMap::new(), |mut acc: HashMap<_, Vec<_>>, c| {
+                let zone = self
+                    .find_card_zone(*c)
+                    .expect("the card should be in a zone");
+                acc.entry(zone).or_default().push(*c);
+                acc
+            });
+        group
     }
 }
 
@@ -1514,6 +1549,7 @@ pub trait ZoneControl {
     fn count(&self) -> usize;
     fn peek_top_card(&self) -> Option<CardRef>;
     fn peek_top_cards(&self, amount: usize) -> Vec<CardRef>;
+    fn all_cards(&self) -> Vec<CardRef>;
     fn remove_card(&mut self, card: CardRef);
     fn add_top_card(&mut self, card: CardRef);
     fn add_bottom_card(&mut self, card: CardRef);
@@ -1537,6 +1573,10 @@ impl ZoneControl for Option<CardRef> {
 
     fn peek_top_cards(&self, amount: usize) -> Vec<CardRef> {
         self.iter().copied().take(amount).collect()
+    }
+
+    fn all_cards(&self) -> Vec<CardRef> {
+        self.iter().copied().collect()
     }
 
     fn remove_card(&mut self, card: CardRef) {
@@ -1585,6 +1625,10 @@ impl ZoneControl for Vec<CardRef> {
 
     fn peek_top_cards(&self, amount: usize) -> Vec<CardRef> {
         self.iter().copied().take(amount).collect()
+    }
+
+    fn all_cards(&self) -> Vec<CardRef> {
+        self.iter().copied().collect()
     }
 
     fn remove_card(&mut self, card: CardRef) {
@@ -1641,6 +1685,7 @@ pub enum Zone {
     HoloPower,
     Archive,
     Hand,
+    ActivateSupport,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

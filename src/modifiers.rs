@@ -8,11 +8,9 @@ use ModifierKind::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModifierKind {
     // attributes
-    /// an instance of damage received, is added multiple times
-    DamageMarker,
     // buff
     // debuff
-    Rested,
+    Resting,
     PreventAbility(usize),
 }
 
@@ -90,16 +88,14 @@ impl Game {
             Player::Both => unreachable!("a card can't be owned by both player"),
         };
 
-        self.card_modifiers
-            .iter()
-            .filter(move |(c, _)| *c == card)
-            .map(|(_, b)| b)
-            .chain(
-                self.zone_modifiers
-                    .iter()
-                    .filter(move |(p, z, _)| p == player && *z == zone || *z == Zone::All)
-                    .map(|(_, _, b)| b),
-            )
+        self.card_modifiers.get(&card).into_iter().flatten().chain(
+            self.zone_modifiers
+                .get(player)
+                .into_iter()
+                .flatten()
+                .filter(move |(z, _)| *z == zone || *z == Zone::All)
+                .map(|(_, b)| b),
+        )
     }
 
     pub fn has_modifier(&self, card: CardRef, kind: ModifierKind) -> bool {
@@ -147,9 +143,11 @@ impl Game {
 
         let modifiers = self
             .card_modifiers
-            .iter()
-            .filter(|(c, m)| *c == card && m.kind == kind)
-            .map(|(_, m)| m.kind)
+            .get(&card)
+            .into_iter()
+            .flatten()
+            .filter(|m| m.kind == kind)
+            .map(|m| m.kind)
             .take(amount)
             .collect();
 
@@ -169,19 +167,22 @@ impl Game {
 
         let modifiers = self
             .card_modifiers
-            .iter()
-            .filter(|(c, _)| *c == card)
-            .map(|(_, m)| m.kind)
+            .get(&card)
+            .into_iter()
+            .flatten()
+            .map(|m| m.kind)
             .collect();
 
         self.remove_many_modifiers_from_many_cards(player, zone, vec![card], modifiers);
     }
 
     pub fn promote_modifiers(&mut self, attachment: CardRef, parent: CardRef) {
-        self.card_modifiers
-            .iter_mut()
-            .filter(|(c, _)| *c == parent)
-            .for_each(|(c, _)| *c = attachment);
+        if let Some((_, modifiers)) = self.card_modifiers.remove_entry(&parent) {
+            self.card_modifiers
+                .entry(attachment)
+                .or_default()
+                .extend(modifiers);
+        }
     }
 
     pub fn start_turn_modifiers(&mut self, player: Player) {
@@ -190,21 +191,23 @@ impl Game {
             .card_modifiers
             .iter()
             .enumerate()
-            .filter(|(_, (c, _))| self.player_for_card(*c) == player)
+            .filter(|(_, (c, _))| self.player_for_card(**c) == player)
             .map(|(i, _)| i)
             .collect();
         self.card_modifiers
             .iter_mut()
             .enumerate()
             .filter(|(i, _)| to_modify.contains(i))
-            .for_each(|(_, (_, m))| {
+            .flat_map(|(_, (_, ms))| ms)
+            .for_each(|m| {
                 m.start_turn();
             });
 
         self.zone_modifiers
-            .iter_mut()
-            .filter(|(p, _, _)| *p == player)
-            .for_each(|(_, _, m)| {
+            .get_mut(&player)
+            .into_iter()
+            .flatten()
+            .for_each(|(_, m)| {
                 m.start_turn();
             });
     }
@@ -216,22 +219,24 @@ impl Game {
             .card_modifiers
             .iter()
             .enumerate()
-            .filter(|(_, (c, _))| self.player_for_card(*c) == player)
+            .filter(|(_, (c, _))| self.player_for_card(**c) == player)
             .map(|(i, _)| i)
             .collect();
         self.card_modifiers
             .iter_mut()
             .enumerate()
             .filter(|(i, _)| to_modify.contains(i))
-            .for_each(|(_, (_, m))| {
+            .flat_map(|(_, (_, ms))| ms)
+            .for_each(|m| {
                 m.end_turn();
             });
 
         // increase the life counter of the zone modifiers
         self.zone_modifiers
-            .iter_mut()
-            .filter(|(p, _, _)| *p == player)
-            .for_each(|(_, _, m)| {
+            .get_mut(&player)
+            .into_iter()
+            .flatten()
+            .for_each(|(_, m)| {
                 m.end_turn();
             });
 
@@ -239,6 +244,7 @@ impl Game {
         let c_mods: HashMap<_, Vec<_>> = self
             .card_modifiers
             .iter()
+            .flat_map(|(c, ms)| ms.iter().map(move |m| (c, m)))
             .filter(|(_, m)| !m.survive_end_turn())
             .fold(HashMap::new(), |mut c_m, (c, m)| {
                 let p = self.player_for_card(*c);
@@ -257,6 +263,7 @@ impl Game {
         let z_mods: HashMap<_, Vec<_>> = self
             .zone_modifiers
             .iter()
+            .flat_map(|(p, ms)| ms.iter().map(move |(z, m)| (p, z, m)))
             .filter(|(_, _, m)| !m.survive_end_turn())
             .fold(HashMap::new(), |mut z_m, (p, z, m)| {
                 z_m.entry((*p, *z)).or_default().push(m.kind);
@@ -268,37 +275,65 @@ impl Game {
     }
 
     // common modifiers
-    pub fn is_rested(&self, card: CardRef) -> bool {
-        self.has_modifier(card, Rested)
+    pub fn is_resting(&self, card: CardRef) -> bool {
+        self.has_modifier(card, Resting)
     }
     pub fn rest_card(&mut self, card: CardRef) {
-        self.add_modifier(card, Rested, LifeTime::Unlimited)
+        self.add_modifier(card, Resting, LifeTime::Unlimited)
     }
     pub fn awake_card(&mut self, card: CardRef) {
-        self.remove_modifier(card, Rested)
+        self.remove_modifier(card, Resting)
+    }
+
+    // damage markers
+    pub fn has_damage(&self, card: CardRef) -> bool {
+        self.card_damage_markers
+            .get(&card)
+            .filter(|dmg| dmg.0 > 0)
+            .is_some()
     }
 
     pub fn remaining_hp(&self, card: CardRef) -> HoloMemberHp {
         let dmg = self
-            .find_modifiers(card)
-            .filter(|m| m.is_active())
-            .filter(|m| m.kind == DamageMarker)
-            .count();
+            .card_damage_markers
+            .get(&card)
+            .copied()
+            .unwrap_or_default();
         let hp = self
             .lookup_holo_member(card)
             .expect("should be a member")
             .hp;
-        hp.saturating_sub(DamageMarkers(dmg).to_hp())
+        hp.saturating_sub(dmg.to_hp())
     }
+
     pub fn add_damage(&mut self, card: CardRef, dmg: DamageMarkers) {
-        self.add_many_modifiers(card, DamageMarker, LifeTime::Unlimited, dmg.0);
+        let player = self.player_for_card(card);
+        let zone = self
+            .board(player)
+            .find_card_zone(card)
+            .expect("the card should be in a zone");
+
+        self.add_damage_markers_to_many_cards(player, zone, vec![card], dmg)
     }
+
     pub fn remove_damage(&mut self, card: CardRef, dmg: DamageMarkers) {
-        self.remove_many_modifiers(card, DamageMarker, dmg.0);
+        let player = self.player_for_card(card);
+        let zone = self
+            .board(player)
+            .find_card_zone(card)
+            .expect("the card should be in a zone");
+
+        self.remove_damage_markers_from_many_cards(player, zone, vec![card], dmg)
+    }
+
+    pub fn promote_damage_markers(&mut self, attachment: CardRef, parent: CardRef) {
+        if let Some((_, dmg)) = self.card_damage_markers.remove_entry(&parent) {
+            *self.card_damage_markers.entry(attachment).or_default() += dmg;
+        }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DamageMarkers(pub usize);
 
 impl DamageMarkers {
@@ -307,5 +342,30 @@ impl DamageMarkers {
     }
     pub fn to_hp(self) -> HoloMemberHp {
         self.0 as HoloMemberHp * 10
+    }
+}
+
+impl std::ops::Add for DamageMarkers {
+    type Output = DamageMarkers;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        DamageMarkers(self.0.saturating_add(rhs.0))
+    }
+}
+impl std::ops::AddAssign for DamageMarkers {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
+    }
+}
+impl std::ops::Sub for DamageMarkers {
+    type Output = DamageMarkers;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        DamageMarkers(self.0.saturating_sub(rhs.0))
+    }
+}
+impl std::ops::SubAssign for DamageMarkers {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = *self - rhs;
     }
 }
