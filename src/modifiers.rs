@@ -1,9 +1,27 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
+use std::fmt::Display;
+use std::num::NonZeroUsize;
 
 use super::cards::*;
 use super::gameplay::*;
 
-use ModifierKind::*;
+use rand::thread_rng;
+use rand::Rng;
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ModifierRef(NonZeroUsize);
+
+impl Debug for ModifierRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "m_{:016x}", self.0)
+    }
+}
+impl Display for ModifierRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModifierKind {
@@ -12,64 +30,71 @@ pub enum ModifierKind {
     // debuff
     Resting,
     PreventAbility(usize),
+    PreventCollab,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LifeTime {
-    /// stays until their player's next end step
-    Turns(u8, u8),
+    ThisGame,
+    ThisTurn,
+    /// becomes ThisTurn on player's next start turn
+    NextTurn(Player),
+    ThisStep,
+    ThisArt,
+    ThisEffect,
     /// stays until manually removed
-    Unlimited,
-}
-
-impl LifeTime {
-    pub fn this_turn() -> Self {
-        LifeTime::Turns(0, 0)
-    }
-    pub fn next_turn() -> Self {
-        LifeTime::next_turns(1)
-    }
-    pub fn next_turns(count: u8) -> Self {
-        LifeTime::Turns(1, count)
-    }
+    UntilRemoved,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Modifier {
+    pub id: ModifierRef,
     pub kind: ModifierKind,
     life_time: LifeTime,
-    turn_count: u8,
-    // TODO active on specific player's turn?
 }
 
 impl Modifier {
-    pub fn new(kind: ModifierKind, life_time: LifeTime) -> Self {
+    pub fn for_card(card: CardRef, kind: ModifierKind, life_time: LifeTime) -> Self {
+        let id = ModifierRef(
+            NonZeroUsize::new((thread_rng().gen::<usize>() << 16) ^ usize::from(card.0))
+                .expect("card is non zero"),
+        );
         Modifier {
+            id,
             kind,
             life_time,
-            turn_count: 0,
+        }
+    }
+    pub fn for_zone(player: Player, zone: Zone, kind: ModifierKind, life_time: LifeTime) -> Self {
+        let id = ModifierRef(
+            NonZeroUsize::new(
+                (thread_rng().gen::<usize>() << 16)
+                    + ((zone as usize + 1) << 8)
+                    + (player as usize)
+                    + 1,
+            )
+            .expect("zone is non zero"),
+        );
+        Modifier {
+            id,
+            kind,
+            life_time,
         }
     }
 
     pub fn is_active(&self) -> bool {
+        !matches!(self.life_time, LifeTime::NextTurn(_))
+    }
+
+    pub fn start_turn(&mut self, active_player: Player) {
+        // becomes ThisTurn on player's next start turn
         match self.life_time {
-            LifeTime::Turns(min, max) => (min..=max).contains(&self.turn_count),
-            LifeTime::Unlimited => true,
-        }
+            LifeTime::NextTurn(p) if p == active_player => self.life_time = LifeTime::ThisTurn,
+            _ => {}
+        };
     }
 
-    pub fn start_turn(&mut self) {}
-
-    pub fn end_turn(&mut self) {
-        self.turn_count += 1;
-    }
-
-    pub fn survive_end_turn(&self) -> bool {
-        match self.life_time {
-            LifeTime::Turns(_, max) => self.turn_count <= max,
-            LifeTime::Unlimited => true,
-        }
-    }
+    pub fn end_turn(&mut self, _active_player: Player) {}
 }
 
 impl Game {
@@ -99,9 +124,16 @@ impl Game {
     }
 
     pub fn has_modifier(&self, card: CardRef, kind: ModifierKind) -> bool {
+        self.has_modifier_with(card, |m| m.kind == kind)
+    }
+    pub fn has_modifier_with(
+        &self,
+        card: CardRef,
+        filter_fn: impl FnMut(&Modifier) -> bool,
+    ) -> bool {
         self.find_modifiers(card)
             .filter(|m| m.is_active())
-            .any(|m| m.kind == kind)
+            .any(filter_fn)
     }
 
     pub fn add_modifier(&mut self, card: CardRef, kind: ModifierKind, life_time: LifeTime) {
@@ -125,7 +157,34 @@ impl Game {
             zone,
             vec![card],
             (0..amount)
-                .map(move |_| Modifier::new(kind, life_time))
+                .map(move |_| Modifier::for_card(card, kind, life_time))
+                .collect(),
+        )
+    }
+
+    pub fn add_zone_modifier(
+        &mut self,
+        player: Player,
+        zone: Zone,
+        kind: ModifierKind,
+        life_time: LifeTime,
+    ) {
+        self.add_many_zone_modifiers(player, zone, kind, life_time, 1);
+    }
+
+    pub fn add_many_zone_modifiers(
+        &mut self,
+        player: Player,
+        zone: Zone,
+        kind: ModifierKind,
+        life_time: LifeTime,
+        amount: usize,
+    ) {
+        self.add_many_modifiers_to_zone(
+            player,
+            zone,
+            (0..amount)
+                .map(move |_| Modifier::for_zone(player, zone, kind, life_time))
                 .collect(),
         )
     }
@@ -135,6 +194,15 @@ impl Game {
     }
 
     pub fn remove_many_modifiers(&mut self, card: CardRef, kind: ModifierKind, amount: usize) {
+        self.remove_many_modifiers_with(card, |m| m.kind == kind, amount)
+    }
+
+    pub fn remove_many_modifiers_with(
+        &mut self,
+        card: CardRef,
+        filter_fn: impl FnMut(&&Modifier) -> bool,
+        amount: usize,
+    ) {
         let player = self.player_for_card(card);
         let zone = self
             .board(player)
@@ -146,8 +214,8 @@ impl Game {
             .get(&card)
             .into_iter()
             .flatten()
-            .filter(|m| m.kind == kind)
-            .map(|m| m.kind)
+            .filter(filter_fn)
+            .map(|m| m.id)
             .take(amount)
             .collect();
 
@@ -165,15 +233,7 @@ impl Game {
             .find_card_zone(card)
             .expect("the card should be in a zone");
 
-        let modifiers = self
-            .card_modifiers
-            .get(&card)
-            .into_iter()
-            .flatten()
-            .map(|m| m.kind)
-            .collect();
-
-        self.remove_many_modifiers_from_many_cards(player, zone, vec![card], modifiers);
+        self.clear_all_modifiers_from_many_cards(player, zone, vec![card]);
     }
 
     pub fn promote_modifiers(&mut self, attachment: CardRef, parent: CardRef) {
@@ -186,6 +246,7 @@ impl Game {
     }
 
     pub fn start_turn_modifiers(&mut self, player: Player) {
+        // house keeping for the card modifiers
         // split in 2 because can't modify and player_for_card at the same time
         let to_modify: Vec<_> = self
             .card_modifiers
@@ -200,20 +261,21 @@ impl Game {
             .filter(|(i, _)| to_modify.contains(i))
             .flat_map(|(_, (_, ms))| ms)
             .for_each(|m| {
-                m.start_turn();
+                m.start_turn(player);
             });
 
+        // house keeping for the zone modifiers
         self.zone_modifiers
             .get_mut(&player)
             .into_iter()
             .flatten()
             .for_each(|(_, m)| {
-                m.start_turn();
+                m.start_turn(player);
             });
     }
 
     pub fn end_turn_modifiers(&mut self, player: Player) {
-        // increase the life counter of the card modifiers
+        // house keeping for the card modifiers
         // split in 2 because can't modify and player_for_card at the same time
         let to_modify: Vec<_> = self
             .card_modifiers
@@ -228,31 +290,33 @@ impl Game {
             .filter(|(i, _)| to_modify.contains(i))
             .flat_map(|(_, (_, ms))| ms)
             .for_each(|m| {
-                m.end_turn();
+                m.end_turn(player);
             });
 
-        // increase the life counter of the zone modifiers
+        // house keeping for the zone modifiers
         self.zone_modifiers
             .get_mut(&player)
             .into_iter()
             .flatten()
             .for_each(|(_, m)| {
-                m.end_turn();
+                m.end_turn(player);
             });
+    }
 
+    pub fn remove_expiring_modifiers(&mut self, life_time: LifeTime) {
         // remove expiring card modifiers
         let c_mods: HashMap<_, Vec<_>> = self
             .card_modifiers
             .iter()
             .flat_map(|(c, ms)| ms.iter().map(move |m| (c, m)))
-            .filter(|(_, m)| !m.survive_end_turn())
+            .filter(|(_, m)| m.life_time == life_time)
             .fold(HashMap::new(), |mut c_m, (c, m)| {
                 let p = self.player_for_card(*c);
                 let z = self
                     .board(p)
                     .find_card_zone(*c)
                     .expect("the card should be in a zone");
-                c_m.entry((p, z, *c)).or_default().push(m.kind);
+                c_m.entry((p, z, *c)).or_default().push(m.id);
                 c_m
             });
         for ((p, z, c), m) in c_mods {
@@ -264,25 +328,14 @@ impl Game {
             .zone_modifiers
             .iter()
             .flat_map(|(p, ms)| ms.iter().map(move |(z, m)| (p, z, m)))
-            .filter(|(_, _, m)| !m.survive_end_turn())
+            .filter(|(_, _, m)| m.life_time == life_time)
             .fold(HashMap::new(), |mut z_m, (p, z, m)| {
-                z_m.entry((*p, *z)).or_default().push(m.kind);
+                z_m.entry((*p, *z)).or_default().push(m.id);
                 z_m
             });
         for ((p, z), m) in z_mods {
             self.remove_many_modifiers_from_zone(p, z, m);
         }
-    }
-
-    // common modifiers
-    pub fn is_resting(&self, card: CardRef) -> bool {
-        self.has_modifier(card, Resting)
-    }
-    pub fn rest_card(&mut self, card: CardRef) {
-        self.add_modifier(card, Resting, LifeTime::Unlimited)
-    }
-    pub fn awake_card(&mut self, card: CardRef) {
-        self.remove_modifier(card, Resting)
     }
 
     // damage markers

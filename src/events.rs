@@ -1,10 +1,11 @@
 use crate::{
     gameplay::{CardRef, Game, Player, Rps, Step, Zone},
-    modifiers::{DamageMarkers, Modifier, ModifierKind},
+    modifiers::{DamageMarkers, LifeTime, Modifier, ModifierKind, ModifierRef},
     CardNumber, Loadout,
 };
 use enum_dispatch::enum_dispatch;
 use iter_tools::Itertools;
+use ModifierKind::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientReceive {
@@ -43,6 +44,7 @@ pub enum Event {
 
     AddCardModifiers,
     RemoveCardModifiers,
+    ClearCardModifiers,
     AddZoneModifiers,
     RemoveZoneModifiers,
     AddDamageMarkers,
@@ -301,7 +303,7 @@ impl Game {
             .into(),
         )
     }
-    pub fn report_start_step(&mut self, active_player: Player, active_step: Step) {
+    pub fn report_enter_step(&mut self, active_player: Player, active_step: Step) {
         self.send_event(
             EnterStep {
                 active_player,
@@ -310,7 +312,7 @@ impl Game {
             .into(),
         )
     }
-    pub fn report_end_step(&mut self, active_player: Player, active_step: Step) {
+    pub fn report_exit_step(&mut self, active_player: Player, active_step: Step) {
         self.send_event(
             ExitStep {
                 active_player,
@@ -615,7 +617,7 @@ impl Game {
         player: Player,
         zone: Zone,
         cards: Vec<CardRef>,
-        modifiers: Vec<ModifierKind>,
+        modifiers: Vec<ModifierRef>,
     ) {
         if cards.is_empty() || modifiers.is_empty() {
             return;
@@ -627,6 +629,31 @@ impl Game {
                 zone,
                 cards,
                 modifiers,
+            }
+            .into(),
+        )
+    }
+
+    pub fn clear_all_modifiers_from_many_cards(
+        &mut self,
+        player: Player,
+        zone: Zone,
+        cards: Vec<CardRef>,
+    ) {
+        let cards = cards
+            .into_iter()
+            .filter(|c| self.card_modifiers.contains_key(c))
+            .collect_vec();
+
+        if cards.is_empty() {
+            return;
+        }
+
+        self.send_event(
+            ClearCardModifiers {
+                player,
+                zone,
+                cards,
             }
             .into(),
         )
@@ -656,7 +683,7 @@ impl Game {
         &mut self,
         player: Player,
         zone: Zone,
-        modifiers: Vec<ModifierKind>,
+        modifiers: Vec<ModifierRef>,
     ) {
         if modifiers.is_empty() {
             return;
@@ -908,6 +935,8 @@ pub struct StartTurn {
 impl EvaluateEvent for StartTurn {
     fn evaluate_event(&self, game: &mut Game) {
         game.active_player = self.active_player;
+
+        game.start_turn_modifiers(self.active_player);
     }
 }
 
@@ -919,6 +948,10 @@ pub struct EndTurn {
 impl EvaluateEvent for EndTurn {
     fn evaluate_event(&self, game: &mut Game) {
         assert_eq!(self.active_player, game.active_player);
+
+        game.end_turn_modifiers(self.active_player);
+
+        game.remove_expiring_modifiers(LifeTime::ThisTurn);
     }
 }
 
@@ -943,6 +976,8 @@ impl EvaluateEvent for ExitStep {
     fn evaluate_event(&self, game: &mut Game) {
         assert_eq!(self.active_player, game.active_player);
         assert_eq!(self.active_step, game.active_step);
+
+        game.remove_expiring_modifiers(LifeTime::ThisStep);
     }
 }
 
@@ -975,7 +1010,7 @@ pub struct RemoveCardModifiers {
     player: Player,
     zone: Zone,
     cards: Vec<CardRef>,
-    modifiers: Vec<ModifierKind>,
+    modifiers: Vec<ModifierRef>,
 }
 impl EvaluateEvent for RemoveCardModifiers {
     fn evaluate_event(&self, game: &mut Game) {
@@ -997,7 +1032,7 @@ impl EvaluateEvent for RemoveCardModifiers {
                 let idx = to_remove
                     .iter()
                     .enumerate()
-                    .find(|(_, r)| r.0 == *card && r.1 == m.kind)
+                    .find(|(_, r)| r.0 == *card && r.1 == m.id)
                     .map(|(i, _)| i);
                 if let Some(idx) = idx {
                     to_remove.swap_remove(idx);
@@ -1006,6 +1041,26 @@ impl EvaluateEvent for RemoveCardModifiers {
                     true
                 }
             });
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClearCardModifiers {
+    player: Player,
+    zone: Zone,
+    cards: Vec<CardRef>,
+}
+impl EvaluateEvent for ClearCardModifiers {
+    fn evaluate_event(&self, game: &mut Game) {
+        if self.cards.is_empty() {
+            return;
+        }
+
+        verify_cards_in_zone(game, self.player, self.zone, &self.cards);
+
+        for card in &self.cards {
+            game.card_modifiers.remove_entry(card);
         }
     }
 }
@@ -1035,7 +1090,7 @@ impl EvaluateEvent for AddZoneModifiers {
 pub struct RemoveZoneModifiers {
     player: Player,
     zone: Zone,
-    modifiers: Vec<ModifierKind>,
+    modifiers: Vec<ModifierRef>,
 }
 impl EvaluateEvent for RemoveZoneModifiers {
     fn evaluate_event(&self, game: &mut Game) {
@@ -1057,7 +1112,7 @@ impl EvaluateEvent for RemoveZoneModifiers {
                 let idx = to_remove
                     .iter()
                     .enumerate()
-                    .find(|(_, r)| r.0 == self.player && r.1 == *z && r.2 == m.kind)
+                    .find(|(_, r)| r.0 == self.player && r.1 == *z && r.2 == m.id)
                     .map(|(i, _)| i);
                 if let Some(idx) = idx {
                     to_remove.swap_remove(idx);
@@ -1303,6 +1358,14 @@ impl EvaluateEvent for Collab {
 
         //   - draw down card from deck into power zone
         game.send_cards_to_holo_power(self.player, self.holo_power_amount);
+
+        // can only collab once per turn
+        game.add_zone_modifier(
+            self.player,
+            Zone::BackStage,
+            PreventCollab,
+            LifeTime::ThisTurn,
+        );
     }
 }
 

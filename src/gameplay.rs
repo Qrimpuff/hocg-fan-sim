@@ -9,6 +9,7 @@ use super::modifiers::*;
 use iter_tools::Itertools;
 use rand::seq::IteratorRandom;
 use rand::{thread_rng, Rng};
+use ModifierKind::*;
 
 const STARTING_HAND_SIZE: usize = 7;
 const MAX_MEMBERS_ON_STAGE: usize = 6;
@@ -16,7 +17,7 @@ const MAX_MEMBERS_ON_STAGE: usize = 6;
 static PRIVATE_CARD: CardRef = CardRef(NonZeroUsize::MAX);
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CardRef(NonZeroUsize);
+pub struct CardRef(pub(crate) NonZeroUsize);
 
 impl Debug for CardRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -67,9 +68,9 @@ pub fn register_card(
 #[derive(Debug)]
 pub struct Game {
     pub library: Arc<GlobalLibrary>,
+    pub card_map: HashMap<CardRef, (Player, CardNumber)>, // TODO use a different pair because rarity is not include in card number
     pub player_1: GameBoard,
     pub player_2: GameBoard,
-    pub card_map: HashMap<CardRef, (Player, CardNumber)>, // TODO use a different pair because rarity is not include in card number
     pub active_player: Player,
     pub active_step: Step,
     pub turn_number: usize,
@@ -369,7 +370,7 @@ impl Game {
         // could maybe lose between start turn and start step, because of an effect
 
         println!("- active step: {:?}", self.active_step);
-        self.report_start_step(self.active_player, self.active_step);
+        self.report_enter_step(self.active_player, self.active_step);
 
         // after step change, before the step starts
         self.check_loss_conditions();
@@ -399,7 +400,7 @@ impl Game {
             return false;
         }
 
-        self.report_end_step(self.active_player, self.active_step);
+        self.report_exit_step(self.active_player, self.active_step);
 
         // end turn
         if self.active_step == Step::End {
@@ -422,17 +423,11 @@ impl Game {
         // TODO send (event) start turn, before or after modifiers?
         println!("active player: {:?}", self.active_player);
         self.report_start_turn(self.active_player);
-
-        // TODO (trigger) more turn change effects
-        self.start_turn_modifiers(self.active_player);
     }
 
     pub fn end_turn(&mut self) {
         // TODO send (event) end turn, before or after modifiers?
         self.report_end_turn(self.active_player);
-
-        // TODO (trigger) more turn change effects
-        self.end_turn_modifiers(self.active_player);
     }
 
     pub fn reset_step(&mut self) {
@@ -442,13 +437,13 @@ impl Game {
         // - all members from rest to active
         // TODO send (event) awake card, remove modifiers
         for mem in self.active_board().stage().collect_vec() {
-            self.awake_card(mem);
+            self.remove_modifier(mem, Resting);
         }
 
         // - collab to back stage in rest
         // TODO send (event) rest card, add modifiers
         if let Some(mem) = self.active_board().collab_stage {
-            self.rest_card(mem);
+            self.add_modifier(mem, Resting, LifeTime::UntilRemoved);
             // self.active_board_mut().send_to_zone(mem, Zone::BackStage);
             self.send_from_collab_to_back_stage(self.active_player, mem);
         }
@@ -569,8 +564,11 @@ impl Game {
                 MainStepAction::CollabMember(card) => {
                     println!("- action: Collab member");
                     // TODO verify collab member action
-                    if self.is_resting(card) {
+                    if self.has_modifier(card, Resting) {
                         panic!("cannot collab a resting member");
+                    }
+                    if self.has_modifier(card, PreventCollab) {
+                        panic!("cannot collab this member");
                     }
 
                     // can only collab from back stage
@@ -632,6 +630,10 @@ impl Game {
                     let condition = oshi.skills[i].condition.clone();
                     let cost = oshi.skills[i].cost.into();
                     let effect = oshi.skills[i].effect.clone();
+                    let prevent_life_time = match oshi.skills[i].kind {
+                        OshiSkillKind::Normal => LifeTime::ThisTurn,
+                        OshiSkillKind::Special => LifeTime::ThisGame,
+                    };
 
                     // TODO could have a buff that could pay for the skill
                     if self.active_board().holo_power.count() < cost {
@@ -650,6 +652,8 @@ impl Game {
                         );
 
                         effect.start_evaluate(self, card);
+
+                        self.add_modifier(card, PreventAbility(i), prevent_life_time);
                     } else {
                         unreachable!("oshi ability should not be an option, if it's not allowed")
                     }
@@ -810,6 +814,7 @@ impl Game {
                 // TODO send (event) game over reason
             }
 
+            // TODO that's not working as intended. it's too early
             // - deck is 0 on draw step
             if board.main_deck.count() == 0
                 && self.active_step == Step::Draw
@@ -1103,24 +1108,20 @@ impl Game {
         actions.extend(
             self.board(player)
                 .back_stage()
-                .filter_map(|c| {
-                    match self.lookup_card(c) {
-                        Card::OshiHoloMember(_) => unreachable!("oshi cannot be in the back stage"),
-                        Card::HoloMember(_) => {
-                            // check condition for collab
-                            if self.is_resting(c) {
-                                return None;
-                            }
-
-                            if self.board(player).collab_stage.is_none() {
-                                Some(MainStepAction::CollabMember(c))
-                            } else {
-                                None
-                            }
+                // check condition for collab
+                .filter(|c| !self.has_modifier(*c, Resting))
+                .filter(|c| !self.has_modifier(*c, PreventCollab))
+                .filter_map(|c| match self.lookup_card(c) {
+                    Card::OshiHoloMember(_) => unreachable!("oshi cannot be in the back stage"),
+                    Card::HoloMember(_) => {
+                        if self.board(player).collab_stage.is_none() {
+                            Some(MainStepAction::CollabMember(c))
+                        } else {
+                            None
                         }
-                        Card::Support(_) => unreachable!("support cannot be in the back stage"),
-                        Card::Cheer(_) => unreachable!("cheer cannot be in the back stage"),
                     }
+                    Card::Support(_) => unreachable!("support cannot be in the back stage"),
+                    Card::Cheer(_) => unreachable!("cheer cannot be in the back stage"),
                 })
                 .map(|a| MainStepActionDisplay::new(a, self)),
         );
@@ -1167,7 +1168,8 @@ impl Game {
                             .enumerate()
                             .filter(|(_, a)| self.board(player).holo_power.count() >= a.cost.into())
                             // TODO check condition for ability
-                            // TODO prevent duplicate ability use with (buff)
+                            // prevent duplicate ability use
+                            .filter(|(i, _)| !self.has_modifier(*c, PreventAbility(*i)))
                             .map(|(i, _a)| MainStepAction::UseAbilities(*c, i))
                             .collect_vec(),
                         Card::HoloMember(_) => todo!("members are not in oshi position"),
@@ -1628,7 +1630,7 @@ impl ZoneControl for Vec<CardRef> {
     }
 
     fn all_cards(&self) -> Vec<CardRef> {
-        self.iter().copied().collect()
+        self.to_vec()
     }
 
     fn remove_card(&mut self, card: CardRef) {
