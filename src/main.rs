@@ -61,9 +61,9 @@ fn main() {
         RandomPrompter::new(),
     );
     // println!("{:#?}", &game);
-    game.start_game();
+    game.start_game().unwrap();
     // println!("{:#?}", &game);
 
-    while game.next_step() {}
+    while game.next_step().is_ok() {}
     println!("{:#?}", &game);
 }

@@ -1,5 +1,5 @@
 use crate::{
-    gameplay::{CardRef, Game, Player, Rps, Step, Zone},
+    gameplay::{CardRef, Game, GameContinue, GameResult, Player, Rps, Step, Zone},
     modifiers::{DamageMarkers, LifeTime, Modifier, ModifierKind, ModifierRef},
     CardNumber, Loadout,
 };
@@ -224,14 +224,14 @@ pub enum IntentResponse {
 }
 
 impl Game {
-    pub fn send_event(&mut self, event: Event) {
+    pub fn send_event(&mut self, event: Event) -> GameResult {
         // TODO trigger before effects
         let before = Trigger::Before(&event);
         println!("  trigger = {before:?}");
 
         println!("EVENT = {event:?}");
         // perform the modification to the game state
-        event.evaluate_event(self);
+        event.evaluate_event(self)?;
 
         // TODO sanitize the event before sending it to each player
         // TODO send event to each player
@@ -239,9 +239,11 @@ impl Game {
         // TODO trigger after effects
         let after = Trigger::After(&event);
         println!("  trigger = {after:?}");
+
+        Ok(GameContinue)
     }
 
-    pub fn report_rps_draw(&mut self) {
+    pub fn report_rps_draw(&mut self) -> GameResult {
         self.send_event(
             RpsOutcome {
                 winning_player: None,
@@ -249,7 +251,7 @@ impl Game {
             .into(),
         )
     }
-    pub fn report_rps_win(&mut self, player: Player) {
+    pub fn report_rps_win(&mut self, player: Player) -> GameResult {
         self.send_event(
             RpsOutcome {
                 winning_player: Some(player),
@@ -257,7 +259,7 @@ impl Game {
             .into(),
         )
     }
-    pub fn report_player_going_first(&mut self, player: Player) {
+    pub fn report_player_going_first(&mut self, player: Player) -> GameResult {
         self.send_event(
             PlayerGoingFirst {
                 first_player: player,
@@ -266,10 +268,10 @@ impl Game {
         )
     }
 
-    pub fn report_start_game(&mut self, active_player: Player) {
+    pub fn report_start_game(&mut self, active_player: Player) -> GameResult {
         self.send_event(GameStart { active_player }.into())
     }
-    pub fn report_game_over(&mut self, winning_player: Player) {
+    pub fn report_game_over(&mut self, winning_player: Player) -> GameResult {
         self.send_event(
             GameOver {
                 winning_player: Some(winning_player),
@@ -277,7 +279,7 @@ impl Game {
             .into(),
         )
     }
-    pub fn report_game_over_draw(&mut self) {
+    pub fn report_game_over_draw(&mut self) -> GameResult {
         self.send_event(
             GameOver {
                 winning_player: None,
@@ -285,7 +287,7 @@ impl Game {
             .into(),
         )
     }
-    pub fn report_start_turn(&mut self, active_player: Player) {
+    pub fn report_start_turn(&mut self, active_player: Player) -> GameResult {
         self.send_event(
             StartTurn {
                 active_player,
@@ -294,7 +296,7 @@ impl Game {
             .into(),
         )
     }
-    pub fn report_end_turn(&mut self, active_player: Player) {
+    pub fn report_end_turn(&mut self, active_player: Player) -> GameResult {
         self.send_event(
             EndTurn {
                 active_player,
@@ -303,7 +305,7 @@ impl Game {
             .into(),
         )
     }
-    pub fn report_enter_step(&mut self, active_player: Player, active_step: Step) {
+    pub fn report_enter_step(&mut self, active_player: Player, active_step: Step) -> GameResult {
         self.send_event(
             EnterStep {
                 active_player,
@@ -312,7 +314,7 @@ impl Game {
             .into(),
         )
     }
-    pub fn report_exit_step(&mut self, active_player: Player, active_step: Step) {
+    pub fn report_exit_step(&mut self, active_player: Player, active_step: Step) -> GameResult {
         self.send_event(
             ExitStep {
                 active_player,
@@ -322,7 +324,7 @@ impl Game {
         )
     }
 
-    pub fn send_full_hand_to_main_deck(&mut self, player: Player) {
+    pub fn send_full_hand_to_main_deck(&mut self, player: Player) -> GameResult {
         let hand = self.board(player).get_zone(Zone::Hand);
         self.send_event(
             ZoneToZone {
@@ -332,32 +334,32 @@ impl Game {
                 to_zone: Zone::MainDeck,
             }
             .into(),
-        );
+        )
     }
 
-    pub fn shuffle_main_deck(&mut self, player: Player) {
+    pub fn shuffle_main_deck(&mut self, player: Player) -> GameResult {
         self.send_event(
             Shuffle {
                 player,
                 zone: Zone::MainDeck,
             }
             .into(),
-        );
+        )
     }
 
-    pub fn shuffle_cheer_deck(&mut self, player: Player) {
+    pub fn shuffle_cheer_deck(&mut self, player: Player) -> GameResult {
         self.send_event(
             Shuffle {
                 player,
                 zone: Zone::CheerDeck,
             }
             .into(),
-        );
+        )
     }
 
-    pub fn reveal_cards(&mut self, player: Player, zone: Zone, cards: &[CardRef]) {
+    pub fn reveal_cards(&mut self, player: Player, zone: Zone, cards: &[CardRef]) -> GameResult {
         if cards.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         self.send_event(
@@ -370,15 +372,15 @@ impl Game {
                     .collect(),
             }
             .into(),
-        );
+        )
     }
 
-    pub fn reveal_all_cards_in_zone(&mut self, player: Player, zone: Zone) {
+    pub fn reveal_all_cards_in_zone(&mut self, player: Player, zone: Zone) -> GameResult {
         let cards = self.board(player).get_zone(zone).all_cards();
-        self.reveal_cards(player, zone, &cards);
+        self.reveal_cards(player, zone, &cards)
     }
 
-    pub fn send_from_hand_to_center_stage(&mut self, player: Player, card: CardRef) {
+    pub fn send_from_hand_to_center_stage(&mut self, player: Player, card: CardRef) -> GameResult {
         self.send_event(
             ZoneToZone {
                 player,
@@ -387,10 +389,14 @@ impl Game {
                 to_zone: Zone::MainStageCenter,
             }
             .into(),
-        );
+        )
     }
 
-    pub fn send_from_back_stage_to_center_stage(&mut self, player: Player, card: CardRef) {
+    pub fn send_from_back_stage_to_center_stage(
+        &mut self,
+        player: Player,
+        card: CardRef,
+    ) -> GameResult {
         self.send_event(
             ZoneToZone {
                 player,
@@ -399,12 +405,16 @@ impl Game {
                 to_zone: Zone::MainStageCenter,
             }
             .into(),
-        );
+        )
     }
 
-    pub fn send_from_hand_to_back_stage(&mut self, player: Player, cards: Vec<CardRef>) {
+    pub fn send_from_hand_to_back_stage(
+        &mut self,
+        player: Player,
+        cards: Vec<CardRef>,
+    ) -> GameResult {
         if cards.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         self.send_event(
@@ -415,12 +425,12 @@ impl Game {
                 to_zone: Zone::BackStage,
             }
             .into(),
-        );
+        )
     }
 
-    pub fn send_cards_to_holo_power(&mut self, player: Player, amount: usize) {
+    pub fn send_cards_to_holo_power(&mut self, player: Player, amount: usize) -> GameResult {
         if amount < 1 {
-            return;
+            return Ok(GameContinue);
         }
 
         let deck = self.board(player).get_zone(Zone::MainDeck);
@@ -433,11 +443,13 @@ impl Game {
                     to_zone: Zone::HoloPower,
                 }
                 .into(),
-            );
+            )?;
         }
+
+        Ok(GameContinue)
     }
 
-    pub fn send_from_back_stage_to_collab(&mut self, player: Player, card: CardRef) {
+    pub fn send_from_back_stage_to_collab(&mut self, player: Player, card: CardRef) -> GameResult {
         self.send_event(
             Collab {
                 player,
@@ -445,10 +457,10 @@ impl Game {
                 holo_power_amount: 1, // TODO some cards could maybe power for more
             }
             .into(),
-        );
+        )
     }
 
-    pub fn send_from_collab_to_back_stage(&mut self, player: Player, card: CardRef) {
+    pub fn send_from_collab_to_back_stage(&mut self, player: Player, card: CardRef) -> GameResult {
         self.send_event(
             ZoneToZone {
                 player,
@@ -457,10 +469,14 @@ impl Game {
                 to_zone: Zone::BackStage,
             }
             .into(),
-        );
+        )
     }
 
-    pub fn send_from_center_stage_to_back_stage(&mut self, player: Player, card: CardRef) {
+    pub fn send_from_center_stage_to_back_stage(
+        &mut self,
+        player: Player,
+        card: CardRef,
+    ) -> GameResult {
         self.send_event(
             ZoneToZone {
                 player,
@@ -469,7 +485,7 @@ impl Game {
                 to_zone: Zone::BackStage,
             }
             .into(),
-        );
+        )
     }
 
     pub fn baton_pass_center_stage_to_back_stage(
@@ -477,7 +493,7 @@ impl Game {
         player: Player,
         from_card: CardRef,
         to_card: CardRef,
-    ) {
+    ) -> GameResult {
         self.send_event(
             BatonPass {
                 player,
@@ -485,12 +501,12 @@ impl Game {
                 to_card: (Zone::BackStage, to_card),
             }
             .into(),
-        );
+        )
     }
 
-    pub fn send_cheers_to_life(&mut self, player: Player, amount: usize) {
+    pub fn send_cheers_to_life(&mut self, player: Player, amount: usize) -> GameResult {
         if amount < 1 {
-            return;
+            return Ok(GameContinue);
         }
 
         let cheers = self.board(player).get_zone(Zone::CheerDeck);
@@ -502,12 +518,12 @@ impl Game {
                 to_zone: Zone::Life,
             }
             .into(),
-        );
+        )
     }
 
-    pub fn send_cards_to_archive(&mut self, player: Player, cards: Vec<CardRef>) {
+    pub fn send_cards_to_archive(&mut self, player: Player, cards: Vec<CardRef>) -> GameResult {
         if cards.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         for (zone, cards) in self.board(player).group_cards_by_zone(&cards) {
@@ -519,18 +535,25 @@ impl Game {
                     to_zone: Zone::Archive,
                 }
                 .into(),
-            );
+            )?;
         }
+
+        Ok(GameContinue)
     }
 
-    pub fn attach_cheers_from_zone(&mut self, player: Player, zone: Zone, amount: usize) {
+    pub fn attach_cheers_from_zone(
+        &mut self,
+        player: Player,
+        zone: Zone,
+        amount: usize,
+    ) -> GameResult {
         if amount < 1 {
-            return;
+            return Ok(GameContinue);
         }
 
         // - draw cards from zone (cheer deck, life), then attach it
         let cheers = self.board(player).get_zone(zone).peek_top_cards(amount);
-        self.reveal_cards(player, zone, &cheers);
+        self.reveal_cards(player, zone, &cheers)?;
         for cheer in cheers {
             // TODO package with prompt
             // println!("lost a life: {}", CardDisplay::new(cheer, self));
@@ -549,7 +572,7 @@ impl Game {
                         to_card: (to_zone, mem),
                     }
                     .into(),
-                );
+                )?;
             } else {
                 self.send_event(
                     ZoneToZone {
@@ -559,9 +582,11 @@ impl Game {
                         to_zone: Zone::Archive,
                     }
                     .into(),
-                );
+                )?;
             }
         }
+
+        Ok(GameContinue)
     }
 
     pub fn send_attachments_to_archive(
@@ -569,9 +594,9 @@ impl Game {
         player: Player,
         card: CardRef,
         attachments: Vec<CardRef>,
-    ) {
+    ) -> GameResult {
         if attachments.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         let zone = self
@@ -587,7 +612,7 @@ impl Game {
                 to_zone: Zone::Archive,
             }
             .into(),
-        );
+        )
     }
 
     pub fn add_many_modifiers_to_many_cards(
@@ -596,9 +621,9 @@ impl Game {
         zone: Zone,
         cards: Vec<CardRef>,
         modifiers: Vec<Modifier>,
-    ) {
+    ) -> GameResult {
         if cards.is_empty() || modifiers.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         self.send_event(
@@ -618,9 +643,9 @@ impl Game {
         zone: Zone,
         cards: Vec<CardRef>,
         modifiers: Vec<ModifierRef>,
-    ) {
+    ) -> GameResult {
         if cards.is_empty() || modifiers.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         self.send_event(
@@ -639,14 +664,14 @@ impl Game {
         player: Player,
         zone: Zone,
         cards: Vec<CardRef>,
-    ) {
+    ) -> GameResult {
         let cards = cards
             .into_iter()
             .filter(|c| self.card_modifiers.contains_key(c))
             .collect_vec();
 
         if cards.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         self.send_event(
@@ -664,9 +689,9 @@ impl Game {
         player: Player,
         zone: Zone,
         modifiers: Vec<Modifier>,
-    ) {
+    ) -> GameResult {
         if modifiers.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         self.send_event(
@@ -684,9 +709,9 @@ impl Game {
         player: Player,
         zone: Zone,
         modifiers: Vec<ModifierRef>,
-    ) {
+    ) -> GameResult {
         if modifiers.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         self.send_event(
@@ -705,9 +730,9 @@ impl Game {
         zone: Zone,
         cards: Vec<CardRef>,
         dmg: DamageMarkers,
-    ) {
+    ) -> GameResult {
         if cards.is_empty() || dmg.0 < 1 {
-            return;
+            return Ok(GameContinue);
         }
 
         self.send_event(
@@ -727,14 +752,14 @@ impl Game {
         zone: Zone,
         cards: Vec<CardRef>,
         dmg: DamageMarkers,
-    ) {
+    ) -> GameResult {
         let cards = cards
             .into_iter()
             .filter(|c| self.has_damage(*c))
             .collect_vec();
 
         if cards.is_empty() || dmg.0 < 1 {
-            return;
+            return Ok(GameContinue);
         }
 
         self.send_event(
@@ -753,14 +778,14 @@ impl Game {
         player: Player,
         zone: Zone,
         cards: Vec<CardRef>,
-    ) {
+    ) -> GameResult {
         let cards = cards
             .into_iter()
             .filter(|c| self.has_damage(*c))
             .collect_vec();
 
         if cards.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         self.send_event(
@@ -773,23 +798,28 @@ impl Game {
         )
     }
 
-    pub fn draw_from_main_deck(&mut self, player: Player, amount: usize) {
+    pub fn draw_from_main_deck(&mut self, player: Player, amount: usize) -> GameResult {
         if amount < 1 {
-            return;
+            return Ok(GameContinue);
         }
 
-        self.send_event(Draw { player, amount }.into());
+        self.send_event(Draw { player, amount }.into())
     }
 
-    pub fn lose_lives(&mut self, player: Player, amount: usize) {
+    pub fn lose_lives(&mut self, player: Player, amount: usize) -> GameResult {
         if amount < 1 {
-            return;
+            return Ok(GameContinue);
         }
 
-        self.send_event(LoseLives { player, amount }.into());
+        self.send_event(LoseLives { player, amount }.into())
     }
 
-    pub fn bloom_holo_member(&mut self, player: Player, bloom: CardRef, target: CardRef) {
+    pub fn bloom_holo_member(
+        &mut self,
+        player: Player,
+        bloom: CardRef,
+        target: CardRef,
+    ) -> GameResult {
         let stage = self
             .board(player)
             .find_card_zone(target)
@@ -802,13 +832,13 @@ impl Game {
                 to_card: (stage, target),
             }
             .into(),
-        );
+        )
     }
 }
 
 #[enum_dispatch]
 trait EvaluateEvent {
-    fn evaluate_event(&self, game: &mut Game);
+    fn evaluate_event(&self, game: &mut Game) -> GameResult;
 }
 
 fn verify_cards_in_zone(game: &Game, player: Player, zone: Zone, cards: &[CardRef]) {
@@ -845,7 +875,7 @@ pub struct Setup {
     player_2: Loadout,
 }
 impl EvaluateEvent for Setup {
-    fn evaluate_event(&self, _game: &mut Game) {
+    fn evaluate_event(&self, _game: &mut Game) -> GameResult {
         // TODO implement
         unimplemented!()
     }
@@ -857,9 +887,11 @@ pub struct Shuffle {
     zone: Zone,
 }
 impl EvaluateEvent for Shuffle {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         let zone = game.board_mut(self.player).get_zone_mut(self.zone);
         zone.shuffle();
+
+        Ok(GameContinue)
     }
 }
 
@@ -868,8 +900,10 @@ pub struct RpsOutcome {
     winning_player: Option<Player>,
 }
 impl EvaluateEvent for RpsOutcome {
-    fn evaluate_event(&self, _game: &mut Game) {
+    fn evaluate_event(&self, _game: &mut Game) -> GameResult {
         // the winning player doesn't change the state of the game
+
+        Ok(GameContinue)
     }
 }
 
@@ -878,8 +912,10 @@ pub struct PlayerGoingFirst {
     first_player: Player,
 }
 impl EvaluateEvent for PlayerGoingFirst {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         game.active_player = self.first_player;
+
+        Ok(GameContinue)
     }
 }
 
@@ -890,9 +926,9 @@ pub struct Reveal {
     cards: Vec<(CardRef, CardNumber)>,
 }
 impl EvaluateEvent for Reveal {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         verify_cards_in_zone(
@@ -903,6 +939,8 @@ impl EvaluateEvent for Reveal {
         );
 
         // TODO implement for network
+
+        Ok(GameContinue)
     }
 }
 
@@ -911,9 +949,11 @@ pub struct GameStart {
     active_player: Player,
 }
 impl EvaluateEvent for GameStart {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         // the state changes on start turn
         game.active_player = self.active_player;
+
+        Ok(GameContinue)
     }
 }
 
@@ -922,8 +962,10 @@ pub struct GameOver {
     winning_player: Option<Player>,
 }
 impl EvaluateEvent for GameOver {
-    fn evaluate_event(&self, _game: &mut Game) {
+    fn evaluate_event(&self, _game: &mut Game) -> GameResult {
         // the state doesn't change on game over
+
+        Ok(GameContinue)
     }
 }
 
@@ -933,10 +975,12 @@ pub struct StartTurn {
     turn_number: usize,
 }
 impl EvaluateEvent for StartTurn {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         game.active_player = self.active_player;
 
         game.start_turn_modifiers(self.active_player);
+
+        Ok(GameContinue)
     }
 }
 
@@ -946,12 +990,14 @@ pub struct EndTurn {
     turn_number: usize,
 }
 impl EvaluateEvent for EndTurn {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         assert_eq!(self.active_player, game.active_player);
 
         game.end_turn_modifiers(self.active_player);
 
-        game.remove_expiring_modifiers(LifeTime::ThisTurn);
+        game.remove_expiring_modifiers(LifeTime::ThisTurn)?;
+
+        Ok(GameContinue)
     }
 }
 
@@ -961,9 +1007,11 @@ pub struct EnterStep {
     active_step: Step,
 }
 impl EvaluateEvent for EnterStep {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         assert_eq!(self.active_player, game.active_player);
         game.active_step = self.active_step;
+
+        Ok(GameContinue)
     }
 }
 
@@ -973,11 +1021,13 @@ pub struct ExitStep {
     active_step: Step,
 }
 impl EvaluateEvent for ExitStep {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         assert_eq!(self.active_player, game.active_player);
         assert_eq!(self.active_step, game.active_step);
 
-        game.remove_expiring_modifiers(LifeTime::ThisStep);
+        game.remove_expiring_modifiers(LifeTime::ThisStep)?;
+
+        Ok(GameContinue)
     }
 }
 
@@ -989,9 +1039,9 @@ pub struct AddCardModifiers {
     modifiers: Vec<Modifier>,
 }
 impl EvaluateEvent for AddCardModifiers {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() || self.modifiers.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         verify_cards_in_zone(game, self.player, self.zone, &self.cards);
@@ -1002,6 +1052,8 @@ impl EvaluateEvent for AddCardModifiers {
                 .or_default()
                 .extend(self.modifiers.iter().cloned());
         }
+
+        Ok(GameContinue)
     }
 }
 
@@ -1013,9 +1065,9 @@ pub struct RemoveCardModifiers {
     modifiers: Vec<ModifierRef>,
 }
 impl EvaluateEvent for RemoveCardModifiers {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() || self.modifiers.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         verify_cards_in_zone(game, self.player, self.zone, &self.cards);
@@ -1042,6 +1094,8 @@ impl EvaluateEvent for RemoveCardModifiers {
                 }
             });
         }
+
+        Ok(GameContinue)
     }
 }
 
@@ -1052,9 +1106,9 @@ pub struct ClearCardModifiers {
     cards: Vec<CardRef>,
 }
 impl EvaluateEvent for ClearCardModifiers {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         verify_cards_in_zone(game, self.player, self.zone, &self.cards);
@@ -1062,6 +1116,8 @@ impl EvaluateEvent for ClearCardModifiers {
         for card in &self.cards {
             game.card_modifiers.remove_entry(card);
         }
+
+        Ok(GameContinue)
     }
 }
 
@@ -1072,9 +1128,9 @@ pub struct AddZoneModifiers {
     modifiers: Vec<Modifier>,
 }
 impl EvaluateEvent for AddZoneModifiers {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.modifiers.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         game.zone_modifiers.entry(self.player).or_default().extend(
@@ -1083,6 +1139,8 @@ impl EvaluateEvent for AddZoneModifiers {
                 .cloned()
                 .map(|m: Modifier| (self.zone, m)),
         );
+
+        Ok(GameContinue)
     }
 }
 
@@ -1093,9 +1151,9 @@ pub struct RemoveZoneModifiers {
     modifiers: Vec<ModifierRef>,
 }
 impl EvaluateEvent for RemoveZoneModifiers {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.modifiers.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         let mut to_remove = self
@@ -1121,6 +1179,8 @@ impl EvaluateEvent for RemoveZoneModifiers {
                     true
                 }
             });
+
+        Ok(GameContinue)
     }
 }
 
@@ -1132,9 +1192,9 @@ pub struct AddDamageMarkers {
     dmg: DamageMarkers,
 }
 impl EvaluateEvent for AddDamageMarkers {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() || self.dmg.0 < 1 {
-            return;
+            return Ok(GameContinue);
         }
 
         verify_cards_in_zone(game, self.player, self.zone, &self.cards);
@@ -1142,6 +1202,8 @@ impl EvaluateEvent for AddDamageMarkers {
         for card in &self.cards {
             *game.card_damage_markers.entry(*card).or_default() += self.dmg;
         }
+
+        Ok(GameContinue)
     }
 }
 
@@ -1153,9 +1215,9 @@ pub struct RemoveDamageMarkers {
     dmg: DamageMarkers,
 }
 impl EvaluateEvent for RemoveDamageMarkers {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() || self.dmg.0 < 1 {
-            return;
+            return Ok(GameContinue);
         }
 
         verify_cards_in_zone(game, self.player, self.zone, &self.cards);
@@ -1163,6 +1225,8 @@ impl EvaluateEvent for RemoveDamageMarkers {
         for card in &self.cards {
             *game.card_damage_markers.entry(*card).or_default() -= self.dmg;
         }
+
+        Ok(GameContinue)
     }
 }
 
@@ -1173,9 +1237,9 @@ pub struct ClearDamageMarkers {
     cards: Vec<CardRef>,
 }
 impl EvaluateEvent for ClearDamageMarkers {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         verify_cards_in_zone(game, self.player, self.zone, &self.cards);
@@ -1183,6 +1247,8 @@ impl EvaluateEvent for ClearDamageMarkers {
         for card in &self.cards {
             game.card_damage_markers.remove_entry(card);
         }
+
+        Ok(GameContinue)
     }
 }
 
@@ -1193,9 +1259,9 @@ pub struct LookAndSelect {
     cards: Vec<CardRef>, // could just be a count, it's just for the opponent
 }
 impl EvaluateEvent for LookAndSelect {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         verify_cards_in_zone(game, self.player, self.zone, &self.cards);
@@ -1213,9 +1279,9 @@ pub struct ZoneToZone {
     to_zone: Zone,
 }
 impl EvaluateEvent for ZoneToZone {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         verify_cards_in_zone(game, self.player, self.from_zone, &self.cards);
@@ -1232,15 +1298,20 @@ impl EvaluateEvent for ZoneToZone {
                 self.player,
                 self.to_zone,
                 self.cards.clone(),
-            );
+            )?;
 
             for card in &self.cards {
                 let attachments = game.board(self.player).attachments(*card);
-                game.send_attachments_to_archive(self.player, *card, attachments);
+                game.send_attachments_to_archive(self.player, *card, attachments)?;
 
-                game.clear_all_modifiers(*card);
+                game.clear_all_modifiers(*card)?;
             }
         }
+
+        // check if a player lost when cards are moving
+        game.check_loss_conditions()?;
+
+        Ok(GameContinue)
     }
 }
 
@@ -1252,9 +1323,9 @@ pub struct ZoneToAttach {
     to_card: (Zone, CardRef),
 }
 impl EvaluateEvent for ZoneToAttach {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.attachments.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         verify_cards_in_zone(game, self.player, self.from_zone, &self.attachments);
@@ -1264,6 +1335,8 @@ impl EvaluateEvent for ZoneToAttach {
             game.board_mut(self.player)
                 .attach_to_card(*attachment, self.to_card.1);
         }
+
+        Ok(GameContinue)
     }
 }
 
@@ -1275,9 +1348,9 @@ pub struct AttachToAttach {
     to_card: (Zone, CardRef),
 }
 impl EvaluateEvent for AttachToAttach {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.attachments.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         verify_cards_in_zone(game, self.player, self.from_card.0, &[self.from_card.1]);
@@ -1297,9 +1370,9 @@ pub struct AttachToZone {
     to_zone: Zone,
 }
 impl EvaluateEvent for AttachToZone {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.attachments.is_empty() {
-            return;
+            return Ok(GameContinue);
         }
 
         verify_cards_in_zone(game, self.player, self.from_card.0, &[self.from_card.1]);
@@ -1307,6 +1380,8 @@ impl EvaluateEvent for AttachToZone {
 
         game.board_mut(self.player)
             .send_many_to_zone(self.attachments.clone(), self.to_zone);
+
+        Ok(GameContinue)
     }
 }
 
@@ -1317,9 +1392,9 @@ pub struct Draw {
     amount: usize,
 }
 impl EvaluateEvent for Draw {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.amount < 1 {
-            return;
+            return Ok(GameContinue);
         }
 
         let deck = game.board(self.player).get_zone(Zone::MainDeck);
@@ -1331,7 +1406,9 @@ impl EvaluateEvent for Draw {
                 to_zone: Zone::Hand,
             }
             .into(),
-        );
+        )?;
+
+        Ok(GameContinue)
     }
 }
 
@@ -1343,7 +1420,7 @@ pub struct Collab {
     holo_power_amount: usize,
 }
 impl EvaluateEvent for Collab {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
         game.send_event(
@@ -1354,10 +1431,10 @@ impl EvaluateEvent for Collab {
                 to_zone: Zone::MainStageCollab,
             }
             .into(),
-        );
+        )?;
 
         //   - draw down card from deck into power zone
-        game.send_cards_to_holo_power(self.player, self.holo_power_amount);
+        game.send_cards_to_holo_power(self.player, self.holo_power_amount)?;
 
         // can only collab once per turn
         game.add_zone_modifier(
@@ -1365,7 +1442,9 @@ impl EvaluateEvent for Collab {
             Zone::BackStage,
             PreventCollab,
             LifeTime::ThisTurn,
-        );
+        )?;
+
+        Ok(GameContinue)
     }
 }
 
@@ -1376,12 +1455,29 @@ pub struct LoseLives {
     amount: usize,
 }
 impl EvaluateEvent for LoseLives {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.amount < 1 {
-            return;
+            return Ok(GameContinue);
         }
 
-        game.attach_cheers_from_zone(self.player, Zone::Life, self.amount);
+        // if the remaining lives are too few, send them to archive
+        if game.board(self.player).get_zone(Zone::Life).count() <= self.amount {
+            let cheers = game.board(self.player).get_zone(Zone::Life).all_cards();
+            game.reveal_cards(self.player, Zone::Life, &cheers)?;
+            game.send_event(
+                ZoneToZone {
+                    player: self.player,
+                    from_zone: Zone::Life,
+                    cards: cheers,
+                    to_zone: Zone::Archive,
+                }
+                .into(),
+            )?;
+        } else {
+            game.attach_cheers_from_zone(self.player, Zone::Life, self.amount)?;
+        }
+
+        Ok(GameContinue)
     }
 }
 
@@ -1393,7 +1489,7 @@ pub struct Bloom {
     to_card: (Zone, CardRef),
 }
 impl EvaluateEvent for Bloom {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.from_card.0, &[self.from_card.1]);
         verify_cards_in_zone(game, self.player, self.to_card.0, &[self.to_card.1]);
 
@@ -1412,6 +1508,8 @@ impl EvaluateEvent for Bloom {
             .promote_attachment(self.from_card.1, self.to_card.1);
         game.promote_modifiers(self.from_card.1, self.to_card.1);
         game.promote_damage_markers(self.from_card.1, self.to_card.1);
+
+        Ok(GameContinue)
     }
 }
 
@@ -1423,7 +1521,7 @@ pub struct BatonPass {
     to_card: (Zone, CardRef),
 }
 impl EvaluateEvent for BatonPass {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.from_card.0, &[self.from_card.1]);
         verify_cards_in_zone(game, self.player, self.to_card.0, &[self.to_card.1]);
 
@@ -1437,13 +1535,15 @@ impl EvaluateEvent for BatonPass {
             .expect("cannot pay baton pass cost for non member");
         // TODO cost should automatic when there is a single cheers color
         let cheers = game.prompt_for_baton_pass(self.from_card.1, mem.baton_pass_cost);
-        game.send_attachments_to_archive(self.player, self.from_card.1, cheers);
+        game.send_attachments_to_archive(self.player, self.from_card.1, cheers)?;
 
         // send the center member to the back
-        game.send_from_center_stage_to_back_stage(self.player, self.from_card.1);
+        game.send_from_center_stage_to_back_stage(self.player, self.from_card.1)?;
 
         // send back stage member to center
-        game.send_from_back_stage_to_center_stage(self.player, self.to_card.1);
+        game.send_from_back_stage_to_center_stage(self.player, self.to_card.1)?;
+
+        Ok(GameContinue)
     }
 }
 
@@ -1453,7 +1553,7 @@ pub struct UseSupportCard {
     card: (Zone, CardRef),
 }
 impl EvaluateEvent for UseSupportCard {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
         // TODO implement
@@ -1469,7 +1569,7 @@ pub struct PerformArt {
     target: Option<(Zone, CardRef)>,
 }
 impl EvaluateEvent for PerformArt {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
         if let Some(target) = self.target {
@@ -1486,7 +1586,7 @@ pub struct WaitingForPlayerIntent {
     // reason?
 }
 impl EvaluateEvent for WaitingForPlayerIntent {
-    fn evaluate_event(&self, _game: &mut Game) {
+    fn evaluate_event(&self, _game: &mut Game) -> GameResult {
         // TODO implement
         unimplemented!()
     }
@@ -1501,7 +1601,7 @@ pub struct UseAbilitySkill {
     skill_idx: usize,
 }
 impl EvaluateEvent for UseAbilitySkill {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
         // TODO implement
@@ -1515,7 +1615,7 @@ pub struct HoloMemberDefeated {
     card: (Zone, CardRef),
 }
 impl EvaluateEvent for HoloMemberDefeated {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
         // TODO implement
@@ -1531,7 +1631,7 @@ pub struct DealDamage {
     amount: usize,
 }
 impl EvaluateEvent for DealDamage {
-    fn evaluate_event(&self, game: &mut Game) {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
         verify_cards_in_zone(game, self.player, self.target.0, &[self.target.1]);
 
@@ -1546,7 +1646,7 @@ pub struct RollDice {
     player: Player,
 }
 impl EvaluateEvent for RollDice {
-    fn evaluate_event(&self, _game: &mut Game) {
+    fn evaluate_event(&self, _game: &mut Game) -> GameResult {
         // TODO implement
         unimplemented!()
     }

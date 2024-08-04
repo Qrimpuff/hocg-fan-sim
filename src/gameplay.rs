@@ -47,6 +47,15 @@ impl Player {
     }
 }
 
+pub type GameResult = Result<GameContinue, GameOutcome>;
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct GameContinue;
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct GameOutcome {
+    winning_player: Option<Player>,
+}
+
 pub fn register_card(
     player: Player,
     card_number: &CardNumber,
@@ -59,11 +68,6 @@ pub fn register_card(
     card_map.insert(card, (player, card_number.clone()));
     card
 }
-
-// pub fn shuffle_deck(deck: &mut Vec<CardRef>) {
-//     // TODO send (event)
-//     deck.shuffle(&mut thread_rng());
-// }
 
 #[derive(Debug)]
 pub struct Game {
@@ -147,11 +151,11 @@ impl Game {
             .any(|m| m.level == HoloMemberLevel::Debut)
     }
 
-    pub fn handle_mulligan(&mut self, player: Player) {
+    pub fn handle_mulligan(&mut self, player: Player) -> GameResult {
         // - draw 7 cards from main deck
         let mut player_draw = STARTING_HAND_SIZE;
         println!("player {player:?} draws {player_draw}");
-        self.draw_from_main_deck(player, player_draw);
+        self.draw_from_main_deck(player, player_draw)?;
         // self.board_mut(player).draw(player_draw);
 
         //   - can mulligan once for 7 cards, then any forced is -1
@@ -172,18 +176,18 @@ impl Game {
 
             if force_mulligan && !voluntary {
                 // reveal hand
-                self.reveal_all_cards_in_zone(player, Zone::Hand);
+                self.reveal_all_cards_in_zone(player, Zone::Hand)?;
             }
 
             // self.board_mut(player)
             //     .send_all_from_zone(Zone::Hand, Zone::MainDeck);
-            self.send_full_hand_to_main_deck(player);
+            self.send_full_hand_to_main_deck(player)?;
             // shuffle_deck(&mut self.board_mut(player).main_deck);
-            self.shuffle_main_deck(player);
+            self.shuffle_main_deck(player)?;
 
             println!("player {player:?} draws {player_draw}");
             // self.board_mut(player).draw(player_draw);
-            self.draw_from_main_deck(player, player_draw);
+            self.draw_from_main_deck(player, player_draw)?;
 
             player_draw -= 1;
             if player_draw == 0 {
@@ -194,26 +198,28 @@ impl Game {
         if player_draw == 0 {
             self.active_player = player;
             println!("player {player:?} cannot draw anymore card");
-            self.lose_game();
+            self.lose_game()?;
         }
+
+        Ok(GameContinue)
     }
 
-    pub fn start_game(&mut self) {
+    pub fn start_game(&mut self) -> GameResult {
         self.active_step = Step::Setup;
 
         // - shuffle main deck
         // TODO send (event) shuffle
         // shuffle_deck(&mut self.player_1.main_deck);
         // shuffle_deck(&mut self.player_2.main_deck);
-        self.shuffle_main_deck(Player::One);
-        self.shuffle_main_deck(Player::Two);
+        self.shuffle_main_deck(Player::One)?;
+        self.shuffle_main_deck(Player::Two)?;
 
         // - shuffle cheer deck
         // TODO send (event) shuffle
         // shuffle_deck(&mut self.player_1.cheer_deck);
         // shuffle_deck(&mut self.player_2.cheer_deck);
-        self.shuffle_cheer_deck(Player::One);
-        self.shuffle_cheer_deck(Player::Two);
+        self.shuffle_cheer_deck(Player::One)?;
+        self.shuffle_cheer_deck(Player::Two)?;
 
         // - oshi face down
         // TODO oshi hide
@@ -229,45 +235,45 @@ impl Game {
             match rps_1.vs(rps_2) {
                 RpsOutcome::Win => {
                     println!("player 1 win rps");
-                    self.report_rps_win(Player::One);
+                    self.report_rps_win(Player::One)?;
                     // TODO choose first or second
                     self.active_player = Player::One;
                     break;
                 }
                 RpsOutcome::Lose => {
                     println!("player 2 win rps");
-                    self.report_rps_win(Player::Two);
+                    self.report_rps_win(Player::Two)?;
                     // TODO choose first or second
                     self.active_player = Player::Two;
                     break;
                 }
                 RpsOutcome::Draw => {
                     println!("draw rps");
-                    self.report_rps_draw();
+                    self.report_rps_draw()?;
                     continue;
                 }
             }
         }
         // TODO choose first or second
-        self.report_player_going_first(self.active_player);
+        self.report_player_going_first(self.active_player)?;
 
         // - draw 7 cards from main deck
         //   - can mulligan once, forced for -1 card. at 0 lose the game
         // TODO send (event) draw
         // TODO request (intent)
-        self.handle_mulligan(Player::One);
-        if self.active_step == Step::GameOver {
-            // TODO send (event) game over
-            return;
-        }
+        self.handle_mulligan(Player::One)?;
+        // if self.active_step == Step::GameOver {
+        //     // TODO send (event) game over
+        //     return;
+        // }
 
         // TODO send (event) draw
         // TODO request (intent)
-        self.handle_mulligan(Player::Two);
-        if self.active_step == Step::GameOver {
-            // TODO send (event) game over
-            return;
-        }
+        self.handle_mulligan(Player::Two)?;
+        // if self.active_step == Step::GameOver {
+        //     // TODO send (event) game over
+        //     return;
+        // }
 
         // - place debut member center face down
         // TODO member hide
@@ -276,7 +282,7 @@ impl Game {
         println!("prompt debut 1");
         let debut_1 = self.prompt_for_first_debut(Player::One);
         // self.player_1.send_to_zone(debut_1, Zone::MainStageCenter);
-        self.send_from_hand_to_center_stage(Player::One, debut_1);
+        self.send_from_hand_to_center_stage(Player::One, debut_1)?;
 
         // TODO member hide
         // TODO send (event) put main stage
@@ -284,7 +290,7 @@ impl Game {
         println!("prompt debut 2");
         let debut_2 = self.prompt_for_first_debut(Player::Two);
         // self.player_2.send_to_zone(debut_2, Zone::MainStageCenter);
-        self.send_from_hand_to_center_stage(Player::Two, debut_2);
+        self.send_from_hand_to_center_stage(Player::Two, debut_2)?;
 
         // - place other debut / spot members back stage
         // TODO member hide
@@ -294,7 +300,7 @@ impl Game {
         let other_debut_1: Vec<_> = self.prompt_for_first_back_stage(Player::One);
         // self.player_1
         //     .send_many_to_zone(other_debut_1, Zone::BackStage);
-        self.send_from_hand_to_back_stage(Player::One, other_debut_1);
+        self.send_from_hand_to_back_stage(Player::One, other_debut_1)?;
 
         // TODO member hide
         // TODO send (event) put back stage
@@ -303,17 +309,17 @@ impl Game {
         let other_debut_2: Vec<_> = self.prompt_for_first_back_stage(Player::Two);
         // self.player_2
         //     .send_many_to_zone(other_debut_2, Zone::BackStage);
-        self.send_from_hand_to_back_stage(Player::Two, other_debut_2);
+        self.send_from_hand_to_back_stage(Player::Two, other_debut_2)?;
 
         // - reveal face down oshi and members
         // oshi and members reveal
         // TODO send (event) reveal
-        self.reveal_all_cards_in_zone(Player::One, Zone::MainStageOshi);
-        self.reveal_all_cards_in_zone(Player::Two, Zone::MainStageOshi);
-        self.reveal_all_cards_in_zone(Player::One, Zone::MainStageCenter);
-        self.reveal_all_cards_in_zone(Player::Two, Zone::MainStageCenter);
-        self.reveal_all_cards_in_zone(Player::One, Zone::BackStage);
-        self.reveal_all_cards_in_zone(Player::Two, Zone::BackStage);
+        self.reveal_all_cards_in_zone(Player::One, Zone::MainStageOshi)?;
+        self.reveal_all_cards_in_zone(Player::Two, Zone::MainStageOshi)?;
+        self.reveal_all_cards_in_zone(Player::One, Zone::MainStageCenter)?;
+        self.reveal_all_cards_in_zone(Player::Two, Zone::MainStageCenter)?;
+        self.reveal_all_cards_in_zone(Player::One, Zone::BackStage)?;
+        self.reveal_all_cards_in_zone(Player::Two, Zone::BackStage)?;
 
         // - draw life cards face down from cheer
         // TODO send (event) put life
@@ -323,7 +329,7 @@ impl Game {
             .and_then(|c| self.lookup_oshi(c))
             .expect("oshi should always be there");
         // self.player_1.add_life(oshi_1.life);
-        self.send_cheers_to_life(Player::One, oshi_1.life as usize);
+        self.send_cheers_to_life(Player::One, oshi_1.life as usize)?;
 
         // TODO send (event) put life
         let oshi_2 = self
@@ -332,14 +338,16 @@ impl Game {
             .and_then(|c| self.lookup_oshi(c))
             .expect("oshi should always be there");
         // self.player_2.add_life(oshi_2.life);
-        self.send_cheers_to_life(Player::Two, oshi_2.life as usize);
+        self.send_cheers_to_life(Player::Two, oshi_2.life as usize)?;
 
         // - game start
         // TODO send (event) game start
-        self.report_start_game(self.active_player);
+        self.report_start_game(self.active_player)?;
+
+        Ok(GameContinue)
     }
 
-    pub fn next_step(&mut self) -> bool {
+    pub fn next_step(&mut self) -> GameResult {
         self.active_step = match self.active_step {
             Step::Setup => Step::Reset,
             Step::Reset => Step::Draw,
@@ -358,26 +366,29 @@ impl Game {
             Step::GameOver => {
                 println!("the game is over");
                 // TODO send (event) game over
-                return false;
+                return Err(GameOutcome {
+                    // TODO report draws, or stored outcome
+                    winning_player: Some(self.active_player),
+                });
             }
         };
 
         // start turn
         if self.active_step == Step::Reset {
-            self.start_turn();
+            self.start_turn()?;
         }
 
         // could maybe lose between start turn and start step, because of an effect
 
         println!("- active step: {:?}", self.active_step);
-        self.report_enter_step(self.active_player, self.active_step);
+        self.report_enter_step(self.active_player, self.active_step)?;
 
         // after step change, before the step starts
-        self.check_loss_conditions();
-        if self.active_step == Step::GameOver {
-            // TODO send (event) game over
-            return false;
-        }
+        // self.check_loss_conditions();
+        // if self.active_step == Step::GameOver {
+        //     // TODO send (event) game over
+        //     return false;
+        // }
 
         match self.active_step {
             Step::Setup => panic!("should not setup more than once"),
@@ -389,63 +400,70 @@ impl Game {
             Step::End => self.end_step(),
             Step::GameOver => {
                 // already returned above
-                return false;
+                return Err(GameOutcome {
+                    // TODO report draws, or stored outcome
+                    winning_player: Some(self.active_player),
+                });
             }
-        }
+        }?;
 
         // after each step
-        self.check_loss_conditions();
-        if self.active_step == Step::GameOver {
-            // TODO send (event) game over
-            return false;
-        }
+        // self.check_loss_conditions();
+        // if self.active_step == Step::GameOver {
+        //     // TODO send (event) game over
+        //     return false;
+        // }
 
-        self.report_exit_step(self.active_player, self.active_step);
+        self.report_exit_step(self.active_player, self.active_step)?;
 
         // end turn
         if self.active_step == Step::End {
-            self.end_turn();
+            self.end_turn()?;
         }
 
         // could lose after the end of the turn
-        self.check_loss_conditions();
-        if self.active_step == Step::GameOver {
-            // TODO send (event) game over
-            return false;
-        }
+        // self.check_loss_conditions();
+        // if self.active_step == Step::GameOver {
+        //     // TODO send (event) game over
+        //     return false;
+        // }
 
-        true
+        Ok(GameContinue)
     }
 
-    pub fn start_turn(&mut self) {
+    pub fn start_turn(&mut self) -> GameResult {
         self.turn_number += 1;
 
         // TODO send (event) start turn, before or after modifiers?
         println!("active player: {:?}", self.active_player);
-        self.report_start_turn(self.active_player);
+        self.report_start_turn(self.active_player)?;
+
+        Ok(GameContinue)
     }
 
-    pub fn end_turn(&mut self) {
+    pub fn end_turn(&mut self) -> GameResult {
         // TODO send (event) end turn, before or after modifiers?
-        self.report_end_turn(self.active_player);
+        self.report_end_turn(self.active_player)?;
+
+        Ok(GameContinue)
     }
 
-    pub fn reset_step(&mut self) {
+    pub fn reset_step(&mut self) -> GameResult {
         // TODO send (event) start step
         // TODO (trigger) step change effects
 
         // - all members from rest to active
         // TODO send (event) awake card, remove modifiers
         for mem in self.active_board().stage().collect_vec() {
-            self.remove_modifier(mem, Resting);
+            self.remove_all_modifiers(mem, Resting)?;
         }
 
         // - collab to back stage in rest
         // TODO send (event) rest card, add modifiers
         if let Some(mem) = self.active_board().collab_stage {
-            self.add_modifier(mem, Resting, LifeTime::UntilRemoved);
+            self.add_modifier(mem, Resting, LifeTime::UntilRemoved)?;
             // self.active_board_mut().send_to_zone(mem, Zone::BackStage);
-            self.send_from_collab_to_back_stage(self.active_player, mem);
+            self.send_from_collab_to_back_stage(self.active_player, mem)?;
         }
         // - if no center, back stage to center
         if self.active_board().center_stage.is_none() && !self.active_board().back_stage.is_empty()
@@ -456,31 +474,44 @@ impl Game {
             let back = self.prompt_for_back_stage_to_center(self.active_player);
             // self.active_board_mut()
             //     .send_to_zone(back, Zone::MainStageCenter);
-            self.send_from_back_stage_to_center_stage(self.active_player, back);
+            self.send_from_back_stage_to_center_stage(self.active_player, back)?;
         }
 
         //   - no back stage lose game
         if self.active_board().center_stage.is_none() {
-            self.check_loss_conditions();
+            // self.check_loss_conditions();
             // return;
         }
 
         // TODO send (event) end step
+
+        Ok(GameContinue)
     }
 
-    pub fn draw_step(&mut self) {
+    pub fn draw_step(&mut self) -> GameResult {
         // TODO send (event) start step
         // TODO (trigger) step change effects
+
+        // - deck is 0 on draw step
+        if self.active_board().main_deck.count() == 0 {
+            println!(
+                "player {:?} has no card in their main deck",
+                self.active_player
+            );
+            return self.lose_game();
+        }
 
         // - draw 1 card from main deck
         // TODO send (event) draw card
         // self.active_board_mut().draw(1);
-        self.draw_from_main_deck(self.active_player, 1);
+        self.draw_from_main_deck(self.active_player, 1)?;
 
         // TODO send (event) end step
+
+        Ok(GameContinue)
     }
 
-    pub fn cheer_step(&mut self) {
+    pub fn cheer_step(&mut self) -> GameResult {
         // TODO send (event) start step
         // TODO (trigger) step change effects
 
@@ -496,12 +527,14 @@ impl Game {
         //         self.active_board_mut().attach_to_card(cheer, mem);
         //     }
         // }
-        self.attach_cheers_from_zone(self.active_player, Zone::CheerDeck, 1);
+        self.attach_cheers_from_zone(self.active_player, Zone::CheerDeck, 1)?;
 
         // TODO send (event) end step
+
+        Ok(GameContinue)
     }
 
-    pub fn main_step(&mut self) {
+    pub fn main_step(&mut self) -> GameResult {
         // TODO send (event) start step
         // TODO (trigger) step change effects
 
@@ -519,7 +552,7 @@ impl Game {
 
                     // - place debut member on back stage
                     // self.active_board_mut().send_to_zone(card, Zone::BackStage);
-                    self.send_from_hand_to_back_stage(self.active_player, vec![card]);
+                    self.send_from_hand_to_back_stage(self.active_player, vec![card])?;
 
                     // TODO maybe register for any abilities that could trigger?
                     // TODO remove the registration once they leave the board?
@@ -535,7 +568,7 @@ impl Game {
                     //   - can't bloom on same turn as placed
                     let card = self.prompt_for_bloom(self.active_player, bloom);
                     // self.bloom_member(bloom, card);
-                    self.bloom_holo_member(self.active_player, bloom, card);
+                    self.bloom_holo_member(self.active_player, bloom, card)?;
                 }
                 MainStepAction::UseSupportCard(card) => {
                     println!("- action: Use support card");
@@ -556,7 +589,7 @@ impl Game {
 
                         // send the used card to the archive
                         // TODO send (event) put in archive
-                        self.send_cards_to_archive(self.active_player, vec![card]);
+                        self.send_cards_to_archive(self.active_player, vec![card])?;
                     } else {
                         unreachable!("support should not be an option, if it's not allowed")
                     }
@@ -586,7 +619,7 @@ impl Game {
                     // TODO send (event) draw to holo power
                     // self.active_board_mut()
                     //     .send_from_zone(Zone::MainDeck, Zone::HoloPower, 1);
-                    self.send_from_back_stage_to_collab(self.active_player, card);
+                    self.send_from_back_stage_to_collab(self.active_player, card)?;
                 }
                 MainStepAction::BatonPass(card) => {
                     println!("- action: Baton pass");
@@ -613,7 +646,7 @@ impl Game {
                     // TODO send (event) send member to center stage
                     // self.active_board_mut()
                     //     .send_to_zone(card, Zone::MainStageCenter);
-                    self.baton_pass_center_stage_to_back_stage(self.active_player, center, back);
+                    self.baton_pass_center_stage_to_back_stage(self.active_player, center, back)?;
                 }
                 MainStepAction::UseAbilities(card, i) => {
                     println!("- action: Use abilities");
@@ -653,7 +686,7 @@ impl Game {
 
                         effect.start_evaluate(self, card);
 
-                        self.add_modifier(card, PreventAbility(i), prevent_life_time);
+                        self.add_modifier(card, PreventAbility(i), prevent_life_time)?;
                     } else {
                         unreachable!("oshi ability should not be an option, if it's not allowed")
                     }
@@ -664,19 +697,21 @@ impl Game {
                 }
             }
 
-            self.check_loss_conditions();
-            if self.active_step == Step::GameOver {
-                // TODO send (event) game over
-                return;
-            }
+            // self.check_loss_conditions();
+            // if self.active_step == Step::GameOver {
+            //     // TODO send (event) game over
+            //     return;
+            // }
         }
 
         // attack can be preloaded at this point
 
         // TODO send (event) end step
+
+        Ok(GameContinue)
     }
 
-    pub fn performance_step(&mut self) {
+    pub fn performance_step(&mut self) -> GameResult {
         // TODO send (event) start step
         // TODO (trigger) step change effects
 
@@ -725,33 +760,34 @@ impl Game {
                 if condition.start_evaluate(self, card) {
                     // FIXME evaluate damage number
                     println!("deals {:?} damage", damage);
-                    self.add_damage(target, DamageMarkers::from_hp(damage));
+                    self.add_damage(target, DamageMarkers::from_hp(damage))?;
 
                     effect.start_evaluate(self, card);
                 }
 
                 if self.remaining_hp(target) == 0 {
                     // TODO send (event) send member to archive, from attack
-                    self.send_cards_to_archive(self.player_for_card(target), vec![target]);
+                    self.send_cards_to_archive(self.player_for_card(target), vec![target])?;
 
                     // TODO send (event) lose life
                     // TODO request (intent) select member
                     // TODO send (event) attach cheer to member
                     // TODO buzz lose 2 lives
-                    self.lose_lives(self.player_for_card(target), 1);
-                    self.check_loss_conditions();
-                    if self.active_step == Step::GameOver {
-                        // TODO send (event) game over
-                        return;
-                    }
+                    self.lose_lives(self.player_for_card(target), 1)?;
+                    // self.check_loss_conditions();
+                    // if self.active_step == Step::GameOver {
+                    //     return;
+                    // }
                 }
             }
         }
 
         // TODO send (event) end step
+
+        Ok(GameContinue)
     }
 
-    pub fn end_step(&mut self) {
+    pub fn end_step(&mut self) -> GameResult {
         // TODO send (event) start step
         // TODO (trigger) step change effects
 
@@ -766,13 +802,15 @@ impl Game {
             let back = self.prompt_for_back_stage_to_center(self.active_player);
             // self.active_board_mut()
             //     .send_to_zone(back, Zone::MainStageCenter);
-            self.send_from_back_stage_to_center_stage(self.active_player, back);
+            self.send_from_back_stage_to_center_stage(self.active_player, back)?;
         }
 
         // TODO send (event) end step
+
+        Ok(GameContinue)
     }
 
-    pub fn win_game(&mut self) {
+    pub fn win_game(&mut self) -> GameResult {
         match self.active_player {
             Player::One => println!("player 1 wins"),
             Player::Two => println!("player 2 wins"),
@@ -782,28 +820,31 @@ impl Game {
         self.active_step = Step::GameOver;
         // TODO send (event) win game
         // TODO send (event) game over
-        self.report_game_over(self.active_player);
+        self.report_game_over(self.active_player)?;
+
+        Err(GameOutcome {
+            winning_player: Some(self.active_player),
+        })
     }
-    pub fn lose_game(&mut self) {
+    pub fn lose_game(&mut self) -> GameResult {
         self.active_player = match self.active_player {
             Player::One => Player::Two,
             Player::Two => Player::One,
             _ => unreachable!("both players cannot be active at the same time"),
         };
-        self.win_game();
+        self.win_game()
     }
 
-    pub fn check_loss_conditions(&mut self) {
-        assert_ne!(
-            self.active_step,
-            Step::Setup,
-            "requires the game to be setup"
-        );
+    pub fn check_loss_conditions(&mut self) -> GameResult {
+        // cannot lose in setup, except from mulligan
+        if self.active_step == Step::Setup {
+            return Ok(GameContinue);
+        }
 
         // already game over
-        if self.active_step == Step::GameOver {
-            return;
-        }
+        // if self.active_step == Step::GameOver {
+        //     return;
+        // }
 
         let mut lose_player = None;
         for (player, board) in [(Player::One, &self.player_1), (Player::Two, &self.player_2)] {
@@ -811,17 +852,6 @@ impl Game {
             if board.life.count() == 0 {
                 lose_player = Some(player);
                 println!("player {player:?} has no life remaining");
-                // TODO send (event) game over reason
-            }
-
-            // TODO that's not working as intended. it's too early
-            // - deck is 0 on draw step
-            if board.main_deck.count() == 0
-                && self.active_step == Step::Draw
-                && self.active_player == player
-            {
-                lose_player = Some(player);
-                println!("player {player:?} has no card in their main deck");
                 // TODO send (event) game over reason
             }
 
@@ -839,8 +869,10 @@ impl Game {
 
         if let Some(lose_player) = lose_player {
             self.active_player = lose_player;
-            self.lose_game();
+            return self.lose_game();
         }
+
+        Ok(GameContinue)
     }
 
     pub fn lookup_card_number(&self, card: CardRef) -> &CardNumber {
