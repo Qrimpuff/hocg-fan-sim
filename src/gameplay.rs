@@ -2,7 +2,8 @@ use std::fmt::Display;
 use std::num::NonZeroUsize;
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
-use crate::card_effects::evaluate::EvaluateEffect;
+use crate::card_effects::evaluate::EvaluateEffectMut;
+use crate::evaluate::EvaluateEffect;
 
 use super::cards::*;
 use super::modifiers::*;
@@ -584,8 +585,8 @@ impl Game {
 
                     let condition = sup.condition.clone();
                     let effect = sup.effect.clone();
-                    if condition.start_evaluate(self, card) {
-                        effect.start_evaluate(self, card);
+                    if condition.evaluate_with_card(self, card) {
+                        effect.evaluate_with_card_mut(self, card)?;
 
                         // send the used card to the archive
                         // TODO send (event) put in archive
@@ -675,7 +676,7 @@ impl Game {
                         )
                     }
 
-                    if condition.start_evaluate(self, card) {
+                    if condition.evaluate_with_card(self, card) {
                         // pay the cost of the oshi ability
                         // TODO send (event) send holo power to archive
                         self.active_board_mut().send_from_zone(
@@ -684,7 +685,7 @@ impl Game {
                             cost,
                         );
 
-                        effect.start_evaluate(self, card);
+                        effect.evaluate_with_card_mut(self, card)?;
 
                         self.add_modifier(card, PreventAbility(i), prevent_life_time)?;
                     } else {
@@ -757,12 +758,12 @@ impl Game {
                 };
 
                 // can the art be performed
-                if condition.start_evaluate(self, card) {
+                if condition.evaluate_with_card(self, card) {
                     // FIXME evaluate damage number
                     println!("deals {:?} damage", damage);
                     self.add_damage(target, DamageMarkers::from_hp(damage))?;
 
-                    effect.start_evaluate(self, card);
+                    effect.evaluate_with_card_mut(self, card)?;
                 }
 
                 if self.remaining_hp(target) == 0 {
@@ -1300,7 +1301,7 @@ impl Game {
                 .collect();
             let arts: Vec<_> = arts
                 .into_iter()
-                .filter(|(_, cond)| cond.clone().start_evaluate(self, card))
+                .filter(|(_, cond)| cond.clone().evaluate_with_card(self, card))
                 .collect();
             let arts: Vec<_> = arts
                 .into_iter()
