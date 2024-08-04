@@ -1,5 +1,8 @@
 use crate::{
-    gameplay::{CardRef, Game, GameContinue, GameResult, Player, Rps, Step, Zone},
+    gameplay::{
+        CardRef, Game, GameContinue, GameOutcome, GameOverReason, GameResult, Player, Rps, Step,
+        Zone,
+    },
     modifiers::{DamageMarkers, LifeTime, Modifier, ModifierKind, ModifierRef},
     CardNumber, Loadout,
 };
@@ -271,18 +274,16 @@ impl Game {
     pub fn report_start_game(&mut self, active_player: Player) -> GameResult {
         self.send_event(GameStart { active_player }.into())
     }
-    pub fn report_game_over(&mut self, winning_player: Player) -> GameResult {
-        self.send_event(
-            GameOver {
-                winning_player: Some(winning_player),
-            }
-            .into(),
-        )
+    pub fn report_game_over(&mut self, game_outcome: GameOutcome) -> GameResult {
+        self.send_event(GameOver { game_outcome }.into())
     }
     pub fn report_game_over_draw(&mut self) -> GameResult {
         self.send_event(
             GameOver {
-                winning_player: None,
+                game_outcome: GameOutcome {
+                    winning_player: None,
+                    reason: GameOverReason::Draw,
+                },
             }
             .into(),
         )
@@ -959,11 +960,12 @@ impl EvaluateEvent for GameStart {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameOver {
-    winning_player: Option<Player>,
+    game_outcome: GameOutcome,
 }
 impl EvaluateEvent for GameOver {
-    fn evaluate_event(&self, _game: &mut Game) -> GameResult {
-        // the state doesn't change on game over
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+        game.active_step = Step::GameOver;
+        game.game_outcome = Some(self.game_outcome);
 
         Ok(GameContinue)
     }
@@ -1534,6 +1536,7 @@ impl EvaluateEvent for BatonPass {
             .lookup_holo_member(self.from_card.1)
             .expect("cannot pay baton pass cost for non member");
         // TODO cost should automatic when there is a single cheers color
+        // TODO request (intent) select attached cheers
         let cheers = game.prompt_for_baton_pass(self.from_card.1, mem.baton_pass_cost);
         game.send_attachments_to_archive(self.player, self.from_card.1, cheers)?;
 
