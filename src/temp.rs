@@ -184,7 +184,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         color: Color::White,
                         hp: 50,
                         level: HoloMemberLevel::Debut,
-                        tags: vec![HoloMemberTag::Generation0],
+                        tags: vec![HoloMemberHashTag::Generation0],
                         baton_pass_cost: 1,
                         abilities: vec![],
                         arts: vec![HoloMemberArt {
@@ -197,6 +197,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                             damage: HoloMemberArtDamage::Basic(10),
                         }],
                         extra: None,
+                        attributes: vec![],
                     }),
                 ),
                 (
@@ -210,7 +211,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         color: Color::White,
                         hp: 80,
                         level: HoloMemberLevel::First,
-                        tags: vec![HoloMemberTag::Generation0],
+                        tags: vec![HoloMemberHashTag::Generation0],
                         baton_pass_cost: 1,
                         abilities: vec![],
                         arts: vec![HoloMemberArt {
@@ -223,6 +224,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                             damage: HoloMemberArtDamage::Basic(30),
                         }],
                         extra: None,
+                        attributes: vec![],
                     }),
                 ),
                 (
@@ -236,7 +238,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         color: Color::White,
                         hp: 120,
                         level: HoloMemberLevel::Second,
-                        tags: vec![HoloMemberTag::Generation0],
+                        tags: vec![HoloMemberHashTag::Generation0],
                         baton_pass_cost: 1,
                         abilities: vec![],
                         arts: vec![
@@ -260,6 +262,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                             },
                         ],
                         extra: None,
+                        attributes: vec![],
                     }),
                 ),
                 (
@@ -273,7 +276,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         color: Color::Green,
                         hp: 50,
                         level: HoloMemberLevel::Debut,
-                        tags: vec![HoloMemberTag::Generation0],
+                        tags: vec![HoloMemberHashTag::Generation0],
                         baton_pass_cost: 1,
                         abilities: vec![],
                         arts: vec![HoloMemberArt {
@@ -286,6 +289,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                             damage: HoloMemberArtDamage::Basic(20),
                         }],
                         extra: None,
+                        attributes: vec![],
                     }),
                 ),
                 (
@@ -299,7 +303,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         color: Color::Green,
                         hp: 80,
                         level: HoloMemberLevel::First,
-                        tags: vec![HoloMemberTag::Generation0],
+                        tags: vec![HoloMemberHashTag::Generation0],
                         baton_pass_cost: 1,
                         abilities: vec![],
                         arts: vec![HoloMemberArt {
@@ -312,6 +316,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                             damage: HoloMemberArtDamage::Basic(40),
                         }],
                         extra: None,
+                        attributes: vec![],
                     }),
                 ),
                 (
@@ -325,7 +330,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         color: Color::Green,
                         hp: 120,
                         level: HoloMemberLevel::Second,
-                        tags: vec![HoloMemberTag::Generation0],
+                        tags: vec![HoloMemberHashTag::Generation0],
                         baton_pass_cost: 1,
                         abilities: vec![],
                         arts: vec![
@@ -349,6 +354,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                             },
                         ],
                         extra: None,
+                        attributes: vec![],
                     }),
                 ),
                 // items
@@ -361,6 +367,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         illustration: "".into(),
                         artist: "".into(),
                         kind: SupportKind::Item,
+                        limited_use: false,
                         condition: vec![],
                         effect: "for center_member heal 10".parse_effect().expect("const"),
                         text: "some support".into(),
@@ -375,6 +382,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         illustration: "".into(),
                         artist: "".into(),
                         kind: SupportKind::Item,
+                        limited_use: true,
                         condition: vec![],
                         effect: "draw 2".parse_effect().expect("const"),
                         text: "some support".into(),

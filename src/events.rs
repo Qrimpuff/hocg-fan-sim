@@ -1,4 +1,5 @@
 use crate::{
+    evaluate::EvaluateEffectMut,
     gameplay::{
         CardRef, Game, GameContinue, GameOutcome, GameOverReason, GameResult, Player, Rps, Step,
         Zone,
@@ -835,6 +836,17 @@ impl Game {
             .into(),
         )
     }
+
+    pub fn use_support_card(&mut self, player: Player, card: CardRef) -> GameResult {
+        self.send_event(
+            UseSupportCard {
+                player,
+                // can only use card from hand, for now
+                card: (Zone::Hand, card),
+            }
+            .into(),
+        )
+    }
 }
 
 #[enum_dispatch]
@@ -1495,21 +1507,28 @@ impl EvaluateEvent for Bloom {
         verify_cards_in_zone(game, self.player, self.from_card.0, &[self.from_card.1]);
         verify_cards_in_zone(game, self.player, self.to_card.0, &[self.to_card.1]);
 
-        // game.send_event(
-        //     ZoneToAttach {
-        //         player: self.player,
-        //         from_zone: self.from_zone,
-        //         cards: vec![self.card],
-        //         to_card: self.to_card,
-        //     }
-        //     .into(),
-        // );
+        let bloom = game
+            .lookup_holo_member(self.from_card.1)
+            .expect("should be a valid member");
+        let target = game
+            .lookup_holo_member(self.to_card.1)
+            .expect("should be a valid member");
+        if !bloom.can_bloom_target(self.from_card.1, game, (self.to_card.1, target)) {
+            unreachable!("bloom should not be an option, if it's not allowed")
+        }
+
+        // attach the bloom card to the bloom target
         game.board_mut(self.player)
             .attach_to_card(self.from_card.1, self.to_card.1);
+
+        // move the attachments and damage to the new card
         game.board_mut(self.player)
             .promote_attachment(self.from_card.1, self.to_card.1);
         game.promote_modifiers(self.from_card.1, self.to_card.1);
         game.promote_damage_markers(self.from_card.1, self.to_card.1);
+
+        // prevent it from blooming again this turn
+        game.add_modifier(self.from_card.1, PreventBloom, LifeTime::ThisTurn)?;
 
         Ok(GameContinue)
     }
@@ -1559,8 +1578,46 @@ impl EvaluateEvent for UseSupportCard {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
-        // TODO implement
-        unimplemented!()
+        // - use support card
+        //   - only one limited per turn
+        //   - otherwise unlimited
+        let sup = game
+            .lookup_support(self.card.1)
+            .expect("only support should be allowed here");
+
+        let limited_use = sup.limited_use;
+        let effect = sup.effect.clone();
+
+        if !sup.can_use_support(self.card.1, game) {
+            unreachable!("support should not be an option, if it's not allowed")
+        }
+
+        // send the support card out of the game, so it doesn't affect itself
+        game.send_event(
+            ZoneToZone {
+                player: self.player,
+                from_zone: self.card.0,
+                cards: vec![self.card.1],
+                to_zone: Zone::ActivateSupport,
+            }
+            .into(),
+        )?;
+
+        // activate the support card
+        effect.evaluate_with_card_mut(game, self.card.1)?;
+
+        // limited support can only be used once per turn
+        if limited_use {
+            game.add_zone_modifier(
+                self.player,
+                Zone::Hand,
+                PreventLimitedSupport,
+                LifeTime::ThisTurn,
+            )?;
+        }
+
+        // send the used card to the archive
+        game.send_cards_to_archive(game.active_player, vec![self.card.1])
     }
 }
 

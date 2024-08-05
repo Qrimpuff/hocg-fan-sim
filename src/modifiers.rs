@@ -31,6 +31,8 @@ pub enum ModifierKind {
     Resting,
     PreventAbility(usize),
     PreventCollab,
+    PreventBloom,
+    PreventLimitedSupport,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -340,16 +342,19 @@ impl Game {
     }
 
     pub fn remaining_hp(&self, card: CardRef) -> HoloMemberHp {
-        let dmg = self
-            .card_damage_markers
-            .get(&card)
-            .copied()
-            .unwrap_or_default();
+        let dmg = self.get_damage(card);
         let hp = self
             .lookup_holo_member(card)
             .expect("should be a member")
             .hp;
         hp.saturating_sub(dmg.to_hp())
+    }
+
+    pub fn get_damage(&self, card: CardRef) -> DamageMarkers {
+        self.card_damage_markers
+            .get(&card)
+            .copied()
+            .unwrap_or_default()
     }
 
     pub fn add_damage(&mut self, card: CardRef, dmg: DamageMarkers) -> GameResult {

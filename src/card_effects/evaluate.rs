@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use super::effects::*;
 use crate::{gameplay::*, modifiers::DamageMarkers, HoloMemberHp};
 
@@ -49,18 +51,18 @@ pub trait EvaluateEffectMut {
     type Value;
 
     fn evaluate_with_context_mut(
-        self,
+        &self,
         ctx: &mut EvaluateContext,
         game: &mut Game,
     ) -> EvaluateResult<Self::Value>;
 
-    fn evaluate_mut(self, game: &mut Game) -> EvaluateResult<Self::Value>
+    fn evaluate_mut(&self, game: &mut Game) -> EvaluateResult<Self::Value>
     where
         Self: Sized,
     {
         self.evaluate_with_context_mut(&mut EvaluateContext::new(), game)
     }
-    fn evaluate_with_card_mut(self, game: &mut Game, card: CardRef) -> EvaluateResult<Self::Value>
+    fn evaluate_with_card_mut(&self, game: &mut Game, card: CardRef) -> EvaluateResult<Self::Value>
     where
         Self: Sized,
     {
@@ -70,15 +72,15 @@ pub trait EvaluateEffectMut {
 pub trait EvaluateEffect {
     type Value;
 
-    fn evaluate_with_context(self, ctx: &mut EvaluateContext, game: &Game) -> Self::Value;
+    fn evaluate_with_context(&self, ctx: &mut EvaluateContext, game: &Game) -> Self::Value;
 
-    fn evaluate(self, game: &Game) -> Self::Value
+    fn evaluate(&self, game: &Game) -> Self::Value
     where
         Self: Sized,
     {
         self.evaluate_with_context(&mut EvaluateContext::new(), game)
     }
-    fn evaluate_with_card(self, game: &mut Game, card: CardRef) -> Self::Value
+    fn evaluate_with_card(&self, game: &Game, card: CardRef) -> Self::Value
     where
         Self: Sized,
     {
@@ -88,19 +90,19 @@ pub trait EvaluateEffect {
 
 impl<I, E, V> EvaluateEffectMut for I
 where
-    I: IntoIterator<Item = E>,
+    I: Deref<Target = [E]>,
     E: EvaluateEffectMut<Value = V>,
     V: CombineEffect + Default,
 {
     type Value = V;
 
     fn evaluate_with_context_mut(
-        self,
+        &self,
         ctx: &mut EvaluateContext,
         game: &mut Game,
     ) -> EvaluateResult<Self::Value> {
         let mut acc: Option<Self::Value> = None;
-        for eval in self {
+        for eval in self.iter() {
             acc = if let Some(acc) = acc {
                 Some(acc.combine_effect(eval.evaluate_with_context_mut(ctx, game)?))
             } else {
@@ -113,15 +115,15 @@ where
 }
 impl<I, E, V> EvaluateEffect for I
 where
-    I: IntoIterator<Item = E>,
+    I: Deref<Target = [E]>,
     E: EvaluateEffect<Value = V>,
     V: CombineEffect + Default,
 {
     type Value = V;
 
-    fn evaluate_with_context(self, ctx: &mut EvaluateContext, game: &Game) -> Self::Value {
+    fn evaluate_with_context(&self, ctx: &mut EvaluateContext, game: &Game) -> Self::Value {
         let mut acc: Option<Self::Value> = None;
-        for eval in self {
+        for eval in self.iter() {
             acc = if let Some(acc) = acc {
                 Some(acc.combine_effect(eval.evaluate_with_context(ctx, game)))
             } else {
@@ -136,7 +138,7 @@ where
 impl EvaluateEffect for Target {
     type Value = CardRef;
 
-    fn evaluate_with_context(self, ctx: &mut EvaluateContext, game: &Game) -> Self::Value {
+    fn evaluate_with_context(&self, ctx: &mut EvaluateContext, game: &Game) -> Self::Value {
         match self {
             Target::CurrentCard => ctx.active_card.expect("there should be an active card"),
             Target::CenterHoloMember => game
@@ -158,7 +160,7 @@ impl EvaluateEffectMut for Action {
     type Value = ();
 
     fn evaluate_with_context_mut(
-        self,
+        &self,
         ctx: &mut EvaluateContext,
         game: &mut Game,
     ) -> EvaluateResult<Self::Value> {
@@ -209,7 +211,7 @@ impl EvaluateEffect for Value {
     type Value = u32;
 
     #[allow(clippy::only_used_in_recursion)]
-    fn evaluate_with_context(self, ctx: &mut EvaluateContext, game: &Game) -> Self::Value {
+    fn evaluate_with_context(&self, ctx: &mut EvaluateContext, game: &Game) -> Self::Value {
         match self {
             Value::For(_, _) => todo!(),
             Value::Get(_) => todo!(),
@@ -234,7 +236,7 @@ impl EvaluateEffect for Condition {
     type Value = bool;
 
     #[allow(clippy::only_used_in_recursion)]
-    fn evaluate_with_context(self, ctx: &mut EvaluateContext, game: &Game) -> Self::Value {
+    fn evaluate_with_context(&self, ctx: &mut EvaluateContext, game: &Game) -> Self::Value {
         match self {
             Condition::Always => true,
             Condition::OncePerTurn => todo!(),

@@ -318,6 +318,28 @@ impl Game {
             .expect("oshi should always be there");
         self.send_cheers_to_life(Player::Two, oshi_2.life as usize)?;
 
+        // cannot use limited support on the first turn of the first player
+        self.add_zone_modifier(
+            self.active_player,
+            Zone::All,
+            PreventLimitedSupport,
+            LifeTime::NextTurn(self.active_player),
+        )?;
+
+        // cannot bloom on each player's first turn
+        self.add_zone_modifier(
+            Player::One,
+            Zone::All,
+            PreventBloom,
+            LifeTime::NextTurn(Player::One),
+        )?;
+        self.add_zone_modifier(
+            Player::Two,
+            Zone::All,
+            PreventBloom,
+            LifeTime::NextTurn(Player::Two),
+        )?;
+
         // - game start
         self.report_start_game(self.active_player)?;
 
@@ -477,26 +499,7 @@ impl Game {
                 }
                 MainStepAction::UseSupportCard(card) => {
                     println!("- action: Use support card");
-                    // TODO send (event) use card effect, support
-                    // TODO verify use support card action
-
-                    // - use support card
-                    //   - only one limited per turn
-                    //   - otherwise unlimited
-                    let sup = self
-                        .lookup_support(card)
-                        .expect("only support should be allowed here");
-
-                    let condition = sup.condition.clone();
-                    let effect = sup.effect.clone();
-                    if condition.evaluate_with_card(self, card) {
-                        effect.evaluate_with_card_mut(self, card)?;
-
-                        // send the used card to the archive
-                        self.send_cards_to_archive(self.active_player, vec![card])?;
-                    } else {
-                        unreachable!("support should not be an option, if it's not allowed")
-                    }
+                    self.use_support_card(self.active_player, card)?;
                 }
                 MainStepAction::CollabMember(card) => {
                     println!("- action: Collab member");
@@ -919,39 +922,11 @@ impl Game {
                         }
                     }
                     HoloMemberLevel::First | HoloMemberLevel::Second => {
-                        // TODO this is duplicated in the bloom prompt
-                        // check condition for bloom
-                        let bloom_lookup = (
-                            match m.level {
-                                HoloMemberLevel::Debut | HoloMemberLevel::Spot => {
-                                    panic!("can only bloom from first or second")
-                                }
-                                // will match on multiple names, if the card has them
-                                HoloMemberLevel::First => {
-                                    vec![HoloMemberLevel::Debut, HoloMemberLevel::First]
-                                }
-                                // TODO verify 2nd -> 2nd
-                                HoloMemberLevel::Second => vec![HoloMemberLevel::First],
-                            },
-                            m.names().collect_vec(),
-                        );
                         let can_bloom = self
                             .board(player)
                             .stage()
-                            .filter_map(|c| self.lookup_holo_member(c))
-                            // TODO cannot bloom to remaining hp < 0
-                            // TODO cannot bloom on each player first turn
-                            // TODO cannot bloom the member twice  in a turn
-                            // TODO not sure if the name needs to be consistent with debut? e.i. Sora -> Sora/AZKi -> AZKi
-                            .any(|m| {
-                                // match on level
-                                bloom_lookup.0.iter().any(|r| *r == m.level)
-                                // match on name
-                                    && bloom_lookup
-                                        .1
-                                        .iter()
-                                        .any(|n| m.names().any(|m_n| *n == m_n))
-                            });
+                            .filter_map(|s| self.lookup_holo_member(s).map(|m| (s, m)))
+                            .any(|target| m.can_bloom_target(c, self, target));
                         if can_bloom {
                             Some(MainStepAction::BloomMember(c))
                         } else {
@@ -959,8 +934,14 @@ impl Game {
                         }
                     }
                 },
-                // TODO check condition to play support
-                Card::Support(_) => Some(MainStepAction::UseSupportCard(c)),
+                // check condition to play support
+                Card::Support(s) => {
+                    if s.can_use_support(c, self) {
+                        Some(MainStepAction::UseSupportCard(c))
+                    } else {
+                        None
+                    }
+                }
                 Card::Cheer(_) => unreachable!("cheer cannot be in hand"),
             })
             .map(|a| MainStepActionDisplay::new(a, self))
@@ -1053,42 +1034,15 @@ impl Game {
     }
 
     pub fn prompt_for_bloom(&mut self, player: Player, card: CardRef) -> CardRef {
-        // TODO extract that filtering to a reusable function
-        let Card::HoloMember(bloom) = self.lookup_card(card) else {
-            panic!("can only bloom from member")
-        };
-
-        let bloom_lookup = (
-            match bloom.level {
-                HoloMemberLevel::Debut | HoloMemberLevel::Spot => {
-                    panic!("can only bloom from first or second")
-                }
-                // will match on multiple names, if the card has them
-                HoloMemberLevel::First => vec![HoloMemberLevel::Debut, HoloMemberLevel::First],
-                // TODO verify 2nd -> 2nd
-                HoloMemberLevel::Second => vec![HoloMemberLevel::First],
-            },
-            bloom.names().collect_vec(),
-        );
+        let bloom = self
+            .lookup_holo_member(card)
+            .expect("can only bloom from member");
 
         let stage: Vec<_> = self
             .board(player)
             .stage()
             .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
-            // TODO cannot bloom to remaining hp < 0
-            // TODO cannot bloom on each player first turn
-            // TODO cannot bloom the member twice  in a turn
-            // TODO not sure if the name needs to be consistent with debut? e.i. Sora -> Sora/AZKi -> AZKi
-            .filter(|(_, m)| {
-                // match on level
-                bloom_lookup.0.iter().any(|r| *r == m.level)
-                // match on name
-                    && bloom_lookup
-                        .1
-                        .iter()
-                        .any(|n| m.names().any(|m_n| *n == m_n))
-            })
-            // TODO check for rest?
+            .filter(|target| bloom.can_bloom_target(card, self, *target))
             .map(|(c, _)| CardDisplay::new(c, self))
             .collect();
 
@@ -1131,7 +1085,7 @@ impl Game {
                 .collect();
             let arts: Vec<_> = arts
                 .into_iter()
-                .filter(|(_, cond)| cond.clone().evaluate_with_card(self, card))
+                .filter(|(_, cond)| cond.evaluate_with_card(self, card))
                 .collect();
             let arts: Vec<_> = arts
                 .into_iter()

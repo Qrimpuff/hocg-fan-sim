@@ -1,6 +1,11 @@
 use std::collections::HashMap;
 
+use iter_tools::Itertools;
+
+use crate::evaluate::EvaluateEffect;
+use crate::modifiers::ModifierKind::*;
 use crate::{
+    gameplay::{CardRef, Game},
     Action, Condition, DamageModifier, Error, ParseEffect, ParseTokens, SerializeEffect, Trigger,
 };
 
@@ -302,37 +307,87 @@ pub struct HoloMemberCard {
     pub color: Color,
     pub hp: HoloMemberHp,
     pub level: HoloMemberLevel,
-    pub tags: Vec<HoloMemberTag>,
+    pub tags: Vec<HoloMemberHashTag>,
     pub baton_pass_cost: HoloMemberBatonPassCost,
     pub abilities: Vec<HoloMemberAbility>,
     pub arts: Vec<HoloMemberArt>,
     pub extra: Option<String>, // TODO will probably be an enum
+    pub attributes: Vec<HoloMemberExtraAttribute>,
     pub rarity: Rarity,
     pub illustration: IllustrationPath,
     pub artist: String,
 }
 
 impl HoloMemberCard {
-    pub fn names(&self) -> impl Iterator<Item = &String> + '_ {
+    pub fn names(&self) -> impl Iterator<Item = &String> + Clone + '_ {
         Some(&self.name)
             .into_iter()
-            .chain(self.tags.iter().filter_map(|t| match t {
-                HoloMemberTag::Name(n) => Some(n),
+            .chain(self.attributes.iter().filter_map(|t| match t {
+                HoloMemberExtraAttribute::Name(n) => Some(n),
                 _ => None,
             }))
     }
+
+    pub fn can_bloom_target(
+        &self,
+        _card: CardRef,
+        game: &Game,
+        target: (CardRef, &HoloMemberCard),
+    ) -> bool {
+        // debut and spot members cannot bloom anything
+        if self.level == HoloMemberLevel::Debut || self.level == HoloMemberLevel::Spot {
+            return false;
+        }
+
+        // cannot bloom to lower level
+        if self.level < target.1.level {
+            return false;
+        }
+
+        // cannot skip a level
+        if self.level as usize - target.1.level as usize > 1 {
+            return false;
+        }
+
+        //  cannot bloom the member twice in a turn
+        if game.has_modifier(target.0, PreventBloom) {
+            return false;
+        }
+
+        //  cannot bloom if the damage is more the bloom hp, it would be defeated instantly
+        if game.get_damage(target.0).to_hp() >= self.hp {
+            return false;
+        }
+
+        // TODO not sure if the name needs to be consistent with debut? e.i. Sora -> Sora/AZKi -> AZKi
+        // need to have a common name, with every previous bloom
+        let names = Some(self.names())
+            .into_iter()
+            .chain(Some(target.1.names()))
+            .chain(
+                game.board_for_card(target.0)
+                    .attachments(target.0)
+                    .into_iter()
+                    .filter_map(|a| game.lookup_holo_member(a))
+                    .map(|m| m.names()),
+            );
+
+        names
+            .multi_cartesian_product()
+            .any(|ns| ns.into_iter().all_equal())
+    }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum HoloMemberLevel {
+    Spot,
     Debut,
     First,
     Second,
-    Spot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum HoloMemberTag {
+pub enum HoloMemberHashTag {
     JP,
     ID,
     EN,
@@ -342,7 +397,12 @@ pub enum HoloMemberTag {
     Generation3,
     Generation4,
     Generation5,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HoloMemberExtraAttribute {
     Name(String),
+    Unknown,
 }
 
 #[derive(Debug)]
@@ -385,13 +445,23 @@ pub struct SupportCard {
     pub card_number: CardNumber,
     pub name: String,
     pub kind: SupportKind,
-    // limited_use: bool, // TODO limited is needed, but not sure how
+    pub limited_use: bool, // TODO limited is needed, but not sure how
     pub text: String,
     pub condition: CardEffectCondition,
     pub effect: CardEffect,
     pub rarity: Rarity,
     pub illustration: IllustrationPath,
     pub artist: String,
+}
+
+impl SupportCard {
+    pub fn can_use_support(&self, card: CardRef, game: &Game) -> bool {
+        if self.limited_use && game.has_modifier(card, PreventLimitedSupport) {
+            return false;
+        }
+
+        self.condition.evaluate_with_card(game, card)
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
