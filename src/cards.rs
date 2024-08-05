@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use iter_tools::Itertools;
 
 use crate::evaluate::EvaluateEffect;
+use crate::gameplay::Zone;
 use crate::modifiers::ModifierKind::*;
 use crate::{
     gameplay::{CardRef, Game},
@@ -283,6 +284,28 @@ pub struct OshiHoloMemberCard {
     pub artist: String,
 }
 
+impl OshiHoloMemberCard {
+    pub fn can_use_skill(&self, card: CardRef, skill_idx: usize, game: &Game) -> bool {
+        let player = game.player_for_card(card);
+
+        //  need the required holo power cost
+        // TODO could have a buff that could pay for the skill
+        let holo_power_count = game.board(player).get_zone(Zone::HoloPower).count();
+        if holo_power_count < self.skills[skill_idx].cost.into() {
+            return false;
+        }
+
+        //  cannot use the same skill twice in a turn
+        if game.has_modifier(card, PreventOshiSkill(skill_idx)) {
+            return false;
+        }
+
+        self.skills[skill_idx]
+            .condition
+            .evaluate_with_card(game, card)
+    }
+}
+
 #[derive(Debug)]
 pub struct OshiSkill {
     pub kind: OshiSkillKind,
@@ -326,6 +349,39 @@ impl HoloMemberCard {
                 HoloMemberExtraAttribute::Name(n) => Some(n),
                 _ => None,
             }))
+    }
+
+    pub fn can_baton_pass(&self, card: CardRef, game: &Game) -> bool {
+        let player = game.player_for_card(card);
+
+        // can only baton pass once per turn
+        if game.has_modifier(card, PreventBatonPass) {
+            return false;
+        }
+
+        // cannot baton pass if resting
+        if game.has_modifier(card, Resting) {
+            return false;
+        }
+
+        // can only baton pass if there are members on back stage, that are not resting
+        if game
+            .board(player)
+            .back_stage()
+            .all(|b| game.has_modifier(b, Resting))
+        {
+            return false;
+        }
+
+        // can only baton pass if there is enough cheers attached
+        let cost = std::iter::repeat(Color::ColorLess)
+            .take(self.baton_pass_cost as usize)
+            .collect_vec();
+        if !game.required_attached_cheers(card, &cost) {
+            return false;
+        }
+
+        true
     }
 
     pub fn can_bloom_target(
@@ -375,6 +431,26 @@ impl HoloMemberCard {
         names
             .multi_cartesian_product()
             .any(|ns| ns.into_iter().all_equal())
+    }
+
+    pub fn can_use_art(&self, card: CardRef, art_idx: usize, game: &Game) -> bool {
+        //  could prevent art by effect
+        if game.has_modifier(card, PreventArt(art_idx)) {
+            return false;
+        }
+        if game.has_modifier(card, PreventAllArts) {
+            return false;
+        }
+        if game.has_modifier(card, Resting) {
+            return false;
+        }
+
+        // need required attached cheers to attack
+        if !game.required_attached_cheers(card, &self.arts[art_idx].cost) {
+            return false;
+        }
+
+        self.arts[art_idx].condition.evaluate_with_card(game, card)
     }
 }
 

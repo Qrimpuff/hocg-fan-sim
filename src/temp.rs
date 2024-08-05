@@ -104,7 +104,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         OshiSkill {
                             kind: OshiSkillKind::Special,
                             name: "Sora super dance".into(),
-                            cost: 1,
+                            cost: 2,
                             trigger: vec![],
                             condition: vec![],
                             effect: "draw 3".parse_effect().expect("const"),
@@ -134,7 +134,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         OshiSkill {
                             kind: OshiSkillKind::Special,
                             name: "AZKi super sing".into(),
-                            cost: 1,
+                            cost: 2,
                             trigger: vec![],
                             condition: vec![],
                             effect: "draw 3".parse_effect().expect("const"),

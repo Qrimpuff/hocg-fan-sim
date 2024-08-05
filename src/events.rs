@@ -2,10 +2,10 @@ use crate::{
     evaluate::EvaluateEffectMut,
     gameplay::{
         CardRef, Game, GameContinue, GameOutcome, GameOverReason, GameResult, Player, Rps, Step,
-        Zone,
+        Zone, MAX_MEMBERS_ON_STAGE,
     },
     modifiers::{DamageMarkers, LifeTime, Modifier, ModifierKind, ModifierRef},
-    CardNumber, Loadout,
+    CardNumber, HoloMemberArtDamage, Loadout, OshiSkillKind,
 };
 use enum_dispatch::enum_dispatch;
 use iter_tools::Itertools;
@@ -79,7 +79,7 @@ pub enum Event {
     // Card effect events
     //...
     /// used by Lui oshi skill
-    UseAbilitySkill,
+    UseOshiSkill,
     /// used by Pekora oshi skill, marker event before zone to zone
     HoloMemberDefeated,
     /// used by Suisei oshi skill
@@ -388,7 +388,7 @@ impl Game {
                 player,
                 from_zone: Zone::Hand,
                 cards: vec![card],
-                to_zone: Zone::MainStageCenter,
+                to_zone: Zone::CenterStage,
             }
             .into(),
         )
@@ -404,7 +404,7 @@ impl Game {
                 player,
                 from_zone: Zone::BackStage,
                 cards: vec![card],
-                to_zone: Zone::MainStageCenter,
+                to_zone: Zone::CenterStage,
             }
             .into(),
         )
@@ -451,6 +451,27 @@ impl Game {
         Ok(GameContinue)
     }
 
+    pub fn send_holo_power_to_archive(&mut self, player: Player, amount: usize) -> GameResult {
+        if amount < 1 {
+            return Ok(GameContinue);
+        }
+
+        let power = self.board(player).get_zone(Zone::HoloPower);
+        if power.count() < amount {
+            panic!("not enough holo power");
+        }
+
+        self.send_event(
+            ZoneToZone {
+                player,
+                from_zone: Zone::HoloPower,
+                cards: power.peek_top_cards(amount),
+                to_zone: Zone::Archive,
+            }
+            .into(),
+        )
+    }
+
     pub fn send_from_back_stage_to_collab(&mut self, player: Player, card: CardRef) -> GameResult {
         self.send_event(
             Collab {
@@ -466,7 +487,7 @@ impl Game {
         self.send_event(
             ZoneToZone {
                 player,
-                from_zone: Zone::MainStageCollab,
+                from_zone: Zone::Collab,
                 cards: vec![card],
                 to_zone: Zone::BackStage,
             }
@@ -482,7 +503,7 @@ impl Game {
         self.send_event(
             ZoneToZone {
                 player,
-                from_zone: Zone::MainStageCenter,
+                from_zone: Zone::CenterStage,
                 cards: vec![card],
                 to_zone: Zone::BackStage,
             }
@@ -499,7 +520,7 @@ impl Game {
         self.send_event(
             BatonPass {
                 player,
-                from_card: (Zone::MainStageCenter, from_card),
+                from_card: (Zone::CenterStage, from_card),
                 to_card: (Zone::BackStage, to_card),
             }
             .into(),
@@ -726,6 +747,36 @@ impl Game {
         )
     }
 
+    pub fn deal_damage(
+        &mut self,
+        card: CardRef,
+        target: CardRef,
+        dmg: DamageMarkers,
+    ) -> GameResult {
+        let player = self.player_for_card(card);
+        let card_zone = self
+            .board(player)
+            .find_card_zone(card)
+            .expect("the card should be in a zone");
+
+        let target_player = self.player_for_card(target);
+        let target_zone = self
+            .board(target_player)
+            .find_card_zone(target)
+            .expect("the target should be in a zone");
+
+        self.send_event(
+            DealDamage {
+                player,
+                card: (card_zone, card),
+                target_player,
+                target: (target_zone, target),
+                dmg,
+            }
+            .into(),
+        )
+    }
+
     pub fn add_damage_markers_to_many_cards(
         &mut self,
         player: Player,
@@ -843,6 +894,59 @@ impl Game {
                 player,
                 // can only use card from hand, for now
                 card: (Zone::Hand, card),
+            }
+            .into(),
+        )
+    }
+
+    pub fn use_oshi_skill(
+        &mut self,
+        player: Player,
+        card: CardRef,
+        skill_idx: usize,
+    ) -> GameResult {
+        self.send_event(
+            UseOshiSkill {
+                player,
+                // can only use skill from oshi
+                card: (Zone::Oshi, card),
+                skill_idx,
+            }
+            .into(),
+        )
+    }
+
+    pub fn perform_art(
+        &mut self,
+        player: Player,
+        card: CardRef,
+        art_idx: usize,
+        target: Option<CardRef>,
+    ) -> GameResult {
+        let card_zone = self
+            .board(player)
+            .find_card_zone(card)
+            .expect("the card should be in a zone");
+
+        let mut target_player = None;
+        let mut target_zone_card = None;
+        if let Some(target) = target {
+            let t_player = self.player_for_card(target);
+            let t_zone = self
+                .board(t_player)
+                .find_card_zone(target)
+                .expect("the target should be in a zone");
+            target_player = Some(t_player);
+            target_zone_card = Some((t_zone, target));
+        }
+
+        self.send_event(
+            PerformArt {
+                player,
+                card: (card_zone, card),
+                art_idx,
+                target_player,
+                target: target_zone_card,
             }
             .into(),
         )
@@ -1217,6 +1321,23 @@ impl EvaluateEvent for AddDamageMarkers {
             *game.card_damage_markers.entry(*card).or_default() += self.dmg;
         }
 
+        // verify that they are still alive
+        let defeated = self
+            .cards
+            .iter()
+            .copied()
+            .filter(|card| game.remaining_hp(*card) == 0)
+            .collect_vec();
+
+        // TODO handle buzz (lose 2 lives)
+        // calculate life loss
+        let life_loss = defeated.len();
+
+        // send member to archive, from attack
+        game.send_cards_to_archive(self.player, defeated)?;
+
+        game.lose_lives(self.player, life_loss)?;
+
         Ok(GameContinue)
     }
 }
@@ -1300,14 +1421,23 @@ impl EvaluateEvent for ZoneToZone {
 
         verify_cards_in_zone(game, self.player, self.from_zone, &self.cards);
 
+        // cannot send to stage if stage is full
+        if !self.from_zone.is_stage() && self.to_zone.is_stage() {
+            let count = game
+                .board(self.player)
+                .stage()
+                .filter_map(|c| game.lookup_holo_member(c))
+                .count();
+            if count >= MAX_MEMBERS_ON_STAGE {
+                panic!("cannot send to stage. stage is full");
+            }
+        }
+
         game.board_mut(self.player)
             .send_many_to_zone(self.cards.clone(), self.to_zone);
 
         // lose attachments and buffs when leaving stage
-        if self.to_zone != Zone::MainStageCenter
-            && self.to_zone != Zone::MainStageCollab
-            && self.to_zone != Zone::BackStage
-        {
+        if !self.to_zone.is_stage() {
             game.clear_all_damage_markers_from_many_cards(
                 self.player,
                 self.to_zone,
@@ -1437,12 +1567,23 @@ impl EvaluateEvent for Collab {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
+        // check condition for collab
+        if game.board(self.player).get_zone(Zone::Collab).count() > 0 {
+            panic!("collab is already occupied");
+        }
+        if game.has_modifier(self.card.1, Resting) {
+            panic!("cannot collab a resting member");
+        }
+        if game.has_modifier(self.card.1, PreventCollab) {
+            panic!("cannot collab this member");
+        }
+
         game.send_event(
             ZoneToZone {
                 player: self.player,
                 from_zone: self.card.0,
                 cards: vec![self.card.1],
-                to_zone: Zone::MainStageCollab,
+                to_zone: Zone::Collab,
             }
             .into(),
         )?;
@@ -1451,12 +1592,7 @@ impl EvaluateEvent for Collab {
         game.send_cards_to_holo_power(self.player, self.holo_power_amount)?;
 
         // can only collab once per turn
-        game.add_zone_modifier(
-            self.player,
-            Zone::BackStage,
-            PreventCollab,
-            LifeTime::ThisTurn,
-        )?;
+        game.add_zone_modifier(self.player, Zone::All, PreventCollab, LifeTime::ThisTurn)?;
 
         Ok(GameContinue)
     }
@@ -1547,13 +1683,18 @@ impl EvaluateEvent for BatonPass {
         verify_cards_in_zone(game, self.player, self.to_card.0, &[self.to_card.1]);
 
         // only center stage can baton pass to back stage
-        assert_eq!(self.from_card.0, Zone::MainStageCenter);
+        assert_eq!(self.from_card.0, Zone::CenterStage);
         assert_eq!(self.to_card.0, Zone::BackStage);
 
-        // pay the baton pass cost
         let mem = game
             .lookup_holo_member(self.from_card.1)
             .expect("cannot pay baton pass cost for non member");
+
+        if !mem.can_baton_pass(self.from_card.1, game) {
+            unreachable!("baton should not be an option, if it's not allowed")
+        }
+
+        // pay the baton pass cost
         // TODO cost should automatic when there is a single cheers color
         // TODO request (intent) select attached cheers
         let cheers = game.prompt_for_baton_pass(self.from_card.1, mem.baton_pass_cost);
@@ -1564,6 +1705,9 @@ impl EvaluateEvent for BatonPass {
 
         // send back stage member to center
         game.send_from_back_stage_to_center_stage(self.player, self.to_card.1)?;
+
+        // can only baton pass once per turn
+        game.add_zone_modifier(self.player, Zone::All, PreventBatonPass, LifeTime::ThisTurn)?;
 
         Ok(GameContinue)
     }
@@ -1610,7 +1754,7 @@ impl EvaluateEvent for UseSupportCard {
         if limited_use {
             game.add_zone_modifier(
                 self.player,
-                Zone::Hand,
+                Zone::All,
                 PreventLimitedSupport,
                 LifeTime::ThisTurn,
             )?;
@@ -1626,17 +1770,53 @@ pub struct PerformArt {
     player: Player,
     card: (Zone, CardRef),
     art_idx: usize,
+    target_player: Option<Player>,
     target: Option<(Zone, CardRef)>,
 }
 impl EvaluateEvent for PerformArt {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
-        if let Some(target) = self.target {
-            verify_cards_in_zone(game, self.player, target.0, &[target.1]);
+        if let (Some(target), Some(target_player)) = (self.target, self.target_player) {
+            verify_cards_in_zone(game, target_player, target.0, &[target.1]);
         }
-        // TODO implement
-        unimplemented!()
+
+        let mem = game
+            .lookup_holo_member(self.card.1)
+            .expect("this should be a valid member");
+
+        //  check condition for art
+        if !mem.can_use_art(self.card.1, self.art_idx, game) {
+            panic!("cannot use this art");
+        }
+
+        // - can use 2 attacks (center, collab)
+        // - can choose target (center, collab)
+        // - need required attached cheers to attack
+        // - apply damage and effects
+        // - remove member if defeated
+        //   - lose 1 life
+        //   - attach lost life (cheer)
+        let art = &mem.arts[self.art_idx];
+        let effect = art.effect.clone();
+
+        // FIXME evaluate damage number
+        let dmg = match art.damage {
+            HoloMemberArtDamage::Basic(dmg) => DamageMarkers::from_hp(dmg),
+            HoloMemberArtDamage::Plus(_) => todo!(),
+            HoloMemberArtDamage::Minus(_) => todo!(),
+            HoloMemberArtDamage::Uncertain => todo!(),
+        };
+
+        // evaluate the effect of art, could change damage calculation
+        effect.evaluate_with_card_mut(game, self.card.1)?;
+
+        // deal damage if there is a target. if any other damage is done, it will be in the effect
+        if let Some(target) = self.target {
+            game.deal_damage(self.card.1, target.1, dmg)?;
+        }
+
+        Ok(GameContinue)
     }
 }
 
@@ -1655,17 +1835,47 @@ impl EvaluateEvent for WaitingForPlayerIntent {
 //...
 /// used by Lui oshi skill
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UseAbilitySkill {
+pub struct UseOshiSkill {
     player: Player,
     card: (Zone, CardRef),
     skill_idx: usize,
 }
-impl EvaluateEvent for UseAbilitySkill {
+impl EvaluateEvent for UseOshiSkill {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
-        // TODO implement
-        unimplemented!()
+        let oshi = game
+            .lookup_oshi(self.card.1)
+            .expect("only oshi should be using skills");
+
+        //  check condition for skill
+        if !oshi.can_use_skill(self.card.1, self.skill_idx, game) {
+            panic!("cannot use this skill");
+        }
+
+        // - use oshi skill
+        //   - oshi power uses card in power zone
+        //   - once per turn / once per game
+        let skill = &oshi.skills[self.skill_idx];
+        let effect = skill.effect.clone();
+        let prevent_life_time = match skill.kind {
+            OshiSkillKind::Normal => LifeTime::ThisTurn,
+            OshiSkillKind::Special => LifeTime::ThisGame,
+        };
+
+        // pay the cost of the oshi skill
+        // TODO could have a buff that could pay for the skill
+        game.send_holo_power_to_archive(self.player, skill.cost as usize)?;
+
+        effect.evaluate_with_card_mut(game, self.card.1)?;
+
+        game.add_modifier(
+            self.card.1,
+            PreventOshiSkill(self.skill_idx),
+            prevent_life_time,
+        )?;
+
+        Ok(GameContinue)
     }
 }
 /// used by Pekora oshi skill, marker event before zone to zone
@@ -1687,16 +1897,18 @@ impl EvaluateEvent for HoloMemberDefeated {
 pub struct DealDamage {
     player: Player,
     card: (Zone, CardRef),
+    target_player: Player,
     target: (Zone, CardRef),
-    amount: usize,
+    dmg: DamageMarkers,
 }
 impl EvaluateEvent for DealDamage {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
-        verify_cards_in_zone(game, self.player, self.target.0, &[self.target.1]);
+        verify_cards_in_zone(game, self.target_player, self.target.0, &[self.target.1]);
 
-        // TODO implement
-        unimplemented!()
+        game.add_damage_markers(self.target.1, self.dmg)?;
+
+        Ok(GameContinue)
     }
 }
 

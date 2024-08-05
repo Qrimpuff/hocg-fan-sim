@@ -143,7 +143,7 @@ impl EvaluateEffect for Target {
             Target::CurrentCard => ctx.active_card.expect("there should be an active card"),
             Target::CenterHoloMember => game
                 .board(ctx.active_player.expect("there should be an active player"))
-                .get_zone(Zone::MainStageCenter)
+                .get_zone(Zone::CenterStage)
                 .peek_top_card()
                 .expect("there should be a center member"),
             Target::Var(_) => todo!(),
@@ -186,7 +186,7 @@ impl EvaluateEffectMut for Action {
                     .expect("can only heal members");
 
                 println!("heal {} for card {}", heal, mem.name);
-                game.remove_damage(card, DamageMarkers::from_hp(heal as HoloMemberHp))?;
+                game.remove_damage_markers(card, DamageMarkers::from_hp(heal as HoloMemberHp))?;
             }
             Action::Let(_, _) => todo!(),
             Action::When(_, _) => todo!(),

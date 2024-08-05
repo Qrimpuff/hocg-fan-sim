@@ -29,10 +29,14 @@ pub enum ModifierKind {
     // buff
     // debuff
     Resting,
-    PreventAbility(usize),
+    PreventOshiSkill(usize),
+    PreventArt(usize),
+    PreventAllArts,
     PreventCollab,
     PreventBloom,
     PreventLimitedSupport,
+    PreventBatonPass,
+    SkipStep(Step),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,6 +129,16 @@ impl Game {
         )
     }
 
+    /// is used with Zone::All
+    pub fn player_has_modifier(&self, player: Player, kind: ModifierKind) -> bool {
+        // need to look for any card, oshi is always there
+        let oshi = self
+            .board(player)
+            .get_zone(Zone::Oshi)
+            .peek_top_card()
+            .expect("oshi is always there");
+        self.has_modifier(oshi, kind)
+    }
     pub fn has_modifier(&self, card: CardRef, kind: ModifierKind) -> bool {
         self.has_modifier_with(card, |m| m.kind == kind)
     }
@@ -357,7 +371,7 @@ impl Game {
             .unwrap_or_default()
     }
 
-    pub fn add_damage(&mut self, card: CardRef, dmg: DamageMarkers) -> GameResult {
+    pub fn add_damage_markers(&mut self, card: CardRef, dmg: DamageMarkers) -> GameResult {
         let player = self.player_for_card(card);
         let zone = self
             .board(player)
@@ -367,7 +381,7 @@ impl Game {
         self.add_damage_markers_to_many_cards(player, zone, vec![card], dmg)
     }
 
-    pub fn remove_damage(&mut self, card: CardRef, dmg: DamageMarkers) -> GameResult {
+    pub fn remove_damage_markers(&mut self, card: CardRef, dmg: DamageMarkers) -> GameResult {
         let player = self.player_for_card(card);
         let zone = self
             .board(player)
