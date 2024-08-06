@@ -1506,18 +1506,11 @@ impl MainStepActionDisplay {
             }
             MainStepAction::UseOshiSkill(card, idx) => {
                 let display = CardDisplay::new(card, game);
-                let skill = match game.lookup_card(card) {
-                    Card::OshiHoloMember(o) => o
-                        .skills
-                        .get(idx)
-                        .expect("the index should be in range")
-                        .name
-                        .clone(),
-                    Card::HoloMember(_) => todo!("holo member cannot have skill"),
-                    Card::Support(_) => todo!("support cannot have skill"),
-                    Card::Cheer(_) => todo!("cheer cannot maybe have skill"),
-                };
-                format!("use skill: {skill} from {display}")
+                let oshi = game.lookup_oshi(card).expect("it should be an oshi");
+                format!(
+                    "use skill: [-{}] {} - {display}",
+                    oshi.skills[idx].cost, oshi.skills[idx].name
+                )
             }
             MainStepAction::Done => "done".into(),
         };
@@ -1653,24 +1646,38 @@ struct CardDisplay {
 impl CardDisplay {
     pub fn new(card: CardRef, game: &Game) -> CardDisplay {
         let text = match game.lookup_card(card) {
-            Card::OshiHoloMember(o) => format!("{} ({} life)", o.name, o.life),
+            Card::OshiHoloMember(o) => {
+                let life_remaining = game.board_for_card(card).life.count();
+                format!(
+                    "{} (Oshi) ({}/{} life) {}",
+                    o.name, life_remaining, o.life, card,
+                )
+            }
             Card::HoloMember(m) => {
                 format!(
-                    "{} ({:?}) ({}/{}) ({} cheers) (?) ({})",
+                    "{} ({:?}) ({}/{}){} ({}) {}",
                     m.name,
                     m.level,
                     game.remaining_hp(card),
                     m.hp,
-                    game.attached_cheers(card)
-                        .filter_map(|c| game.lookup_cheer(c))
-                        .map(|c| format!("{:?}", c.color))
-                        .collect_vec()
-                        .join(", "),
-                    m.card_number
+                    if game.attached_cheers(card).any(|_| true) {
+                        format!(
+                            " (cheers: {})",
+                            game.attached_cheers(card)
+                                .filter_map(|c| game.lookup_cheer(c))
+                                .map(|c| format!("{:?}", c.color))
+                                .collect_vec()
+                                .join(", ")
+                        )
+                    } else {
+                        "".into()
+                    },
+                    m.card_number,
+                    card,
                 )
             }
-            Card::Support(s) => format!("{} ({:?})", s.name, s.kind),
-            Card::Cheer(c) => format!("{} ({:?})", c.name, c.color),
+            Card::Support(s) => format!("{} ({:?}) {}", s.name, s.kind, card),
+            Card::Cheer(c) => format!("{} ({:?}) {}", c.name, c.color, card),
         };
         CardDisplay { card, text }
     }

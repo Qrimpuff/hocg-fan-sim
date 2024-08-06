@@ -106,7 +106,7 @@ impl GlobalLibrary {
         // default condition to always
         let default_condition = Condition::Always;
         let default_action = Action::Noop;
-        let default_damage_mod = DamageModifier::None;
+        // let default_damage_mod = DamageModifier::None;
         for card in self.cards.values_mut() {
             match card {
                 Card::OshiHoloMember(o) => o.skills.iter_mut().for_each(|s| {
@@ -130,9 +130,9 @@ impl GlobalLibrary {
                         if a.condition.is_empty() {
                             a.condition.push(default_condition.clone())
                         }
-                        if a.damage_modifier.is_empty() {
-                            a.damage_modifier.push(default_damage_mod)
-                        }
+                        // if a.damage_modifier.is_empty() {
+                        //     a.damage_modifier.push(default_damage_mod)
+                        // }
                         if a.effect.is_empty() {
                             a.effect.push(default_action.clone())
                         }
@@ -195,10 +195,10 @@ impl GlobalLibrary {
                             eprintln!("{}: {} - condition - {}", m.card_number, a.name, e);
                             has_errors = true;
                         }
-                        if let Err(e) = serialization_round_trip(a.damage_modifier.clone()) {
-                            eprintln!("{}: {} - damage modifier - {}", m.card_number, a.name, e);
-                            has_errors = true;
-                        }
+                        // if let Err(e) = serialization_round_trip(a.damage_modifier.clone()) {
+                        //     eprintln!("{}: {} - damage modifier - {}", m.card_number, a.name, e);
+                        //     has_errors = true;
+                        // }
                         if let Err(e) = serialization_round_trip(a.effect.clone()) {
                             eprintln!("{}: {} - effect - {}", m.card_number, a.name, e);
                             has_errors = true;
@@ -251,13 +251,13 @@ pub enum Rarity {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(clippy::enum_variant_names)]
 pub enum Color {
-    ColorLess,
     White,
     Green,
-    Blue,
     Red,
+    Blue,
     Purple,
     Yellow,
+    ColorLess,
 }
 
 pub type CardNumber = String;
@@ -327,10 +327,10 @@ pub enum OshiSkillKind {
 pub struct HoloMemberCard {
     pub card_number: CardNumber,
     pub name: String,
-    pub color: Color,
+    pub colors: Vec<Color>,
     pub hp: HoloMemberHp,
     pub level: HoloMemberLevel,
-    pub tags: Vec<HoloMemberHashTag>,
+    pub hash_tags: Vec<HoloMemberHashTag>,
     pub baton_pass_cost: HoloMemberBatonPassCost,
     pub abilities: Vec<HoloMemberAbility>,
     pub arts: Vec<HoloMemberArt>,
@@ -467,16 +467,19 @@ pub enum HoloMemberHashTag {
     JP,
     ID,
     EN,
-    Generation0,
-    Generation1,
-    Generation2,
-    Generation3,
-    Generation4,
-    Generation5,
+    Gen0,
+    Gen4,
+    SecretSocietyholoX,
+    IDGen1,
+    Promise,
+    Song,
+    Drawing,
+    AnimalEars,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HoloMemberExtraAttribute {
+    Buzz,
     Name(String),
     Unknown,
 }
@@ -502,9 +505,9 @@ pub struct HoloMemberArt {
     pub name: String,
     pub cost: HoloMemberArtCost,
     pub damage: HoloMemberArtDamage,
+    pub special_damage: Option<(Color, HoloMemberHp)>,
     pub text: String,
     pub condition: CardEffectCondition,
-    pub damage_modifier: CardEffectDamageModifier,
     pub effect: CardEffect,
 }
 
@@ -542,8 +545,9 @@ impl SupportCard {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum SupportKind {
+    Staff,
     Item,
-    Staff, // TODO verify if this is true
+    Event,
 }
 
 #[derive(Debug)]

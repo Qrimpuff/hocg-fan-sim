@@ -21,37 +21,43 @@ const TEST_TEXT: &str = "for active_holo buff more_def 1 next_turn";
 fn main() {
     env::set_var("RUST_BACKTRACE", "1");
 
+    let main_deck_hsd01 = Vec::from_iter(
+        None.into_iter()
+            .chain(iter::repeat("hSD01-003".into()).take(4))
+            .chain(iter::repeat("hSD01-004".into()).take(3))
+            .chain(iter::repeat("hSD01-005".into()).take(3))
+            .chain(iter::repeat("hSD01-006".into()).take(2))
+            .chain(iter::repeat("hSD01-007".into()).take(2))
+            .chain(iter::repeat("hSD01-008".into()).take(4))
+            .chain(iter::repeat("hSD01-009".into()).take(3))
+            .chain(iter::repeat("hSD01-010".into()).take(3))
+            .chain(iter::repeat("hSD01-011".into()).take(2))
+            .chain(iter::repeat("hSD01-012".into()).take(2))
+            .chain(iter::repeat("hSD01-013".into()).take(2))
+            .chain(iter::repeat("hSD01-014".into()).take(2))
+            .chain(iter::repeat("hSD01-015".into()).take(2))
+            .chain(iter::repeat("hSD01-016".into()).take(3))
+            .chain(iter::repeat("hSD01-017".into()).take(3))
+            .chain(iter::repeat("hSD01-018".into()).take(3))
+            .chain(iter::repeat("hSD01-019".into()).take(3))
+            .chain(iter::repeat("hSD01-020".into()).take(2))
+            .chain(iter::repeat("hSD01-021".into()).take(2)),
+    );
+    let cheer_deck_hsd01 = Vec::from_iter(
+        None.into_iter()
+            .chain(iter::repeat("hY01-001".into()).take(10))
+            .chain(iter::repeat("hY02-001".into()).take(10)),
+    );
+
     let player_1 = Loadout {
-        oshi: "Sora-Oshi".into(),
-        main_deck: Vec::from_iter(
-            iter::repeat("Sora-Debut".into())
-                .take(20)
-                .chain(iter::repeat("Sora-1".into()).take(10))
-                .chain(iter::repeat("Sora-2".into()).take(5))
-                .chain(iter::repeat("Support-1".into()).take(10))
-                .chain(iter::repeat("Support-2".into()).take(5)),
-        ),
-        cheer_deck: Vec::from_iter(
-            iter::repeat("White-Cheer".into())
-                .take(15)
-                .chain(iter::repeat("Yellow-Cheer".into()).take(5)),
-        ),
+        oshi: "hSD01-001".into(), // Tokino Sora
+        main_deck: main_deck_hsd01.clone(),
+        cheer_deck: cheer_deck_hsd01.clone(),
     };
     let player_2 = Loadout {
-        oshi: "AZKi-Oshi".into(),
-        main_deck: Vec::from_iter(
-            iter::repeat("AZKi-Debut".into())
-                .take(20)
-                .chain(iter::repeat("AZKi-1".into()).take(10))
-                .chain(iter::repeat("AZKi-2".into()).take(5))
-                .chain(iter::repeat("Support-1".into()).take(10))
-                .chain(iter::repeat("Support-2".into()).take(5)),
-        ),
-        cheer_deck: Vec::from_iter(
-            iter::repeat("Green-Cheer".into())
-                .take(15)
-                .chain(iter::repeat("Blue-Cheer".into()).take(5)),
-        ),
+        oshi: "hSD01-002".into(), // AZKi
+        main_deck: main_deck_hsd01,
+        cheer_deck: cheer_deck_hsd01,
     };
 
     let mut game = Game::setup(

@@ -5,7 +5,7 @@ use crate::{
         Zone, MAX_MEMBERS_ON_STAGE,
     },
     modifiers::{DamageMarkers, LifeTime, Modifier, ModifierKind, ModifierRef},
-    CardNumber, HoloMemberArtDamage, Loadout, OshiSkillKind,
+    CardNumber, HoloMemberArtDamage, HoloMemberExtraAttribute, Loadout, OshiSkillKind,
 };
 use enum_dispatch::enum_dispatch;
 use iter_tools::Itertools;
@@ -1329,9 +1329,19 @@ impl EvaluateEvent for AddDamageMarkers {
             .filter(|card| game.remaining_hp(*card) == 0)
             .collect_vec();
 
-        // TODO handle buzz (lose 2 lives)
         // calculate life loss
-        let life_loss = defeated.len();
+        let life_loss = defeated
+            .iter()
+            .filter_map(|c| game.lookup_holo_member(*c))
+            .map(|m| {
+                // buzz members loses 2 lives
+                if m.attributes.contains(&HoloMemberExtraAttribute::Buzz) {
+                    2
+                } else {
+                    1
+                }
+            })
+            .sum();
 
         // send member to archive, from attack
         game.send_cards_to_archive(self.player, defeated)?;
@@ -1803,9 +1813,9 @@ impl EvaluateEvent for PerformArt {
         // FIXME evaluate damage number
         let dmg = match art.damage {
             HoloMemberArtDamage::Basic(dmg) => DamageMarkers::from_hp(dmg),
-            HoloMemberArtDamage::Plus(_) => todo!(),
-            HoloMemberArtDamage::Minus(_) => todo!(),
-            HoloMemberArtDamage::Uncertain => todo!(),
+            HoloMemberArtDamage::Plus(dmg) => DamageMarkers::from_hp(dmg), // TODO
+            HoloMemberArtDamage::Minus(dmg) => DamageMarkers::from_hp(dmg), // TODO
+            HoloMemberArtDamage::Uncertain => unimplemented!(),
         };
 
         // evaluate the effect of art, could change damage calculation
