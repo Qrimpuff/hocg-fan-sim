@@ -1,24 +1,26 @@
 use std::ops::Deref;
 
 use super::effects::*;
-use crate::{gameplay::*, modifiers::DamageMarkers, HoloMemberHp};
+use crate::{events::Event, gameplay::*, modifiers::DamageMarkers, HoloMemberHp};
 
 // TODO clean up this file after the list of effect is finalized
 
-pub struct EvaluateContext {
+pub struct EvaluateContext<'a> {
     active_card: Option<CardRef>,
     active_player: Option<Player>,
     card_target: Option<CardRef>,
     player_target: Option<Player>,
+    event: Option<&'a Event>,
 }
 
-impl EvaluateContext {
+impl<'a> EvaluateContext<'a> {
     pub fn new() -> Self {
         EvaluateContext {
             active_card: None,
             active_player: None,
             card_target: None,
             player_target: None,
+            event: None,
         }
     }
     pub fn with_card(card: CardRef, game: &Game) -> Self {
@@ -28,6 +30,7 @@ impl EvaluateContext {
             active_player: Some(player),
             card_target: Some(card),
             player_target: Some(player),
+            event: None,
         }
     }
 }
@@ -56,17 +59,24 @@ pub trait EvaluateEffectMut {
         game: &mut Game,
     ) -> EvaluateResult<Self::Value>;
 
-    fn evaluate_mut(&self, game: &mut Game) -> EvaluateResult<Self::Value>
-    where
-        Self: Sized,
-    {
-        self.evaluate_with_context_mut(&mut EvaluateContext::new(), game)
-    }
     fn evaluate_with_card_mut(&self, game: &mut Game, card: CardRef) -> EvaluateResult<Self::Value>
     where
         Self: Sized,
     {
         self.evaluate_with_context_mut(&mut EvaluateContext::with_card(card, game), game)
+    }
+    fn evaluate_with_card_event_mut(
+        &self,
+        game: &mut Game,
+        card: CardRef,
+        event: &Event,
+    ) -> EvaluateResult<Self::Value>
+    where
+        Self: Sized,
+    {
+        let mut ctx = EvaluateContext::with_card(card, game);
+        ctx.event = Some(event);
+        self.evaluate_with_context_mut(&mut ctx, game)
     }
 }
 pub trait EvaluateEffect {
@@ -74,17 +84,19 @@ pub trait EvaluateEffect {
 
     fn evaluate_with_context(&self, ctx: &mut EvaluateContext, game: &Game) -> Self::Value;
 
-    fn evaluate(&self, game: &Game) -> Self::Value
-    where
-        Self: Sized,
-    {
-        self.evaluate_with_context(&mut EvaluateContext::new(), game)
-    }
     fn evaluate_with_card(&self, game: &Game, card: CardRef) -> Self::Value
     where
         Self: Sized,
     {
         self.evaluate_with_context(&mut EvaluateContext::with_card(card, game), game)
+    }
+    fn evaluate_with_card_event(&self, game: &Game, card: CardRef, event: &Event) -> Self::Value
+    where
+        Self: Sized,
+    {
+        let mut ctx = EvaluateContext::with_card(card, game);
+        ctx.event = Some(event);
+        self.evaluate_with_context(&mut ctx, game)
     }
 }
 

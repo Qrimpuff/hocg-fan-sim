@@ -21,7 +21,11 @@ use std::collections::VecDeque;
 use hololive_ucg_poc_derive::HoloUcgEffect;
 use iter_tools::Itertools;
 
-use crate::{gameplay::Step, Error, ParseTokens, Result, Tokens};
+use crate::{
+    events::{EnterStep, Event, ExitStep, TriggeredEvent},
+    gameplay::Step,
+    Error, ParseTokens, Result, Tokens,
+};
 
 // TODO clean up this file after the list of effect is finalized
 
@@ -173,14 +177,61 @@ pub enum Condition {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Trigger {
     ActivateInMainStep,
-    AtStartOfTurn,
-    AtEndOfTurn,
-    AtStartOfStep(Step),
-    AtEndOfStep(Step),
-    AtStartOfPerformArt,
-    AtEndOfPerformArt,
-    OnBeforeDiceRoll,
-    OnAfterDiceRoll,
+    OnStartTurn,
+    OnEndTurn,
+    OnEnterStep(Step),
+    OnExitStep(Step),
+    OnBeforePerformArt,
+    OnAfterPerformArt,
+    OnBeforeRollDice,
+    OnAfterRollDice,
+}
+
+impl Trigger {
+    pub fn should_activate(&self, triggered_event: &TriggeredEvent) -> bool {
+        match self {
+            Trigger::ActivateInMainStep => false,
+            Trigger::OnStartTurn => {
+                matches!(triggered_event, TriggeredEvent::After(Event::StartTurn(_)))
+            }
+            Trigger::OnEndTurn => {
+                matches!(triggered_event, TriggeredEvent::After(Event::EndTurn(_)))
+            }
+            Trigger::OnEnterStep(step) => {
+                if let TriggeredEvent::After(Event::EnterStep(EnterStep { active_step, .. })) =
+                    triggered_event
+                {
+                    active_step == step
+                } else {
+                    false
+                }
+            }
+            Trigger::OnExitStep(step) => {
+                if let TriggeredEvent::After(Event::ExitStep(ExitStep { active_step, .. })) =
+                    triggered_event
+                {
+                    active_step == step
+                } else {
+                    false
+                }
+            }
+            Trigger::OnBeforePerformArt => {
+                matches!(
+                    triggered_event,
+                    TriggeredEvent::Before(Event::PerformArt(_))
+                )
+            }
+            Trigger::OnAfterPerformArt => {
+                matches!(triggered_event, TriggeredEvent::After(Event::PerformArt(_)))
+            }
+            Trigger::OnBeforeRollDice => {
+                matches!(triggered_event, TriggeredEvent::Before(Event::RollDice(_)))
+            }
+            Trigger::OnAfterRollDice => {
+                matches!(triggered_event, TriggeredEvent::After(Event::RollDice(_)))
+            }
+        }
+    }
 }
 
 #[derive(HoloUcgEffect, Debug, Clone, Copy, PartialEq, Eq)]

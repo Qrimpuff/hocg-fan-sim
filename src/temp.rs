@@ -1,6 +1,6 @@
 use std::sync::{Arc, OnceLock};
 
-use crate::cards::*;
+use crate::{cards::*, ParseEffect};
 use HoloMemberHashTag::*;
 
 pub fn test_library() -> &'static Arc<GlobalLibrary> {
@@ -16,7 +16,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         card_number: "hY01-001".into(),
                         name: "White Cheer".into(),
                         color: Color::White,
-                        text: "- When a holomem leaves the stage, archive all Cheer cards attached to them.\n- When a holomem Baton Passes, archive a number of Cheer cards attached to them equal to the Baton Pass cost.".into(),
+                        text: "⯀ When a holomem leaves the stage, archive all Cheer cards attached to them.\n⯀ When a holomem Baton Passes, archive a number of Cheer cards attached to them equal to the Baton Pass cost.".into(),
                         rarity: Rarity::Common,
                         illustration: "".into(),
                         artist: "はずき".into(),
@@ -28,7 +28,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         card_number: "hY02-001".into(),
                         name: "Green Cheer".into(),
                         color: Color::Green,
-                        text: "- When a holomem leaves the stage, archive all Cheer cards attached to them.\n- When a holomem Baton Passes, archive a number of Cheer cards attached to them equal to the Baton Pass cost.".into(),
+                        text: "⯀ When a holomem leaves the stage, archive all Cheer cards attached to them.\n⯀ When a holomem Baton Passes, archive a number of Cheer cards attached to them equal to the Baton Pass cost.".into(),
                         rarity: Rarity::Common,
                         illustration: "".into(),
                         artist: "はずき".into(),
@@ -40,7 +40,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         card_number: "hY03-001".into(),
                         name: "Red Cheer".into(),
                         color: Color::Red,
-                        text: "- When a holomem leaves the stage, archive all Cheer cards attached to them.\n- When a holomem Baton Passes, archive a number of Cheer cards attached to them equal to the Baton Pass cost.".into(),
+                        text: "⯀ When a holomem leaves the stage, archive all Cheer cards attached to them.\n⯀ When a holomem Baton Passes, archive a number of Cheer cards attached to them equal to the Baton Pass cost.".into(),
                         rarity: Rarity::Common,
                         illustration: "".into(),
                         artist: "はずき".into(),
@@ -71,7 +71,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                             kind: OshiSkillKind::Normal,
                             name: "Replacement".into(),
                             cost: 1,
-                            trigger: vec![],
+                            triggers: vec![],
                             condition: vec![],
                             effect: vec![],
                             text: "[Once per turn] Move one Cheer card attached to one of your holomem to another of your holomem.".into(),
@@ -80,7 +80,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                             kind: OshiSkillKind::Special,
                             name: "So You're the Enemy?".into(),
                             cost: 2,
-                            trigger: vec![],
+                            triggers: vec![],
                             condition: vec![],
                             effect: vec![],
                             text: "[Once per game] Switch 1 of your opponent's Back position holomem with their Center position holomem. Until end of turn, your White Center position holomem have +50 to their Arts.".into(),
@@ -101,7 +101,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                             kind: OshiSkillKind::Normal,
                             name: "In My Left Hand, a Map".into(),
                             cost: 3,
-                            trigger: vec![],
+                            triggers: vec![],
                             condition: vec![],
                             effect: vec![],
                             text: "[Once per turn] You may use this skill when one of your holomem's abilities instructs you to roll a six-sided die: Declare a number from 1 to 6. You may use the declared number as the result of your die roll.".into(),
@@ -110,7 +110,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                             kind: OshiSkillKind::Special,
                             name: "In My Right Hand, a Mic".into(),
                             cost: 3,
-                            trigger: vec![],
+                            triggers: vec![],
                             condition: vec![],
                             effect: vec![],
                             text: "[Once per game] Attach any number of Cheer cards from your Archive to one of your Green holomem.".into(),
@@ -542,7 +542,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         limited_use: true,
                         text: "Draw 3 cards.".into(),
                         condition: vec![],
-                        effect: vec![],
+                        effect: "draw 3".parse_effect().unwrap(),
                         rarity: Rarity::Common,
                         illustration: "".into(),
                         artist: "Yoshimo".into(),

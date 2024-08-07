@@ -1,5 +1,5 @@
 use crate::{
-    evaluate::EvaluateEffectMut,
+    evaluate::{EvaluateEffect, EvaluateEffectMut},
     gameplay::{
         CardRef, Game, GameContinue, GameOutcome, GameOverReason, GameResult, Player, Rps, Step,
         Zone, MAX_MEMBERS_ON_STAGE,
@@ -23,10 +23,19 @@ pub enum ClientSend {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Trigger<'a> {
+pub enum TriggeredEvent<'a> {
     // maybe individual variants, or a container?, maybe only used for triggers, not for network?
     Before(&'a Event),
     After(&'a Event),
+}
+
+impl<'a> TriggeredEvent<'a> {
+    pub fn event(&self) -> &Event {
+        match self {
+            TriggeredEvent::Before(e) => e,
+            TriggeredEvent::After(e) => e,
+        }
+    }
 }
 
 #[enum_dispatch(EvaluateEvent)]
@@ -229,9 +238,9 @@ pub enum IntentResponse {
 
 impl Game {
     pub fn send_event(&mut self, event: Event) -> GameResult {
-        // TODO trigger before effects
-        let before = Trigger::Before(&event);
-        println!("  trigger = {before:?}");
+        // trigger before effects
+        let before = TriggeredEvent::Before(&event);
+        self.evaluate_triggers(before)?;
 
         println!("EVENT = {event:?}");
         // perform the modification to the game state
@@ -240,9 +249,63 @@ impl Game {
         // TODO sanitize the event before sending it to each player
         // TODO send event to each player
 
-        // TODO trigger after effects
-        let after = Trigger::After(&event);
-        println!("  trigger = {after:?}");
+        // trigger after effects
+        let after = TriggeredEvent::After(&event);
+        self.evaluate_triggers(after)?;
+
+        Ok(GameContinue)
+    }
+
+    fn evaluate_triggers(&mut self, trigger: TriggeredEvent) -> GameResult {
+        println!("  trigger = {trigger:?}");
+
+        let all_cards_on_stage = self
+            .player_1
+            .stage()
+            .map(|c| (Player::One, c))
+            .chain(self.player_2.stage().map(|c| (Player::Two, c)))
+            .flat_map(|(p, c)| Some(c).into_iter().chain(self.board(p).attachments(c)))
+            .collect_vec();
+        for card in all_cards_on_stage {
+            let mut effect = None;
+            match self.lookup_card(card) {
+                crate::Card::OshiHoloMember(o) => {
+                    for skill in &o.skills {
+                        if skill.triggers.iter().any(|t| t.should_activate(&trigger))
+                            && skill
+                                .condition
+                                .evaluate_with_card_event(self, card, trigger.event())
+                        {
+                            // TODO activate skill
+                            println!("  activate skill = {skill:?}");
+                            effect = Some(skill.effect.clone());
+                        }
+                    }
+                }
+                crate::Card::HoloMember(m) => {
+                    for ability in &m.abilities {
+                        if ability.should_activate(card, &trigger)
+                            && ability.condition.evaluate_with_card_event(
+                                self,
+                                card,
+                                trigger.event(),
+                            )
+                        {
+                            // TODO activate ability
+                            println!("  activate ability = {ability:?}");
+                            effect = Some(ability.effect.clone());
+                        }
+                    }
+                }
+                crate::Card::Support(_) => {} // supports do not have triggers yet
+                crate::Card::Cheer(_) => {}   // cheers do not have triggers yet
+            }
+
+            // activate skill or ability
+            if let Some(effect) = effect {
+                effect.evaluate_with_card_event_mut(self, card, trigger.event())?;
+            }
+        }
 
         Ok(GameContinue)
     }
@@ -987,9 +1050,9 @@ fn verify_cards_attached(game: &Game, player: Player, card: CardRef, attachments
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Setup {
     // send both decks loadout, private, asymmetric
-    you: Player,
-    player_1: Loadout,
-    player_2: Loadout,
+    pub you: Player,
+    pub player_1: Loadout,
+    pub player_2: Loadout,
 }
 impl EvaluateEvent for Setup {
     fn evaluate_event(&self, _game: &mut Game) -> GameResult {
@@ -1000,8 +1063,8 @@ impl EvaluateEvent for Setup {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Shuffle {
-    player: Player,
-    zone: Zone,
+    pub player: Player,
+    pub zone: Zone,
 }
 impl EvaluateEvent for Shuffle {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1014,7 +1077,7 @@ impl EvaluateEvent for Shuffle {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RpsOutcome {
-    winning_player: Option<Player>,
+    pub winning_player: Option<Player>,
 }
 impl EvaluateEvent for RpsOutcome {
     fn evaluate_event(&self, _game: &mut Game) -> GameResult {
@@ -1026,7 +1089,7 @@ impl EvaluateEvent for RpsOutcome {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlayerGoingFirst {
-    first_player: Player,
+    pub first_player: Player,
 }
 impl EvaluateEvent for PlayerGoingFirst {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1038,9 +1101,9 @@ impl EvaluateEvent for PlayerGoingFirst {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reveal {
-    player: Player,
-    zone: Zone,
-    cards: Vec<(CardRef, CardNumber)>,
+    pub player: Player,
+    pub zone: Zone,
+    pub cards: Vec<(CardRef, CardNumber)>,
 }
 impl EvaluateEvent for Reveal {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1063,7 +1126,7 @@ impl EvaluateEvent for Reveal {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameStart {
-    active_player: Player,
+    pub active_player: Player,
 }
 impl EvaluateEvent for GameStart {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1076,7 +1139,7 @@ impl EvaluateEvent for GameStart {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameOver {
-    game_outcome: GameOutcome,
+    pub game_outcome: GameOutcome,
 }
 impl EvaluateEvent for GameOver {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1089,8 +1152,8 @@ impl EvaluateEvent for GameOver {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartTurn {
-    active_player: Player,
-    turn_number: usize,
+    pub active_player: Player,
+    pub turn_number: usize,
 }
 impl EvaluateEvent for StartTurn {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1104,8 +1167,8 @@ impl EvaluateEvent for StartTurn {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EndTurn {
-    active_player: Player,
-    turn_number: usize,
+    pub active_player: Player,
+    pub turn_number: usize,
 }
 impl EvaluateEvent for EndTurn {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1121,8 +1184,8 @@ impl EvaluateEvent for EndTurn {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnterStep {
-    active_player: Player,
-    active_step: Step,
+    pub active_player: Player,
+    pub active_step: Step,
 }
 impl EvaluateEvent for EnterStep {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1135,8 +1198,8 @@ impl EvaluateEvent for EnterStep {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExitStep {
-    active_player: Player,
-    active_step: Step,
+    pub active_player: Player,
+    pub active_step: Step,
 }
 impl EvaluateEvent for ExitStep {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1151,10 +1214,10 @@ impl EvaluateEvent for ExitStep {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AddCardModifiers {
-    player: Player,
-    zone: Zone,
-    cards: Vec<CardRef>,
-    modifiers: Vec<Modifier>,
+    pub player: Player,
+    pub zone: Zone,
+    pub cards: Vec<CardRef>,
+    pub modifiers: Vec<Modifier>,
 }
 impl EvaluateEvent for AddCardModifiers {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1177,10 +1240,10 @@ impl EvaluateEvent for AddCardModifiers {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoveCardModifiers {
-    player: Player,
-    zone: Zone,
-    cards: Vec<CardRef>,
-    modifiers: Vec<ModifierRef>,
+    pub player: Player,
+    pub zone: Zone,
+    pub cards: Vec<CardRef>,
+    pub modifiers: Vec<ModifierRef>,
 }
 impl EvaluateEvent for RemoveCardModifiers {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1219,9 +1282,9 @@ impl EvaluateEvent for RemoveCardModifiers {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClearCardModifiers {
-    player: Player,
-    zone: Zone,
-    cards: Vec<CardRef>,
+    pub player: Player,
+    pub zone: Zone,
+    pub cards: Vec<CardRef>,
 }
 impl EvaluateEvent for ClearCardModifiers {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1241,9 +1304,9 @@ impl EvaluateEvent for ClearCardModifiers {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AddZoneModifiers {
-    player: Player,
-    zone: Zone,
-    modifiers: Vec<Modifier>,
+    pub player: Player,
+    pub zone: Zone,
+    pub modifiers: Vec<Modifier>,
 }
 impl EvaluateEvent for AddZoneModifiers {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1264,9 +1327,9 @@ impl EvaluateEvent for AddZoneModifiers {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoveZoneModifiers {
-    player: Player,
-    zone: Zone,
-    modifiers: Vec<ModifierRef>,
+    pub player: Player,
+    pub zone: Zone,
+    pub modifiers: Vec<ModifierRef>,
 }
 impl EvaluateEvent for RemoveZoneModifiers {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1304,10 +1367,10 @@ impl EvaluateEvent for RemoveZoneModifiers {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AddDamageMarkers {
-    player: Player,
-    zone: Zone,
-    cards: Vec<CardRef>,
-    dmg: DamageMarkers,
+    pub player: Player,
+    pub zone: Zone,
+    pub cards: Vec<CardRef>,
+    pub dmg: DamageMarkers,
 }
 impl EvaluateEvent for AddDamageMarkers {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1354,10 +1417,10 @@ impl EvaluateEvent for AddDamageMarkers {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoveDamageMarkers {
-    player: Player,
-    zone: Zone,
-    cards: Vec<CardRef>,
-    dmg: DamageMarkers,
+    pub player: Player,
+    pub zone: Zone,
+    pub cards: Vec<CardRef>,
+    pub dmg: DamageMarkers,
 }
 impl EvaluateEvent for RemoveDamageMarkers {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1377,9 +1440,9 @@ impl EvaluateEvent for RemoveDamageMarkers {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClearDamageMarkers {
-    player: Player,
-    zone: Zone,
-    cards: Vec<CardRef>,
+    pub player: Player,
+    pub zone: Zone,
+    pub cards: Vec<CardRef>,
 }
 impl EvaluateEvent for ClearDamageMarkers {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1399,9 +1462,9 @@ impl EvaluateEvent for ClearDamageMarkers {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LookAndSelect {
-    player: Player,
-    zone: Zone,
-    cards: Vec<CardRef>, // could just be a count, it's just for the opponent
+    pub player: Player,
+    pub zone: Zone,
+    pub cards: Vec<CardRef>, // could just be a count, it's just for the opponent
 }
 impl EvaluateEvent for LookAndSelect {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1418,10 +1481,10 @@ impl EvaluateEvent for LookAndSelect {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZoneToZone {
-    player: Player,
-    from_zone: Zone,
-    cards: Vec<CardRef>,
-    to_zone: Zone,
+    pub player: Player,
+    pub from_zone: Zone,
+    pub cards: Vec<CardRef>,
+    pub to_zone: Zone,
 }
 impl EvaluateEvent for ZoneToZone {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1471,10 +1534,10 @@ impl EvaluateEvent for ZoneToZone {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZoneToAttach {
-    player: Player,
-    from_zone: Zone,
-    attachments: Vec<CardRef>,
-    to_card: (Zone, CardRef),
+    pub player: Player,
+    pub from_zone: Zone,
+    pub attachments: Vec<CardRef>,
+    pub to_card: (Zone, CardRef),
 }
 impl EvaluateEvent for ZoneToAttach {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1496,10 +1559,10 @@ impl EvaluateEvent for ZoneToAttach {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttachToAttach {
-    player: Player,
-    from_card: (Zone, CardRef),
-    attachments: Vec<CardRef>,
-    to_card: (Zone, CardRef),
+    pub player: Player,
+    pub from_card: (Zone, CardRef),
+    pub attachments: Vec<CardRef>,
+    pub to_card: (Zone, CardRef),
 }
 impl EvaluateEvent for AttachToAttach {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1518,10 +1581,10 @@ impl EvaluateEvent for AttachToAttach {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttachToZone {
-    player: Player,
-    from_card: (Zone, CardRef),
-    attachments: Vec<CardRef>,
-    to_zone: Zone,
+    pub player: Player,
+    pub from_card: (Zone, CardRef),
+    pub attachments: Vec<CardRef>,
+    pub to_zone: Zone,
 }
 impl EvaluateEvent for AttachToZone {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1542,8 +1605,8 @@ impl EvaluateEvent for AttachToZone {
 /// marker event after zone to zone (deck -> hand)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Draw {
-    player: Player,
-    amount: usize,
+    pub player: Player,
+    pub amount: usize,
 }
 impl EvaluateEvent for Draw {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1569,9 +1632,9 @@ impl EvaluateEvent for Draw {
 /// marker event after zone to zone (back stage -> collab stage)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Collab {
-    player: Player,
-    card: (Zone, CardRef),
-    holo_power_amount: usize,
+    pub player: Player,
+    pub card: (Zone, CardRef),
+    pub holo_power_amount: usize,
 }
 impl EvaluateEvent for Collab {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1611,8 +1674,8 @@ impl EvaluateEvent for Collab {
 /// marker event before zone to attach (life -> temp zone -> attach)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoseLives {
-    player: Player,
-    amount: usize,
+    pub player: Player,
+    pub amount: usize,
 }
 impl EvaluateEvent for LoseLives {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1644,9 +1707,9 @@ impl EvaluateEvent for LoseLives {
 /// marker event before zone to zone (deck -> hand)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bloom {
-    player: Player,
-    from_card: (Zone, CardRef),
-    to_card: (Zone, CardRef),
+    pub player: Player,
+    pub from_card: (Zone, CardRef),
+    pub to_card: (Zone, CardRef),
 }
 impl EvaluateEvent for Bloom {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1683,9 +1746,9 @@ impl EvaluateEvent for Bloom {
 /// marker event after zone to zone (back stage -> collab stage)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BatonPass {
-    player: Player,
-    from_card: (Zone, CardRef),
-    to_card: (Zone, CardRef),
+    pub player: Player,
+    pub from_card: (Zone, CardRef),
+    pub to_card: (Zone, CardRef),
 }
 impl EvaluateEvent for BatonPass {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1725,8 +1788,8 @@ impl EvaluateEvent for BatonPass {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UseSupportCard {
-    player: Player,
-    card: (Zone, CardRef),
+    pub player: Player,
+    pub card: (Zone, CardRef),
 }
 impl EvaluateEvent for UseSupportCard {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1777,11 +1840,11 @@ impl EvaluateEvent for UseSupportCard {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PerformArt {
-    player: Player,
-    card: (Zone, CardRef),
-    art_idx: usize,
-    target_player: Option<Player>,
-    target: Option<(Zone, CardRef)>,
+    pub player: Player,
+    pub card: (Zone, CardRef),
+    pub art_idx: usize,
+    pub target_player: Option<Player>,
+    pub target: Option<(Zone, CardRef)>,
 }
 impl EvaluateEvent for PerformArt {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1808,23 +1871,26 @@ impl EvaluateEvent for PerformArt {
         //   - lose 1 life
         //   - attach lost life (cheer)
         let art = &mem.arts[self.art_idx];
+        let dmg = art.damage;
         let effect = art.effect.clone();
 
+        // evaluate the effect of art, could change damage calculation
+        effect.evaluate_with_card_mut(game, self.card.1)?;
+
         // FIXME evaluate damage number
-        let dmg = match art.damage {
+        let dmg = match dmg {
             HoloMemberArtDamage::Basic(dmg) => DamageMarkers::from_hp(dmg),
             HoloMemberArtDamage::Plus(dmg) => DamageMarkers::from_hp(dmg), // TODO
             HoloMemberArtDamage::Minus(dmg) => DamageMarkers::from_hp(dmg), // TODO
             HoloMemberArtDamage::Uncertain => unimplemented!(),
         };
 
-        // evaluate the effect of art, could change damage calculation
-        effect.evaluate_with_card_mut(game, self.card.1)?;
-
         // deal damage if there is a target. if any other damage is done, it will be in the effect
         if let Some(target) = self.target {
             game.deal_damage(self.card.1, target.1, dmg)?;
         }
+
+        game.remove_expiring_modifiers(LifeTime::ThisArt)?;
 
         Ok(GameContinue)
     }
@@ -1832,7 +1898,7 @@ impl EvaluateEvent for PerformArt {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WaitingForPlayerIntent {
-    player: Player,
+    pub player: Player,
     // reason?
 }
 impl EvaluateEvent for WaitingForPlayerIntent {
@@ -1846,9 +1912,9 @@ impl EvaluateEvent for WaitingForPlayerIntent {
 /// used by Lui oshi skill
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UseOshiSkill {
-    player: Player,
-    card: (Zone, CardRef),
-    skill_idx: usize,
+    pub player: Player,
+    pub card: (Zone, CardRef),
+    pub skill_idx: usize,
 }
 impl EvaluateEvent for UseOshiSkill {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1891,8 +1957,8 @@ impl EvaluateEvent for UseOshiSkill {
 /// used by Pekora oshi skill, marker event before zone to zone
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HoloMemberDefeated {
-    player: Player,
-    card: (Zone, CardRef),
+    pub player: Player,
+    pub card: (Zone, CardRef),
 }
 impl EvaluateEvent for HoloMemberDefeated {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1905,11 +1971,11 @@ impl EvaluateEvent for HoloMemberDefeated {
 /// used by Suisei oshi skill
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DealDamage {
-    player: Player,
-    card: (Zone, CardRef),
-    target_player: Player,
-    target: (Zone, CardRef),
-    dmg: DamageMarkers,
+    pub player: Player,
+    pub card: (Zone, CardRef),
+    pub target_player: Player,
+    pub target: (Zone, CardRef),
+    pub dmg: DamageMarkers,
 }
 impl EvaluateEvent for DealDamage {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1925,7 +1991,7 @@ impl EvaluateEvent for DealDamage {
 /// used by AZKi oshi skill
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RollDice {
-    player: Player,
+    pub player: Player,
 }
 impl EvaluateEvent for RollDice {
     fn evaluate_event(&self, _game: &mut Game) -> GameResult {

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use iter_tools::Itertools;
 
 use crate::evaluate::EvaluateEffect;
+use crate::events::{Bloom, Collab, Event, TriggeredEvent};
 use crate::gameplay::Zone;
 use crate::modifiers::ModifierKind::*;
 use crate::{
@@ -312,7 +313,7 @@ pub struct OshiSkill {
     pub name: String,
     pub cost: OshiSkillCost,
     pub text: String,
-    pub trigger: CardEffectTrigger,
+    pub triggers: CardEffectTrigger,
     pub condition: CardEffectCondition,
     pub effect: CardEffect,
 }
@@ -491,6 +492,35 @@ pub struct HoloMemberAbility {
     pub text: String,
     pub condition: CardEffectCondition,
     pub effect: CardEffect,
+}
+
+impl HoloMemberAbility {
+    pub fn should_activate(&self, card: CardRef, triggered_event: &TriggeredEvent) -> bool {
+        match self.kind {
+            MemberAbilityKind::CollabEffect => {
+                if let TriggeredEvent::After(Event::Collab(Collab {
+                    card: collab_card, ..
+                })) = triggered_event
+                {
+                    collab_card.1 == card
+                } else {
+                    false
+                }
+            }
+            MemberAbilityKind::BloomEffect => {
+                if let TriggeredEvent::After(Event::Bloom(Bloom {
+                    from_card: bloom_card,
+                    ..
+                })) = triggered_event
+                {
+                    bloom_card.1 == card
+                } else {
+                    false
+                }
+            }
+            MemberAbilityKind::Gift(_) => unimplemented!(), // TODO not sure what gift does
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
