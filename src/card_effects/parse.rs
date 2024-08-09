@@ -1,10 +1,8 @@
 use iter_tools::Itertools;
 
 use super::error::*;
-use std::collections::{HashMap, VecDeque};
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use std::str::FromStr;
-use std::sync::OnceLock;
 
 pub trait SerializeEffect {
     fn serialize_effect(self) -> String;
@@ -27,59 +25,62 @@ impl ParseEffect for str {
     }
 }
 
-pub trait ParseTokens: Sized {
-    fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self>;
-
-    fn from_str(s: &str) -> Result<Self> {
-        Self::from_tokens(s.parse()?)
+pub trait TakeParam<T> {
+    fn take_param(&self) -> Result<(T, &[Tokens])>;
+}
+impl<T> TakeParam<T> for [Tokens]
+where
+    T: ParseTokens + Debug,
+{
+    fn take_param(&self) -> Result<(T, &[Tokens])> {
+        T::take_param(self)
     }
-
-    fn from_tokens(tokens: Tokens) -> Result<Self> {
-        let mut tokens = match tokens {
-            t @ Tokens::Token(_) => VecDeque::from([t]),
-            Tokens::List(v) => v,
-        };
-
-        Self::parse_tokens(&mut tokens).and_then(|ok| {
-            // check for remaining Tokens
-            if tokens.is_empty() {
-                Ok(ok)
-            } else {
-                Err(Error::RemainingTokens)
-            }
-        })
-    }
-
-    fn take_param<T: ParseTokens>(tokens: &mut VecDeque<Tokens>) -> Result<T> {
-        let (ctx, clean) = Self::get_tokens_context(tokens)?;
-        let param = T::parse_tokens(ctx);
-        if param.is_ok() && clean {
-            Self::clean_list(tokens)?;
-        }
-        param
-    }
-
-    fn take_string(tokens: &mut VecDeque<Tokens>) -> Result<String> {
-        let t = tokens.pop_front().ok_or(Error::ExpectedToken)?;
+}
+pub trait TakeString {
+    fn take_string(&self) -> Result<(&String, &[Tokens])>;
+}
+impl TakeString for [Tokens] {
+    fn take_string(&self) -> Result<(&String, &[Tokens])> {
+        let t = self.first().ok_or(Error::ExpectedToken)?;
         if let Tokens::Token(s) = t {
-            return Ok(s);
+            println!("take_string - {:?}", (s, &self[1..]));
+            return Ok((s, &self[1..]));
         }
         Err(Error::ExpectedString)
     }
+}
 
-    fn return_string(tokens: &mut VecDeque<Tokens>, s: String) {
-        tokens.push_front(Tokens::Token(s));
+#[allow(unused)]
+pub trait ParseTokens: Sized {
+    fn parse_tokens(tokens: &[Tokens]) -> Result<(Self, &[Tokens])>;
+
+    fn take_param<T: ParseTokens + Debug>(tokens: &[Tokens]) -> Result<(T, &[Tokens])> {
+        let (ctx, is_sub_ctx) = Self::get_tokens_context(tokens)?;
+
+        println!("take_param - before - {:?}", &ctx);
+        let t = T::parse_tokens(ctx)?;
+        println!("take_param - after - {:?}", &t);
+
+        if is_sub_ctx {
+            Ok((t.0, &tokens[1..]))
+        } else {
+            Ok(t)
+        }
     }
 
-    fn get_tokens_context(tokens: &mut VecDeque<Tokens>) -> Result<(&mut VecDeque<Tokens>, bool)> {
+    fn take_string<T: ParseTokens>(tokens: &[Tokens]) -> Result<(&String, &[Tokens])> {
+        tokens.take_string()
+    }
+
+    fn get_tokens_context(tokens: &[Tokens]) -> Result<(&[Tokens], bool)> {
         let is_list = {
-            let t = tokens.get_mut(0).ok_or(Error::ExpectedToken)?;
+            let t = tokens.first().ok_or(Error::ExpectedToken)?;
 
             matches!(t, Tokens::List(_))
         };
 
         if is_list {
-            let Tokens::List(v) = tokens.get_mut(0).ok_or(Error::ExpectedToken)? else {
+            let Tokens::List(v) = tokens.first().ok_or(Error::ExpectedToken)? else {
                 unreachable!()
             };
             Ok((v, true))
@@ -88,74 +89,56 @@ pub trait ParseTokens: Sized {
         }
     }
 
-    fn clean_list(tokens: &mut VecDeque<Tokens>) -> Result<()> {
-        let t = tokens.pop_front().ok_or(Error::ExpectedToken)?;
-
-        if let Tokens::List(v) = t {
-            assert_eq!(v.len(), 0, "list not empty, shouldn't clean");
-        } else {
-            panic!("removing something we shouldn't")
-        }
-        Ok(())
+    fn from_str(s: &str) -> Result<Self> {
+        Self::from_tokens(s.parse()?)
     }
 
-    fn infix_token_map() -> &'static HashMap<&'static str, &'static str> {
-        static INFIX_TOKEN_MAP: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
-        INFIX_TOKEN_MAP.get_or_init(HashMap::new)
-    }
+    fn from_tokens(tokens: Tokens) -> Result<Self> {
+        let mut tokens = match tokens {
+            t @ Tokens::Token(_) => Vec::from([t]),
+            Tokens::List(v) => v,
+        };
 
-    fn process_infix_tokens(tokens: &mut VecDeque<Tokens>) {
-        let map = Self::infix_token_map();
-        if map.is_empty() {
-            return;
-        }
-        if let Some(Tokens::Token(second)) = tokens.get(1) {
-            if let Some(token) = map.get(second.as_str()) {
-                tokens.remove(1);
-                tokens.push_front(Tokens::Token(token.to_string()));
+        Self::parse_tokens(&tokens).and_then(|ok| {
+            // check for remaining Tokens
+            if ok.1.is_empty() {
+                Ok(ok.0)
+            } else {
+                Err(Error::RemainingTokens)
             }
-        }
+        })
     }
 }
 
 impl<T> ParseTokens for Vec<T>
 where
-    T: ParseTokens,
+    T: ParseTokens + Debug,
 {
-    fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self> {
+    fn parse_tokens(mut tokens: &[Tokens]) -> Result<(Self, &[Tokens])> {
         let mut v = Vec::new();
         while !tokens.is_empty() {
-            v.push(T::take_param(tokens)?);
+            let (param, t) = T::parse_tokens(tokens)?;
+            tokens = t;
+            v.push(param);
         }
-        Ok(v)
+        Ok((v, tokens))
     }
 }
 
 impl<T> ParseTokens for Box<T>
 where
-    T: ParseTokens,
+    T: ParseTokens + Debug,
 {
-    fn parse_tokens(tokens: &mut VecDeque<Tokens>) -> Result<Self> {
-        Ok(Box::new(T::take_param(tokens)?))
-    }
-}
-
-pub trait TakeParam<T> {
-    fn take_param(&mut self) -> Result<T>;
-}
-impl<T> TakeParam<T> for VecDeque<Tokens>
-where
-    T: ParseTokens,
-{
-    fn take_param(&mut self) -> Result<T> {
-        T::take_param(self)
+    fn parse_tokens(tokens: &[Tokens]) -> Result<(Self, &[Tokens])> {
+        let (param, t) = T::parse_tokens(tokens)?;
+        Ok((Box::new(param), t))
     }
 }
 
 #[derive(Debug)]
 pub enum Tokens {
     Token(String),
-    List(VecDeque<Tokens>),
+    List(Vec<Tokens>),
 }
 
 impl From<&str> for Tokens {
@@ -201,16 +184,16 @@ impl FromStr for Tokens {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        fn add_token(list: &mut VecDeque<Tokens>, token: String) -> Result<()> {
+        fn add_token(list: &mut Vec<Tokens>, token: String) -> Result<()> {
             if !token.is_empty() {
-                list.push_back(Tokens::Token(token));
+                list.push(Tokens::Token(token));
             }
             Ok(())
         }
 
-        let mut stack = VecDeque::new();
+        let mut stack = Vec::new();
         let mut token = String::new();
-        let mut list = VecDeque::new();
+        let mut list = Vec::new();
         let mut bracket_level = 0;
 
         for c in s.chars() {
@@ -219,18 +202,18 @@ impl FromStr for Tokens {
                     bracket_level += 1;
                     add_token(&mut list, token)?;
                     token = String::new();
-                    stack.push_back(list);
-                    list = VecDeque::new();
+                    stack.push(list);
+                    list = Vec::new();
                 }
                 ')' => {
                     bracket_level -= 1;
                     add_token(&mut list, token)?;
                     token = String::new();
-                    let mut _list = stack.pop_back().ok_or(Error::MissingBracket)?;
+                    let mut _list = stack.pop().ok_or(Error::MissingBracket)?;
                     if list.len() > 1 {
-                        _list.push_back(Tokens::List(list));
+                        _list.push(Tokens::List(list));
                     } else {
-                        _list.push_back(list.pop_back().ok_or(Error::NoTokens)?);
+                        _list.push(list.pop().ok_or(Error::NoTokens)?);
                     }
                     list = _list;
                 }
@@ -251,7 +234,7 @@ impl FromStr for Tokens {
         if list.len() > 1 {
             Ok(Tokens::List(list))
         } else {
-            Ok(list.pop_back().ok_or(Error::NoTokens)?)
+            Ok(list.pop().ok_or(Error::NoTokens)?)
         }
     }
 }

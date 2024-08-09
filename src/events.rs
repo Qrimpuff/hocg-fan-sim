@@ -297,8 +297,17 @@ impl Game {
                         }
                     }
                 }
-                crate::Card::Support(_) => {} // supports do not have triggers yet
-                crate::Card::Cheer(_) => {}   // cheers do not have triggers yet
+                crate::Card::Support(s) => {
+                    if s.triggers.iter().any(|t| t.should_activate(&trigger))
+                        && s.condition
+                            .evaluate_with_card_event(self, card, trigger.event())
+                    {
+                        // TODO activate skill
+                        println!("  activate support = {s:?}");
+                        effect = Some(s.effect.clone());
+                    }
+                }
+                crate::Card::Cheer(_) => {} // cheers do not have triggers yet
             }
 
             // activate skill or ability

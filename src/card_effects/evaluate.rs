@@ -1,7 +1,12 @@
 use std::ops::Deref;
 
 use super::effects::*;
-use crate::{events::Event, gameplay::*, modifiers::DamageMarkers, HoloMemberHp};
+use crate::{
+    events::Event,
+    gameplay::*,
+    modifiers::{self, DamageMarkers},
+    HoloMemberHp,
+};
 
 // TODO clean up this file after the list of effect is finalized
 
@@ -63,7 +68,12 @@ pub trait EvaluateEffectMut {
     where
         Self: Sized,
     {
-        self.evaluate_with_context_mut(&mut EvaluateContext::with_card(card, game), game)
+        let value =
+            self.evaluate_with_context_mut(&mut EvaluateContext::with_card(card, game), game);
+
+        game.remove_expiring_modifiers(modifiers::LifeTime::ThisEffect)?;
+
+        value
     }
     fn evaluate_with_card_event_mut(
         &self,
@@ -76,7 +86,11 @@ pub trait EvaluateEffectMut {
     {
         let mut ctx = EvaluateContext::with_card(card, game);
         ctx.event = Some(event);
-        self.evaluate_with_context_mut(&mut ctx, game)
+        let value = self.evaluate_with_context_mut(&mut ctx, game);
+
+        game.remove_expiring_modifiers(modifiers::LifeTime::ThisEffect)?;
+
+        value
     }
 }
 pub trait EvaluateEffect {
@@ -147,23 +161,28 @@ where
     }
 }
 
-impl EvaluateEffect for Target {
+impl EvaluateEffect for TargetCards {
     type Value = CardRef;
 
     fn evaluate_with_context(&self, ctx: &mut EvaluateContext, game: &Game) -> Self::Value {
         match self {
-            Target::CurrentCard => ctx.active_card.expect("there should be an active card"),
-            Target::CenterHoloMember => game
+            TargetCards::CurrentCard => ctx.active_card.expect("there should be an active card"),
+            TargetCards::CenterHoloMember => game
                 .board(ctx.active_player.expect("there should be an active player"))
                 .get_zone(Zone::CenterStage)
                 .peek_top_card()
                 .expect("there should be a center member"),
-            Target::Var(_) => todo!(),
-            Target::SelectMember(_) => todo!(),
-            Target::MembersOnStage => todo!(),
-            Target::With(_, _) => todo!(),
-            Target::SelectCheersUpTo(_, _) => todo!(),
-            Target::CheersInArchive => todo!(),
+            TargetCards::Var(_) => todo!(),
+            TargetCards::SelectMember(_) => todo!(),
+            TargetCards::StageMembers => todo!(),
+            TargetCards::With(_, _) => todo!(),
+            TargetCards::SelectCheersUpTo(_, _) => todo!(),
+            TargetCards::CheersInArchive => todo!(),
+            TargetCards::Oshi => todo!(),
+            TargetCards::CollabHoloMember => todo!(),
+            TargetCards::MainStageMembers => todo!(),
+            TargetCards::BackStageMembers => todo!(),
+            TargetCards::AttachedCheers => todo!(),
         }
     }
 }
@@ -200,7 +219,7 @@ impl EvaluateEffectMut for Action {
                 println!("heal {} for card {}", heal, mem.name);
                 game.remove_damage_markers(card, DamageMarkers::from_hp(heal as HoloMemberHp))?;
             }
-            Action::Let(_, _) => todo!(),
+            Action::LetValue(_) => todo!(),
             Action::When(_, _) => todo!(),
             Action::Draw(d) => {
                 let draw = d.evaluate_with_context(ctx, game);
@@ -214,6 +233,7 @@ impl EvaluateEffectMut for Action {
             }
             Action::NextDiceNumber(_) => todo!(),
             Action::Attach(_) => todo!(),
+            Action::LetTargetCard(_) => todo!(),
         };
         Ok(())
     }
@@ -240,6 +260,7 @@ impl EvaluateEffect for Value {
             }
             Value::SelectDiceNumber => todo!(),
             Value::All => u32::MAX,
+            Value::RollDice => todo!(),
         }
     }
 }
@@ -254,6 +275,7 @@ impl EvaluateEffect for Condition {
             Condition::OncePerTurn => todo!(),
             Condition::Equals(_, _) => todo!(),
             Condition::Has(_, _) => todo!(),
+            Condition::Have(_, _) => todo!(),
             Condition::NotEquals(_, _) => todo!(),
             Condition::And(a, b) => {
                 a.evaluate_with_context(ctx, game) && b.evaluate_with_context(ctx, game)
@@ -264,6 +286,10 @@ impl EvaluateEffect for Condition {
 
             Condition::IsHoloMember => todo!(),
             Condition::OncePerGame => todo!(),
+            Condition::IsOdd(_) => todo!(),
+            Condition::IsEven(_) => todo!(),
+            Condition::True => todo!(),
+            Condition::False => todo!(),
         }
     }
 }

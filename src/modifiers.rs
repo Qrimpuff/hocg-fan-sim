@@ -3,6 +3,9 @@ use std::fmt::Debug;
 use std::fmt::Display;
 use std::num::NonZeroUsize;
 
+use crate::evaluate::EvaluateEffect;
+use crate::Condition;
+
 use super::cards::*;
 use super::gameplay::*;
 
@@ -23,8 +26,9 @@ impl Display for ModifierRef {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ModifierKind {
+    Conditional(Condition, Box<ModifierKind>),
     // attributes
     // buff
     // debuff
@@ -140,15 +144,21 @@ impl Game {
         self.has_modifier(oshi, kind)
     }
     pub fn has_modifier(&self, card: CardRef, kind: ModifierKind) -> bool {
-        self.has_modifier_with(card, |m| m.kind == kind)
+        self.has_modifier_with(card, |m| *m == kind)
     }
     pub fn has_modifier_with(
         &self,
         card: CardRef,
-        filter_fn: impl FnMut(&Modifier) -> bool,
+        filter_fn: impl FnMut(&ModifierKind) -> bool,
     ) -> bool {
         self.find_modifiers(card)
             .filter(|m| m.is_active())
+            .filter_map(|m| match &m.kind {
+                ModifierKind::Conditional(c, k) => {
+                    c.evaluate_with_card(self, card).then_some(k.as_ref())
+                }
+                _ => Some(&m.kind),
+            })
             .any(filter_fn)
     }
 
@@ -202,7 +212,7 @@ impl Game {
             player,
             zone,
             (0..amount)
-                .map(move |_| Modifier::for_zone(player, zone, kind, life_time))
+                .map(|_| Modifier::for_zone(player, zone, kind.clone(), life_time))
                 .collect(),
         )
     }

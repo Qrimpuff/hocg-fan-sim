@@ -556,6 +556,8 @@ pub struct SupportCard {
     pub kind: SupportKind,
     pub limited_use: bool, // TODO limited is needed, but not sure how
     pub text: String,
+    pub attachment_condition: CardEffectCondition, // used by Fan
+    pub triggers: CardEffectTrigger,
     pub condition: CardEffectCondition,
     pub effect: CardEffect,
     pub rarity: Rarity,
@@ -571,6 +573,16 @@ impl SupportCard {
 
         self.condition.evaluate_with_card(game, card)
     }
+
+    pub fn can_attach_target(
+        &self,
+        _card: CardRef,
+        _game: &Game,
+        _target: (CardRef, &HoloMemberCard),
+    ) -> bool {
+        // TODO fan can be attached. how to send the target card in the condition?
+        unimplemented!()
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -578,6 +590,7 @@ pub enum SupportKind {
     Staff,
     Item,
     Event,
+    Fan,
 }
 
 #[derive(Debug)]

@@ -21,6 +21,8 @@ const TEST_TEXT: &str = "for active_holo buff more_def 1 next_turn";
 fn main() {
     env::set_var("RUST_BACKTRACE", "1");
 
+    dbg!(Vec::<Action>::from_tokens("when true and false buff more_dmg 10 + 20 - 50 this_art".parse().unwrap()).unwrap());
+
     let main_deck_hsd01 = Vec::from_iter(
         None.into_iter()
             .chain(iter::repeat("hSD01-003".into()).take(4))

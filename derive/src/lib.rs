@@ -4,12 +4,7 @@
 extern crate alloc;
 extern crate proc_macro;
 
-use core::panic;
-
-use alloc::{
-    format,
-    string::{String, ToString},
-};
+use alloc::{format, string::String};
 use proc_macro::TokenStream;
 use proc_macro_roids::namespace_parameters;
 use quote::{format_ident, quote};
@@ -17,6 +12,8 @@ use syn::{
     parse_quote, Data, DataEnum, DeriveInput, Fields, FieldsUnnamed, Lit, Meta, NestedMeta, Path,
     Variant,
 };
+
+// TODO cleanup this file
 
 /// Attributes that should be copied across.
 
@@ -60,7 +57,10 @@ fn ser_de_token_for_enum_impl(ast: DeriveInput) -> proc_macro2::TokenStream {
             a => panic!("{:?}", a),
         };
         let variant_into = match variant_fields {
-            Fields::Unit => quote! { #token.into() },
+            Fields::Unit => {
+                let token = token.expect("unit enum can only have 'token' attribute");
+                quote! { #token.into() }
+            }
             Fields::Unnamed(FieldsUnnamed { unnamed, .. }) => {
                 let mut ns = (0..unnamed.len()).map(|n| {
                     let i = format_ident!("_{}", n);
@@ -68,11 +68,11 @@ fn ser_de_token_for_enum_impl(ast: DeriveInput) -> proc_macro2::TokenStream {
                 });
                 if transparent {
                     quote! { [#(#ns,)*].into() }
-                } else if let Some(infix) = infix {
-                    let first = ns.next();
-                    quote! { [#first, #infix.into(), #(#ns,)*].into() }
                 } else {
-                    quote! { [#token.into(), #(#ns,)*].into() }
+                    let token = token.as_ref().map(|t| quote! {#t.into(),});
+                    let first = ns.next();
+                    let infix = infix.as_ref().map(|i| quote! {#i.into(),});
+                    quote! { [#token #first, #infix #(#ns,)*].into() }
                 }
             }
             a => panic!("{:?}", a),
@@ -94,118 +94,272 @@ fn ser_de_token_for_enum_impl(ast: DeriveInput) -> proc_macro2::TokenStream {
     };
 
     // deserialize effect tokens
-    let de_variants_arms = variants.iter().map(|variant| {
+
+    let de_variants_tokens2 = variants.iter().map(|variant| {
         let variant_name = &variant.ident;
 
-        let (token, _infix, transparent) = attributes(variant, &ns);
+        let (token, infix, transparent) = attributes(variant, &ns);
         let variant_fields = &variant.fields;
 
-        if transparent {
+        if transparent || token.is_none() {
             return quote! {};
         }
 
-        let variant_take_params = match variant_fields {
-            Fields::Unit => quote! {},
-            Fields::Unnamed(FieldsUnnamed { unnamed, .. }) => {
-                let ns = (0..unnamed.len()).map(|_| quote! { tokens.take_param()? });
-                quote! { (#(#ns,)*) }
-            }
-            a => panic!("{:?}", a),
-        };
+        let token = token.unwrap();
 
-        quote! {
-            #token => #enum_name::#variant_name #variant_take_params,
-        }
-    });
-    let de_variants_transparent = variants.iter().map(|variant| {
-        let variant_name = &variant.ident;
-
-        let (_token, _infix, transparent) = attributes(variant, &ns);
-        let variant_fields = &variant.fields;
-
-        if !transparent {
-            return quote! {};
-        }
-
-        let variant_ok_capture = match variant_fields {
-            Fields::Unit => {
-                panic!("The `transparent` attribute argument cannot be used with unit enum.")
-            }
+        match variant_fields {
+            Fields::Unit => quote! {
+                //     // - token -
+                //     if s == "value" {
+                //         return Ok((Value, t));
+                //     }
+                if s == #token {
+                    return Ok((#enum_name::#variant_name, t));
+                }
+            },
             Fields::Unnamed(FieldsUnnamed { unnamed, .. }) => {
                 let ns = (0..unnamed.len()).map(|n| format_ident!("_{}", n));
-                quote! { (#(Ok(#ns),)*) }
-            }
-            a => panic!("{:?}", a),
-        };
-        let variant_take_params = match variant_fields {
-            Fields::Unit => {
-                panic!("The `transparent` attribute argument cannot be used with unit enum.")
-            }
-            Fields::Unnamed(FieldsUnnamed { unnamed, .. }) => {
-                let ns = (0..unnamed.len()).map(|_| quote! { tokens.take_param() });
-                quote! { (#(#ns,)*) }
-            }
-            a => panic!("{:?}", a),
-        };
-        let variant_capture = match variant_fields {
-            Fields::Unit => {
-                panic!("The `transparent` attribute argument cannot be used with unit enum.")
-            }
-            Fields::Unnamed(FieldsUnnamed { unnamed, .. }) => {
-                let ns = (0..unnamed.len()).map(|n| format_ident!("_{}", n));
-                quote! { (#(#ns,)*) }
-            }
-            a => panic!("{:?}", a),
-        };
+                let mut take_params = ns.clone().map(|n| {
+                    quote! {
+                        let (#n, t) = t.take_param()?;
+                    }
+                });
 
-        quote! {
-            if let #variant_ok_capture = #variant_take_params {
-                return Ok(#enum_name::#variant_name #variant_capture);
+                if let Some(infix) = infix {
+                    //     // - token - infix -
+                    //     if s == "let" {
+                    //         let (v1, t) = t.take_param()?;
+                    //         let (s, t) = t.take_string()?;
+                    //         if s == "=" {
+                    //             let (v2, t) = t.take_param()?;
+                    //             return Ok((Let(v1, v2), t));
+                    //         } else {
+                    //             return Err(Error::UnexpectedToken(
+                    //                 "=".into(),
+                    //                 s.clone(),
+                    //             ))
+                    //         }
+                    //     }
+                    let first_param = take_params.next();
+                    quote! {
+                        if s == #token {
+                            #first_param
+                            let (s, t) = t.take_string()?;
+                            if s == #infix {
+                                #(#take_params)*
+                                return Ok((#enum_name::#variant_name(#(#ns,)*), t));
+                            } else {
+                                return Err(crate::card_effects::error::Error::UnexpectedToken(#infix.into(), s.clone()));
+                            }
+                        }
+                    }
+                } else {
+                    //     // - token -
+                    //     if s == "value" {
+                    //         let (v1, t) = t.take_param()?;
+                    //         let (v2, t) = t.take_param()?;
+                    //         return Ok((Value(v1, v2), t));
+                    //     }
+                    quote! {
+                        if s == #token {
+                            #(#take_params)*
+                            return Ok((#enum_name::#variant_name(#(#ns,)*), t));
+                        }
+                    }
+                }
             }
+            a => panic!("{:?}", a),
         }
     });
-
-    // handle infix effects tokens
-    let infix_tokens_inserts = variants.iter().map(|variant| {
-        let (token, infix, _transparent) = attributes(variant, &ns);
-        if infix.is_none() {
-            return quote! {};
-        }
+    let has_token = variants.iter().any(|v| attributes(v, &ns).0.is_some());
+    let de_variants_tokens2 = if has_token {
         quote! {
-            map.insert(#infix, #token);
+            if let Ok((s, t)) = tokens.take_string() {
+                #(#de_variants_tokens2)*
+            }
         }
-    });
-    let infix_tokens_map = quote! {
-        fn infix_token_map() -> &'static std::collections::HashMap<&'static str, &'static str> {
-            use std::collections::HashMap;
-            use std::sync::OnceLock;
-            static INFIX_TOKEN_MAP: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
-            INFIX_TOKEN_MAP.get_or_init(|| {
-                let mut map = HashMap::new();
-                #(#infix_tokens_inserts)*
-                map
-            })
-        }
+    } else {
+        quote! {}
     };
 
+    let de_variants_infix2 = variants.iter().map(|variant| {
+        let variant_name = &variant.ident;
+
+        let (token, infix, transparent) = attributes(variant, &ns);
+        let variant_fields = &variant.fields;
+
+        if transparent || token.is_some() || infix.is_none() {
+            return quote! {};
+        }
+
+        let infix = infix.unwrap();
+
+        match variant_fields {
+            Fields::Unit => quote! {
+                //     // - token -
+                //     if s == "value" {
+                //         return Ok((Value, t));
+                //     }
+                let t = tokens;
+                if let Ok((s, t)) = t.take_string() {
+                    if s == #infix {
+                        return Ok((#enum_name::#variant_name, t));
+                    }
+                }
+            },
+            Fields::Unnamed(FieldsUnnamed { unnamed, .. }) => {
+                let ns = (0..unnamed.len()).map(|n| format_ident!("_{}", n));
+                let mut take_params = ns.clone().map(|n| {
+                    quote! {
+                        let (#n, t) = t.take_param()?;
+                    }
+                });
+                let first_param = take_params.next();
+
+                // // - infix -
+                // if let Ok((s, t)) = tokens[1..].take_string() {
+                //     if s == "and" {
+                //         let t = &tokens[..1];
+                //         let (_0, t) = t.take_param()?;
+                //         let t = &tokens[2..];
+                //         let (_1, t) = t.take_param()?;
+                //         return Ok((Infix(_0, _1), t)); // TODO the "t" here is too short, is that true?
+                //     }
+                // }
+                quote! {
+                    if s == #infix {
+                        let t = &tokens[..1];
+                        #first_param
+                        let t = &tokens[2..];
+                        #(#take_params)*
+                        return Ok((#enum_name::#variant_name(#(#ns,)*), t));
+                    }
+                }
+            }
+            a => panic!("{:?}", a),
+        }
+    });
+    let has_infix = variants.iter().any(|v| attributes(v, &ns).1.is_some());
+    let de_variants_infix2 = if has_infix {
+        quote! {
+            if let Ok((s, t)) = tokens[1..].take_string() {
+                #(#de_variants_infix2)*
+            }
+        }
+    } else {
+        quote! {}
+    };
+
+    let de_variants_transparent2 = variants.iter().map(|variant| {
+        let variant_name = &variant.ident;
+
+        let (token, infix, transparent) = attributes(variant, &ns);
+        let variant_fields = &variant.fields;
+
+        if !transparent || token.is_some() || infix.is_some() {
+            return quote! {};
+        }
+
+        match variant_fields {
+            Fields::Unit => panic!("unit variant cannot be transparent"),
+            Fields::Unnamed(FieldsUnnamed { unnamed, .. }) => {
+                let ns = (0..unnamed.len()).map(|n| format_ident!("_{}", n));
+                let take_params = ns.clone().rev().fold(
+                    quote! {
+                        return Ok((#enum_name::#variant_name(#(#ns,)*), t));
+                    },
+                    |acc, n| {
+                        quote! {
+                            if let Ok((#n, t)) = t.take_param() {
+                                #acc
+                            }
+                        }
+                    },
+                );
+
+                // // - transparent -
+                // if let Ok((v1, t)) = tokens.take_param() {
+                //     if let Ok((v2, t)) = t.take_param() {
+                //         return Ok((Transparent(v1, v2), t));
+                //     }
+                // }
+                quote! {
+                    let t = tokens;
+                    #take_params
+                }
+            }
+            a => panic!("{:?}", a),
+        }
+    });
+
+    // // - infix -
+    // if let Ok((s, t)) = tokens[1..].take_string() {
+    //     if s == "and" {
+    //         let t = &tokens[..1];
+    //         let (_0, t) = t.take_param()?;
+    //         let t = &tokens[2..];
+    //         let (_1, t) = t.take_param()?;
+    //         return Ok((Infix(_0, _1), t)); // TODO the "t" here is too short, is that true?
+    //     }
+    // }
+    // // - token -
+    // if let Ok((s, t)) = tokens.take_string() {
+    //     if s == "value" {
+    //         let (v1, t) = t.take_param()?;
+    //         let (v2, t) = t.take_param()?;
+    //         return Ok((Value(v1, v2), t));
+    //     }
+    //     if s == "value2" {
+    //         let (v1, t) = t.take_param()?;
+    //         let (v2, t) = t.take_param()?;
+    //         return Ok((Value2(v1, v2), t));
+    //     }
+    //     // - token - infix -
+    //     if s == "let" {
+    //         let (v1, t) = t.take_param()?;
+    //         let (s, t) = t.take_string()?;
+    //         if s == "=" {
+    //             let (v2, t) = t.take_param()?;
+    //             return Ok((Let(v1, v2), t));
+    //         } else {
+    //             return Err(Error::UnexpectedToken(
+    //                 "=".into(),
+    //                 s.clone(),
+    //             ))
+    //         }
+    //     }
+    // }
+    // // - transparent -
+    // if let Ok((v1, t)) = tokens.take_param() {
+    //     if let Ok((v2, t)) = t.take_param() {
+    //         return Ok((Transparent(v1, v2), t));
+    //     }
+    // }
+    // if let Ok((v1, t)) = tokens.take_param() {
+    //     if let Ok((v2, t)) = t.take_param() {
+    //         return Ok((Transparent2(v1, v2), t));
+    //     }
+    // }
+    // Err(Error::UnexpectedToken(
+    //     "LetValue".into(),
+    //     tokens.take_string()?.0.clone(),
+    // ))
     let str_enum_name = format!("{enum_name}");
     let impl_de_for_enum = quote! {
         impl crate::card_effects::parse::ParseTokens for #enum_name {
-            #infix_tokens_map
 
-            fn parse_tokens(tokens: &mut std::collections::vec_deque::VecDeque<crate::card_effects::parse::Tokens>) -> std::result::Result<Self, crate::card_effects::error::Error> {
-                use crate::card_effects::parse::TakeParam;
-                Self::process_infix_tokens(tokens);
-                let s = Self::take_string(tokens)?;
-                #[allow(unreachable_code)]
-                Ok(match s.as_str() {
-                    #(#de_variants_arms)*
-                    _ => {
-                        Self::return_string(tokens, s.clone());
-                        #(#de_variants_transparent)*
-                        return Err(crate::card_effects::error::Error::UnexpectedToken(#str_enum_name.into(), s));
-                    }
-                })
+            fn parse_tokens(tokens: &[crate::card_effects::parse::Tokens]) -> std::result::Result<(Self, &[crate::card_effects::parse::Tokens]), crate::card_effects::error::Error> {
+                if tokens.is_empty() {
+                    return Err(crate::card_effects::error::Error::ExpectedToken);
+                }
+
+                println!("{:?} - {:?}", #str_enum_name, tokens);
+
+                #de_variants_infix2
+                #de_variants_tokens2
+                #(#de_variants_transparent2)*
+
+                return Err(crate::card_effects::error::Error::UnexpectedToken(#str_enum_name.into(), tokens.take_string()?.0.clone()));
             }
         }
     };
@@ -225,9 +379,9 @@ fn data_enum(ast: &DeriveInput) -> &DataEnum {
     }
 }
 
-fn attributes(variant: &Variant, ns: &Path) -> (String, Option<String>, bool) {
+fn attributes(variant: &Variant, ns: &Path) -> (Option<String>, Option<String>, bool) {
     let evt_meta_lists = namespace_parameters(&variant.attrs, ns);
-    let mut token = variant.ident.to_string().to_lowercase();
+    let mut token = None;
     let mut infix = None;
     let mut transparent = false;
     for meta in evt_meta_lists {
@@ -236,7 +390,7 @@ fn attributes(variant: &Variant, ns: &Path) -> (String, Option<String>, bool) {
                 if let (true, Lit::Str(lit_str)) =
                     (name_value.path.is_ident("token"), &name_value.lit)
                 {
-                    token = lit_str.value();
+                    token = Some(lit_str.value());
                 } else if let (true, Lit::Str(lit_str)) =
                     (name_value.path.is_ident("infix"), &name_value.lit)
                 {
@@ -255,6 +409,10 @@ fn attributes(variant: &Variant, ns: &Path) -> (String, Option<String>, bool) {
             a => panic!("{:?}", a),
         }
     }
+    assert!(
+        token.is_some() || infix.is_some() || transparent,
+        "Expected to have at least one of (token, infix, transparent)"
+    );
     (token, infix, transparent)
 }
 
@@ -281,16 +439,73 @@ mod tests {
                 #[evt(derive(Debug))]
                 #[holo_ucg(token = "tuple")]
                 Tuple(u32, u64),
+                // /// Tuple variant.
+                #[evt(derive(Debug))]
+                #[holo_ucg(infix = "+")]
+                TupleInfix(u32, u64),
                 /// Tuple variant.
                 #[evt(derive(Debug))]
-                #[holo_ucg(token = "plus", infix = "+")]
-                TupleInfix(u32, u64),
+                #[holo_ucg(token = "let", infix = "=")]
+                TuplePrefixInfix(u32, u64),
                 /// Tuple variant.
                 #[evt(derive(Debug))]
                 #[holo_ucg(transparent)]
                 Transparent(u32, u32),
             }
         };
+
+        // // - infix -
+        // if let Ok((s, t)) = tokens[1..].take_string() {
+        //     if s == "and" {
+        //         let t = &tokens[..1];
+        //         let (_0, t) = t.take_param()?;
+        //         let t = &tokens[2..];
+        //         let (_1, t) = t.take_param()?;
+        //         return Ok((Infix(_0, _1), t)); // TODO the "t" here is too short, is that true?
+        //     }
+        // }
+        // // - token -
+        // if let Ok((s, t)) = tokens.take_string() {
+        //     if s == "value" {
+        //         let (v1, t) = t.take_param()?;
+        //         let (v2, t) = t.take_param()?;
+        //         return Ok((Value(v1, v2), t));
+        //     }
+        //     if s == "value2" {
+        //         let (v1, t) = t.take_param()?;
+        //         let (v2, t) = t.take_param()?;
+        //         return Ok((Value2(v1, v2), t));
+        //     }
+        //     // - token - infix -
+        //     if s == "let" {
+        //         let (v1, t) = t.take_param()?;
+        //         let (s, t) = t.take_string()?;
+        //         if s == "=" {
+        //             let (v2, t) = t.take_param()?;
+        //             return Ok((Let(v1, v2), t));
+        //         } else {
+        //             return Err(Error::UnexpectedToken(
+        //                 "=".into(),
+        //                 s.clone(),
+        //             ))
+        //         }
+        //     }
+        // }
+        // // - transparent -
+        // if let Ok((v1, t)) = tokens.take_param() {
+        //     if let Ok((v2, t)) = t.take_param() {
+        //         return Ok((Transparent(v1, v2), t));
+        //     }
+        // }
+        // if let Ok((v1, t)) = tokens.take_param() {
+        //     if let Ok((v2, t)) = t.take_param() {
+        //         return Ok((Transparent2(v1, v2), t));
+        //     }
+        // }
+        // Err(Error::UnexpectedToken(
+        //     "LetValue".into(),
+        //     tokens.take_string()?.0.clone(),
+        // ))
 
         let actual_tokens = ser_de_token_for_enum_impl(ast);
         let expected_tokens = quote! {
@@ -299,48 +514,64 @@ mod tests {
                     match value {
                         MyEnum::Unit => "unit".into(),
                         MyEnum::Tuple(_0, _1,) => ["tuple".into(), _0.into(), _1.into(),].into(),
-                        MyEnum::TupleInfix(_0, _1,) => [_0.into(), "+".into(),  _1.into(),].into(),
+                        MyEnum::TupleInfix(_0, _1,) => [_0.into(), "+".into(), _1.into(),].into(),
+                        MyEnum::TuplePrefixInfix(_0, _1,) =>
+                            ["let".into(), _0.into(), "=".into(), _1.into(),].into(),
                         MyEnum::Transparent(_0, _1,) => [_0.into(), _1.into(),].into(),
                     }
                 }
             }
-
             impl crate::card_effects::parse::ParseTokens for MyEnum {
-                fn infix_token_map(
-                ) -> &'static std::collections::HashMap<&'static str, &'static str>
-                {
-                    use std::collections::HashMap;
-                    use std::sync::OnceLock;
-                    static INFIX_TOKEN_MAP: OnceLock<HashMap<&'static str, &'static str>> =
-                        OnceLock::new();
-                    INFIX_TOKEN_MAP.get_or_init(|| {
-                        let mut map = HashMap::new();
-                        map.insert("=", "unit");
-                        map.insert("+", "plus");
-                        map
-                    })
-                }
                 fn parse_tokens(
-                    tokens: &mut std::collections::vec_deque::VecDeque<
-                        crate::card_effects::parse::Tokens
-                    >
-                ) -> std::result::Result<Self, crate::card_effects::error::Error> {
-                    use crate::card_effects::parse::TakeParam;
-                    Self::process_infix_tokens(tokens);
-                    let s = Self::take_string(tokens)?;
-                    #[allow(unreachable_code)]
-                    Ok(match s.as_str() {
-                        "unit" => MyEnum::Unit,
-                        "tuple" => MyEnum::Tuple(tokens.take_param()?, tokens.take_param()?,),
-                        "plus" => MyEnum::TupleInfix(tokens.take_param()?, tokens.take_param()?,),
-                        _ => {
-                            Self::return_string(tokens, s.clone());
-                            if let (Ok(_0), Ok(_1),) = (tokens.take_param(), tokens.take_param(),) {
-                                return Ok(MyEnum::Transparent(_0, _1,));
-                            }
-                            return Err(crate::card_effects::error::Error::UnexpectedToken("MyEnum".into(), s));
+                    tokens: &[crate::card_effects::parse::Tokens]
+                ) -> std::result::Result<
+                    (Self, &[crate::card_effects::parse::Tokens]),
+                    crate::card_effects::error::Error
+                > {
+                    if tokens.is_empty() {
+                        return Err(crate::card_effects::error::Error::ExpectedToken);
+                    }
+                    if let Ok((s, t)) = tokens.take_string() {
+                        if s == "unit" {
+                            return Ok((MyEnum::Unit, t));
                         }
-                    })
+                        if s == "tuple" {
+                            let (_0, t) = t.take_param()?;
+                            let (_1, t) = t.take_param()?;
+                            return Ok((MyEnum::Tuple(_0, _1,), t));
+                        }
+                        if s == "let" {
+                            let (_0, t) = t.take_param()?;
+                            let (s, t) = t.take_string()?;
+                            if s == "=" {
+                                let (_1, t) = t.take_param()?;
+                                return Ok((MyEnum::TuplePrefixInfix(_0, _1,), t));
+                            } else {
+                                return Err(crate::card_effects::error::Error::UnexpectedToken(
+                                    "=".into(),
+                                    s.clone()
+                                ));
+                            }
+                        }
+                    }
+                    if let Ok((_0, t)) = tokens[..tokens.len()-1].take_param() {
+                        if let Ok((s, t)) = tokens[tokens.len()-1-t.len()..].take_string() {
+                            if s == "+" {
+                                let (_1, t) = t.take_param()?;
+                                return Ok((MyEnum::TupleInfix(_0, _1,), t));
+                            }
+                        }
+                    }
+                    let t = tokens;
+                    if let Ok((_0, t)) = t.take_param() {
+                        if let Ok((_1, t)) = t.take_param() {
+                            return Ok((MyEnum::Transparent(_0, _1,), t));
+                        }
+                    }
+                    return Err(crate::card_effects::error::Error::UnexpectedToken(
+                        "MyEnum".into(),
+                        tokens.take_string()?.0.clone()
+                    ));
                 }
             }
         };
