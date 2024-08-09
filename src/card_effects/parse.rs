@@ -51,7 +51,7 @@ impl TakeString for [Tokens] {
 }
 
 #[allow(unused)]
-pub trait ParseTokens: Sized {
+pub trait ParseTokens: Debug + Sized {
     fn parse_tokens(tokens: &[Tokens]) -> Result<(Self, &[Tokens])>;
 
     fn take_param<T: ParseTokens + Debug>(tokens: &[Tokens]) -> Result<(T, &[Tokens])> {
@@ -104,6 +104,7 @@ pub trait ParseTokens: Sized {
             if ok.1.is_empty() {
                 Ok(ok.0)
             } else {
+                dbg!(&ok.1);
                 Err(Error::RemainingTokens)
             }
         })
@@ -117,7 +118,11 @@ where
     fn parse_tokens(mut tokens: &[Tokens]) -> Result<(Self, &[Tokens])> {
         let mut v = Vec::new();
         while !tokens.is_empty() {
-            let (param, t) = T::parse_tokens(tokens)?;
+            let (param, t) = if tokens.iter().all(|t| matches!(t, Tokens::List(_))) {
+                T::take_param(tokens)?
+            } else {
+                T::parse_tokens(tokens)?
+            };
             tokens = t;
             v.push(param);
         }
@@ -191,12 +196,16 @@ impl FromStr for Tokens {
             Ok(())
         }
 
+        // group tokens by line
+        let by_line = s.replace('(', "((").replace(')', "))").replace('\n', ")(");
+        let by_line = format!("({by_line})");
+
         let mut stack = Vec::new();
         let mut token = String::new();
         let mut list = Vec::new();
         let mut bracket_level = 0;
 
-        for c in s.chars() {
+        for c in by_line.chars() {
             match c {
                 '(' => {
                     bracket_level += 1;
@@ -210,12 +219,16 @@ impl FromStr for Tokens {
                     add_token(&mut list, token)?;
                     token = String::new();
                     let mut _list = stack.pop().ok_or(Error::MissingBracket)?;
-                    if list.len() > 1 {
-                        _list.push(Tokens::List(list));
-                    } else {
-                        _list.push(list.pop().ok_or(Error::NoTokens)?);
+                    match list.len() {
+                        2.. => _list.push(Tokens::List(list)),
+                        1 => _list.push(list.pop().ok_or(Error::NoTokens)?),
+                        _ => {}
                     }
                     list = _list;
+                }
+                '\n' => {
+                    add_token(&mut list, token)?;
+                    token = String::new();
                 }
                 c if c.is_whitespace() => {
                     add_token(&mut list, token)?;

@@ -21,7 +21,13 @@ const TEST_TEXT: &str = "for active_holo buff more_def 1 next_turn";
 fn main() {
     env::set_var("RUST_BACKTRACE", "1");
 
-    dbg!(Vec::<Action>::from_tokens("when true and false buff more_dmg 10 + 20 - 50 this_art".parse().unwrap()).unwrap());
+    let cond = r"
+        if ((from_zone stage) any true and false) (
+            add_mod this_card more_dmg 50 this_art
+        )
+    ";
+
+    // dbg!(cond.parse_effect::<Vec<Action>>().expect("IN MAIN"));
 
     let main_deck_hsd01 = Vec::from_iter(
         None.into_iter()

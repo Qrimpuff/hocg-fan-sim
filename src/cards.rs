@@ -8,7 +8,7 @@ use crate::gameplay::Zone;
 use crate::modifiers::ModifierKind::*;
 use crate::{
     gameplay::{CardRef, Game},
-    Action, Condition, DamageModifier, Error, ParseEffect, ParseTokens, SerializeEffect, Trigger,
+    Action, Condition, Error, ParseEffect, ParseTokens, SerializeEffect, Trigger,
 };
 
 /**
@@ -105,7 +105,7 @@ impl GlobalLibrary {
         // TODO if you can't select something, it should check that it's there first in condition
 
         // default condition to always
-        let default_condition = Condition::Always;
+        let default_condition = Condition::AnyTrue;
         let default_action = Action::Noop;
         // let default_damage_mod = DamageModifier::None;
         for card in self.cards.values_mut() {
@@ -131,15 +131,15 @@ impl GlobalLibrary {
                         if a.condition.is_empty() {
                             a.condition.push(default_condition.clone())
                         }
-                        // if a.damage_modifier.is_empty() {
-                        //     a.damage_modifier.push(default_damage_mod)
-                        // }
                         if a.effect.is_empty() {
                             a.effect.push(default_action.clone())
                         }
                     })
                 }
                 Card::Support(s) => {
+                    if s.attachment_condition.is_empty() {
+                        s.attachment_condition.push(default_condition.clone())
+                    }
                     if s.condition.is_empty() {
                         s.condition.push(default_condition.clone())
                     }
@@ -196,10 +196,6 @@ impl GlobalLibrary {
                             eprintln!("{}: {} - condition - {}", m.card_number, a.name, e);
                             has_errors = true;
                         }
-                        // if let Err(e) = serialization_round_trip(a.damage_modifier.clone()) {
-                        //     eprintln!("{}: {} - damage modifier - {}", m.card_number, a.name, e);
-                        //     has_errors = true;
-                        // }
                         if let Err(e) = serialization_round_trip(a.effect.clone()) {
                             eprintln!("{}: {} - effect - {}", m.card_number, a.name, e);
                             has_errors = true;
@@ -207,6 +203,10 @@ impl GlobalLibrary {
                     })
                 }
                 Card::Support(s) => {
+                    if let Err(e) = serialization_round_trip(s.attachment_condition.clone()) {
+                        eprintln!("{}: {} - attachment_condition - {}", s.card_number, s.name, e);
+                        has_errors = true;
+                    }
                     if let Err(e) = serialization_round_trip(s.condition.clone()) {
                         eprintln!("{}: {} - condition - {}", s.card_number, s.name, e);
                         has_errors = true;
@@ -269,7 +269,6 @@ pub type OshiSkillCost = u8;
 pub type HoloMemberArtCost = Vec<Color>;
 pub type CardEffectTrigger = Vec<Trigger>;
 pub type CardEffectCondition = Vec<Condition>;
-pub type CardEffectDamageModifier = Vec<DamageModifier>;
 pub type CardEffect = Vec<Action>;
 pub type HoloMemberBatonPassCost = u8;
 
