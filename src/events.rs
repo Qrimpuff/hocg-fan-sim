@@ -11,6 +11,7 @@ use crate::{
 };
 use enum_dispatch::enum_dispatch;
 use iter_tools::Itertools;
+use rand::{thread_rng, Rng};
 use ModifierKind::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,15 +83,18 @@ pub enum Event {
     Bloom,
 
     BatonPass,
-    UseSupportCard,
+    ActivateSupportCard,
+    ActivateSupportAbility,
+    /// used by Lui oshi skill
+    ActivateOshiSkill,
+    ActivateHoloMemberAbility,
+    ActivateHoloMemberArtEffect,
 
     PerformArt,
     WaitingForPlayerIntent,
 
     // Card effect events
     //...
-    /// used by Lui oshi skill
-    UseOshiSkill,
     /// used by Pekora oshi skill, marker event before zone to zone
     HoloMemberDefeated,
     /// used by Suisei oshi skill
@@ -239,10 +243,13 @@ pub enum IntentResponse {
 }
 
 impl Game {
-    pub fn send_event(&mut self, event: Event) -> GameResult {
+    pub fn send_event(&mut self, mut event: Event) -> Result<Event, GameOutcome> {
         // trigger before effects
         let before = TriggeredEvent::Before(&event);
         self.evaluate_triggers(before)?;
+
+        // change the event before it happens, with modifiers from triggers
+        event.adjust_event(self)?;
 
         println!("EVENT = {event:?}");
         // perform the modification to the game state
@@ -255,7 +262,7 @@ impl Game {
         let after = TriggeredEvent::After(&event);
         self.evaluate_triggers(after)?;
 
-        Ok(GameContinue)
+        Ok(event)
     }
 
     fn evaluate_triggers(&mut self, trigger: TriggeredEvent) -> GameResult {
@@ -269,23 +276,25 @@ impl Game {
             .flat_map(|(p, c)| Some(c).into_iter().chain(self.board(p).attachments(c)))
             .collect_vec();
         for card in all_cards_on_stage {
-            let mut effect = None;
+            let mut oshi_skill = None;
+            let mut member_ability = None;
+            let mut support_ability = false;
             match self.lookup_card(card) {
                 crate::Card::OshiHoloMember(o) => {
-                    for skill in &o.skills {
+                    for (idx, skill) in o.skills.iter().enumerate() {
                         if skill.triggers.iter().any(|t| t.should_activate(&trigger))
                             && skill
                                 .condition
                                 .evaluate_with_card_event(self, card, trigger.event())
                         {
                             // TODO activate skill
-                            println!("  activate skill = {skill:?}");
-                            effect = Some(skill.effect.clone());
+                            println!("  [ACTIVATE SKILL] = {skill:?}");
+                            oshi_skill = Some(idx);
                         }
                     }
                 }
                 crate::Card::HoloMember(m) => {
-                    for ability in &m.abilities {
+                    for (idx, ability) in m.abilities.iter().enumerate() {
                         if ability.should_activate(card, &trigger)
                             && ability.condition.evaluate_with_card_event(
                                 self,
@@ -294,8 +303,8 @@ impl Game {
                             )
                         {
                             // TODO activate ability
-                            println!("  activate ability = {ability:?}");
-                            effect = Some(ability.effect.clone());
+                            println!("  [ACTIVATE ABILITY] = {ability:?}");
+                            member_ability = Some(idx);
                         }
                     }
                 }
@@ -305,16 +314,23 @@ impl Game {
                             .evaluate_with_card_event(self, card, trigger.event())
                     {
                         // TODO activate skill
-                        println!("  activate support = {s:?}");
-                        effect = Some(s.effect.clone());
+                        println!("  [ACTIVATE SUPPORT] = {s:?}");
+                        support_ability = true;
                     }
                 }
                 crate::Card::Cheer(_) => {} // cheers do not have triggers yet
             }
 
             // activate skill or ability
-            if let Some(effect) = effect {
-                effect.evaluate_with_card_event_mut(self, card, trigger.event())?;
+            if let Some(idx) = oshi_skill {
+                // TODO prompt for yes / no (optional)
+                self.activate_oshi_skill(card, idx)?;
+            }
+            if let Some(idx) = member_ability {
+                self.activate_holo_member_ability(card, idx)?;
+            }
+            if support_ability {
+                self.activate_support_ability(card)?;
             }
         }
 
@@ -327,7 +343,9 @@ impl Game {
                 winning_player: None,
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
     pub fn report_rps_win(&mut self, player: Player) -> GameResult {
         self.send_event(
@@ -335,7 +353,9 @@ impl Game {
                 winning_player: Some(player),
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
     pub fn report_player_going_first(&mut self, player: Player) -> GameResult {
         self.send_event(
@@ -343,14 +363,20 @@ impl Game {
                 first_player: player,
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn report_start_game(&mut self, active_player: Player) -> GameResult {
-        self.send_event(GameStart { active_player }.into())
+        self.send_event(GameStart { active_player }.into())?;
+
+        Ok(GameContinue)
     }
     pub fn report_game_over(&mut self, game_outcome: GameOutcome) -> GameResult {
-        self.send_event(GameOver { game_outcome }.into())
+        self.send_event(GameOver { game_outcome }.into())?;
+
+        Ok(GameContinue)
     }
     pub fn report_game_over_draw(&mut self) -> GameResult {
         self.send_event(
@@ -361,7 +387,9 @@ impl Game {
                 },
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
     pub fn report_start_turn(&mut self, active_player: Player) -> GameResult {
         self.send_event(
@@ -370,7 +398,9 @@ impl Game {
                 turn_number: self.turn_number,
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
     pub fn report_end_turn(&mut self, active_player: Player) -> GameResult {
         self.send_event(
@@ -379,7 +409,9 @@ impl Game {
                 turn_number: self.turn_number,
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
     pub fn report_enter_step(&mut self, active_player: Player, active_step: Step) -> GameResult {
         self.send_event(
@@ -388,7 +420,9 @@ impl Game {
                 active_step,
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
     pub fn report_exit_step(&mut self, active_player: Player, active_step: Step) -> GameResult {
         self.send_event(
@@ -397,7 +431,9 @@ impl Game {
                 active_step,
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn send_full_hand_to_main_deck(&mut self, player: Player) -> GameResult {
@@ -411,7 +447,9 @@ impl Game {
                 to_zone_location: Zone::MainDeck.default_add_location(),
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn shuffle_main_deck(&mut self, player: Player) -> GameResult {
@@ -421,7 +459,9 @@ impl Game {
                 zone: Zone::MainDeck,
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn shuffle_cheer_deck(&mut self, player: Player) -> GameResult {
@@ -431,7 +471,9 @@ impl Game {
                 zone: Zone::CheerDeck,
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn reveal_cards(&mut self, player: Player, zone: Zone, cards: &[CardRef]) -> GameResult {
@@ -449,7 +491,9 @@ impl Game {
                     .collect(),
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn reveal_all_cards_in_zone(&mut self, player: Player, zone: Zone) -> GameResult {
@@ -467,7 +511,9 @@ impl Game {
                 to_zone_location: Zone::CenterStage.default_add_location(),
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn send_from_back_stage_to_center_stage(
@@ -484,7 +530,9 @@ impl Game {
                 to_zone_location: Zone::CenterStage.default_add_location(),
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn send_from_hand_to_back_stage(
@@ -505,7 +553,9 @@ impl Game {
                 to_zone_location: Zone::BackStage.default_add_location(),
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn send_cards_to_holo_power(&mut self, player: Player, amount: usize) -> GameResult {
@@ -549,7 +599,9 @@ impl Game {
                 to_zone_location: Zone::Archive.default_add_location(),
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn send_from_back_stage_to_collab(&mut self, player: Player, card: CardRef) -> GameResult {
@@ -560,7 +612,9 @@ impl Game {
                 holo_power_amount: 1, // TODO some cards could maybe power for more
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn send_from_collab_to_back_stage(&mut self, player: Player, card: CardRef) -> GameResult {
@@ -573,7 +627,9 @@ impl Game {
                 to_zone_location: Zone::BackStage.default_add_location(),
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn send_from_center_stage_to_back_stage(
@@ -590,7 +646,9 @@ impl Game {
                 to_zone_location: Zone::BackStage.default_add_location(),
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn baton_pass_center_stage_to_back_stage(
@@ -606,7 +664,9 @@ impl Game {
                 to_card: (Zone::BackStage, to_card),
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn send_cheers_to_life(&mut self, player: Player, amount: usize) -> GameResult {
@@ -624,7 +684,9 @@ impl Game {
                 to_zone_location: Zone::Life.default_add_location(),
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn send_cards_to_archive(&mut self, player: Player, cards: Vec<CardRef>) -> GameResult {
@@ -842,7 +904,9 @@ impl Game {
                 to_zone_location: Zone::Archive.default_add_location(),
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn add_many_modifiers_to_many_cards(
@@ -864,7 +928,9 @@ impl Game {
                 modifiers,
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn remove_many_modifiers_from_many_cards(
@@ -886,7 +952,9 @@ impl Game {
                 modifiers,
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn clear_all_modifiers_from_many_cards(
@@ -911,7 +979,9 @@ impl Game {
                 cards,
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn add_many_modifiers_to_zone(
@@ -931,7 +1001,9 @@ impl Game {
                 modifiers,
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn remove_many_modifiers_from_zone(
@@ -951,7 +1023,9 @@ impl Game {
                 modifiers,
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn deal_damage(
@@ -981,7 +1055,9 @@ impl Game {
                 dmg,
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn add_damage_markers_to_many_cards(
@@ -1003,7 +1079,9 @@ impl Game {
                 dmg,
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn remove_damage_markers_from_many_cards(
@@ -1030,7 +1108,9 @@ impl Game {
                 dmg,
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn clear_all_damage_markers_from_many_cards(
@@ -1055,7 +1135,9 @@ impl Game {
                 cards,
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn draw_from_main_deck(&mut self, player: Player, amount: usize) -> GameResult {
@@ -1063,7 +1145,9 @@ impl Game {
             return Ok(GameContinue);
         }
 
-        self.send_event(Draw { player, amount }.into())
+        self.send_event(Draw { player, amount }.into())?;
+
+        Ok(GameContinue)
     }
 
     pub fn lose_lives(&mut self, player: Player, amount: usize) -> GameResult {
@@ -1071,7 +1155,9 @@ impl Game {
             return Ok(GameContinue);
         }
 
-        self.send_event(LoseLives { player, amount }.into())
+        self.send_event(LoseLives { player, amount }.into())?;
+
+        Ok(GameContinue)
     }
 
     pub fn bloom_holo_member(
@@ -1092,18 +1178,22 @@ impl Game {
                 to_card: (stage, target),
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn use_support_card(&mut self, player: Player, card: CardRef) -> GameResult {
         self.send_event(
-            UseSupportCard {
+            ActivateSupportCard {
                 player,
                 // can only use card from hand, for now
                 card: (Zone::Hand, card),
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn use_oshi_skill(
@@ -1113,14 +1203,70 @@ impl Game {
         skill_idx: usize,
     ) -> GameResult {
         self.send_event(
-            UseOshiSkill {
+            ActivateOshiSkill {
                 player,
                 // can only use skill from oshi
                 card: (Zone::Oshi, card),
                 skill_idx,
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
+    }
+
+    pub fn activate_oshi_skill(&mut self, card: CardRef, skill_idx: usize) -> GameResult {
+        let player = self.player_for_card(card);
+        self.send_event(
+            ActivateOshiSkill {
+                player,
+                // can only use skill from oshi
+                card: (Zone::Oshi, card),
+                skill_idx,
+            }
+            .into(),
+        )?;
+
+        Ok(GameContinue)
+    }
+
+    pub fn activate_holo_member_ability(
+        &mut self,
+        card: CardRef,
+        ability_idx: usize,
+    ) -> GameResult {
+        let player = self.player_for_card(card);
+        let zone = self
+            .board(player)
+            .find_card_zone(card)
+            .expect("member should be in a zone");
+        self.send_event(
+            ActivateHoloMemberAbility {
+                player,
+                card: (zone, card),
+                ability_idx,
+            }
+            .into(),
+        )?;
+
+        Ok(GameContinue)
+    }
+
+    pub fn activate_support_ability(&mut self, card: CardRef) -> GameResult {
+        let player = self.player_for_card(card);
+        let zone = self
+            .board(player)
+            .find_card_zone(card)
+            .expect("member should be in a zone");
+        self.send_event(
+            ActivateSupportAbility {
+                player,
+                card: (zone, card),
+            }
+            .into(),
+        )?;
+
+        Ok(GameContinue)
     }
 
     pub fn perform_art(
@@ -1156,12 +1302,34 @@ impl Game {
                 target: target_zone_card,
             }
             .into(),
-        )
+        )?;
+
+        Ok(GameContinue)
+    }
+
+    pub fn roll_dice(&mut self, player: Player) -> Result<usize, GameOutcome> {
+        let event = self.send_event(
+            RollDice {
+                player,
+                number: usize::MAX,
+            }
+            .into(),
+        )?;
+
+        let Event::RollDice(roll_dice) = event else {
+            unreachable!("the event type cannot change")
+        };
+
+        Ok(roll_dice.number)
     }
 }
 
 #[enum_dispatch]
 trait EvaluateEvent {
+    fn adjust_event(&mut self, _game: &mut Game) -> GameResult {
+        Ok(GameContinue)
+    }
+
     fn evaluate_event(&self, game: &mut Game) -> GameResult;
 }
 
@@ -1942,11 +2110,11 @@ impl EvaluateEvent for BatonPass {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UseSupportCard {
+pub struct ActivateSupportCard {
     pub player: Player,
     pub card: (Zone, CardRef),
 }
-impl EvaluateEvent for UseSupportCard {
+impl EvaluateEvent for ActivateSupportCard {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
@@ -1991,6 +2159,154 @@ impl EvaluateEvent for UseSupportCard {
 
         // send the used card to the archive
         game.send_cards_to_archive(game.active_player, vec![self.card.1])
+    }
+}
+
+/// used by Lui oshi skill
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActivateSupportAbility {
+    pub player: Player,
+    pub card: (Zone, CardRef),
+}
+impl EvaluateEvent for ActivateSupportAbility {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+        verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
+
+        let support = game
+            .lookup_support(self.card.1)
+            .expect("only support should be using skills");
+
+        //  check condition for skill
+        if !support.can_use_ability(self.card.1, game) {
+            panic!("cannot use this skill");
+        }
+
+        let effect = support.effect.clone();
+
+        effect.evaluate_with_card_mut(game, self.card.1)?;
+
+        Ok(GameContinue)
+    }
+}
+
+/// used by Lui oshi skill
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActivateOshiSkill {
+    pub player: Player,
+    pub card: (Zone, CardRef),
+    pub skill_idx: usize,
+}
+impl EvaluateEvent for ActivateOshiSkill {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+        verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
+
+        let oshi = game
+            .lookup_oshi(self.card.1)
+            .expect("only oshi should be using skills");
+
+        //  check condition for skill
+        if !oshi.can_use_skill(self.card.1, self.skill_idx, game) {
+            panic!("cannot use this skill");
+        }
+
+        // - use oshi skill
+        //   - oshi power uses card in power zone
+        //   - once per turn / once per game
+        let skill = &oshi.skills[self.skill_idx];
+        let effect = skill.effect.clone();
+        let prevent_life_time = match skill.kind {
+            OshiSkillKind::Normal => LifeTime::ThisTurn,
+            OshiSkillKind::Special => LifeTime::ThisGame,
+        };
+
+        // pay the cost of the oshi skill
+        // TODO could have a buff that could pay for the skill
+        game.send_holo_power_to_archive(self.player, skill.cost as usize)?;
+
+        effect.evaluate_with_card_mut(game, self.card.1)?;
+
+        game.add_modifier(
+            self.card.1,
+            PreventOshiSkill(self.skill_idx),
+            prevent_life_time,
+        )?;
+
+        Ok(GameContinue)
+    }
+}
+
+/// used by Lui oshi skill
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActivateHoloMemberAbility {
+    pub player: Player,
+    pub card: (Zone, CardRef),
+    pub ability_idx: usize,
+}
+impl EvaluateEvent for ActivateHoloMemberAbility {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+        verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
+
+        let mem = game
+            .lookup_holo_member(self.card.1)
+            .expect("only member should be using skills");
+
+        //  check condition for skill
+        if !mem.can_use_ability(self.card.1, self.ability_idx, game) {
+            panic!("cannot use this skill");
+        }
+
+        let ability = &mem.abilities[self.ability_idx];
+        let effect = ability.effect.clone();
+
+        effect.evaluate_with_card_mut(game, self.card.1)?;
+
+        Ok(GameContinue)
+    }
+}
+
+/// used by Lui oshi skill
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActivateHoloMemberArtEffect {
+    pub player: Player,
+    pub card: (Zone, CardRef),
+    pub skill_idx: usize,
+}
+impl EvaluateEvent for ActivateHoloMemberArtEffect {
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+        verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
+
+        let oshi = game
+            .lookup_oshi(self.card.1)
+            .expect("only oshi should be using skills");
+
+        //  check condition for skill
+        if !oshi.can_use_skill(self.card.1, self.skill_idx, game) {
+            panic!("cannot use this skill");
+        }
+
+        // - use oshi skill
+        //   - oshi power uses card in power zone
+        //   - once per turn / once per game
+        let skill = &oshi.skills[self.skill_idx];
+        let effect = skill.effect.clone();
+        let prevent_life_time = match skill.kind {
+            OshiSkillKind::Normal => LifeTime::ThisTurn,
+            OshiSkillKind::Special => LifeTime::ThisGame,
+        };
+
+        // pay the cost of the oshi skill
+        // TODO could have a buff that could pay for the skill
+        game.send_holo_power_to_archive(self.player, skill.cost as usize)?;
+
+        effect.evaluate_with_card_mut(game, self.card.1)?;
+
+        game.add_modifier(
+            self.card.1,
+            PreventOshiSkill(self.skill_idx),
+            prevent_life_time,
+        )?;
+
+        Ok(GameContinue)
     }
 }
 
@@ -2065,51 +2381,6 @@ impl EvaluateEvent for WaitingForPlayerIntent {
 }
 // Card effect events
 //...
-/// used by Lui oshi skill
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UseOshiSkill {
-    pub player: Player,
-    pub card: (Zone, CardRef),
-    pub skill_idx: usize,
-}
-impl EvaluateEvent for UseOshiSkill {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
-        verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
-
-        let oshi = game
-            .lookup_oshi(self.card.1)
-            .expect("only oshi should be using skills");
-
-        //  check condition for skill
-        if !oshi.can_use_skill(self.card.1, self.skill_idx, game) {
-            panic!("cannot use this skill");
-        }
-
-        // - use oshi skill
-        //   - oshi power uses card in power zone
-        //   - once per turn / once per game
-        let skill = &oshi.skills[self.skill_idx];
-        let effect = skill.effect.clone();
-        let prevent_life_time = match skill.kind {
-            OshiSkillKind::Normal => LifeTime::ThisTurn,
-            OshiSkillKind::Special => LifeTime::ThisGame,
-        };
-
-        // pay the cost of the oshi skill
-        // TODO could have a buff that could pay for the skill
-        game.send_holo_power_to_archive(self.player, skill.cost as usize)?;
-
-        effect.evaluate_with_card_mut(game, self.card.1)?;
-
-        game.add_modifier(
-            self.card.1,
-            PreventOshiSkill(self.skill_idx),
-            prevent_life_time,
-        )?;
-
-        Ok(GameContinue)
-    }
-}
 /// used by Pekora oshi skill, marker event before zone to zone
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HoloMemberDefeated {
@@ -2148,10 +2419,19 @@ impl EvaluateEvent for DealDamage {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RollDice {
     pub player: Player,
+    pub number: usize,
 }
 impl EvaluateEvent for RollDice {
+    fn adjust_event(&mut self, _game: &mut Game) -> GameResult {
+        // TODO look for modifiers, and consume them, if not permanent
+
+        self.number = thread_rng().gen_range(1..=6);
+
+        Ok(GameContinue)
+    }
+
     fn evaluate_event(&self, _game: &mut Game) -> GameResult {
-        // TODO implement
-        unimplemented!()
+        // nothing to do here
+        Ok(GameContinue)
     }
 }

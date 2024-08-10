@@ -22,8 +22,14 @@ fn main() {
     env::set_var("RUST_BACKTRACE", "1");
 
     let cond = r"
-        if ((from_zone stage) any true and false) (
-            add_mod this_card more_dmg 50 this_art
+        let $center_mem = ((from_zone center_stage) where is_member)
+        if $center_mem any is_named_tokino_sora (
+            draw 1
+        )
+        if $center_mem any is_named_azki (
+            let $cheer = from_zone_top 1 cheer_deck
+            reveal $cheer
+            attach_cards $cheer $center_mem
         )
     ";
 

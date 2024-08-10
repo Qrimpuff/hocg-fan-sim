@@ -36,6 +36,8 @@ pub enum ModifierKind {
     PreventOshiSkill(usize),
     PreventArt(usize),
     PreventAllArts,
+    PreventAbility(usize),
+    PreventAbilities,
     PreventCollab,
     PreventBloom,
     PreventLimitedSupport,

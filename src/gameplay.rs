@@ -2,8 +2,8 @@ use std::fmt::Display;
 use std::num::NonZeroUsize;
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
-use crate::evaluate::EvaluateEffect;
-use crate::Condition;
+use crate::evaluate::{EvaluateContext, EvaluateEffect};
+use crate::{Condition, Trigger};
 
 use super::cards::*;
 use super::modifiers::*;
@@ -229,6 +229,8 @@ impl Game {
     }
 
     pub fn start_game(&mut self) -> GameResult {
+        println!("card_map: {:?}", self.card_map);
+
         self.active_step = Step::Setup;
 
         // - shuffle main deck
@@ -957,6 +959,9 @@ impl Game {
                         .skills
                         .iter()
                         .enumerate()
+                        .filter(|(_, s)| {
+                            s.triggers.iter().any(|t| *t == Trigger::ActivateInMainStep)
+                        })
                         .filter(|(i, _)| o.can_use_skill(*c, *i, self))
                         .map(|(i, _)| MainStepAction::UseOshiSkill(*c, i))
                         .collect_vec(),
@@ -1056,13 +1061,14 @@ impl Game {
         &mut self,
         cards: Vec<CardRef>,
         condition: Condition,
+        ctx: &EvaluateContext,
         min: usize,
         max: usize,
     ) -> Vec<CardRef> {
         let choices: Vec<_> = cards
             .into_iter()
             .filter(|c| {
-                let cond = condition.evaluate_with_card(self, *c);
+                let cond = condition.evaluate_with_context(&ctx.for_card(*c), self);
                 if !cond {
                     println!("viewed: {}", CardDisplay::new(*c, self))
                 }
@@ -1080,6 +1086,17 @@ impl Game {
         } else {
             vec![]
         }
+    }
+
+    pub fn prompt_for_optional_activate(&mut self) -> bool {
+        self.prompter
+            .prompt_choice("do you want to activate the effect?", vec!["Yes", "No"])
+            == "Yes"
+    }
+
+    pub fn prompt_for_number(&mut self, min: usize, max: usize) -> usize {
+        self.prompter
+            .prompt_choice("choose a number:", (min..=max).collect_vec())
     }
 }
 
@@ -1797,8 +1814,8 @@ impl CardDisplay {
             Card::OshiHoloMember(o) => {
                 let life_remaining = game.board_for_card(card).life.count();
                 format!(
-                    "{} (Oshi) ({}/{} life) {}",
-                    o.name, life_remaining, o.life, card,
+                    "{} (Oshi) ({}/{} life) ({}) {}",
+                    o.name, life_remaining, o.life, o.card_number, card,
                 )
             }
             Card::HoloMember(m) => {
@@ -1824,8 +1841,8 @@ impl CardDisplay {
                     card,
                 )
             }
-            Card::Support(s) => format!("{} ({:?}) {}", s.name, s.kind, card),
-            Card::Cheer(c) => format!("{} ({:?}) {}", c.name, c.color, card),
+            Card::Support(s) => format!("{} ({:?}) ({}) {}", s.name, s.kind, s.card_number, card),
+            Card::Cheer(c) => format!("{} ({:?}) ({}) {}", c.name, c.color, c.card_number, card),
         };
         CardDisplay { card, text }
     }
@@ -1849,7 +1866,7 @@ impl ArtDisplay {
         let text = if let Some(m) = game.lookup_holo_member(card) {
             let art = &m.arts[idx];
             format!(
-                "{} ({:?}) ({})",
+                "{} ({:?}) ({}) ({}) {}",
                 art.name,
                 art.damage,
                 art.cost
@@ -1857,6 +1874,8 @@ impl ArtDisplay {
                     .map(|c| format!("{c:?}"))
                     .collect_vec()
                     .join(", "),
+                m.card_number,
+                card,
             )
         } else {
             unreachable!("only members can have arts")

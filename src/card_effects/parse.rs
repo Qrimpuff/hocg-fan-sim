@@ -62,7 +62,12 @@ pub trait ParseTokens: Debug + Sized {
         // println!("take_param - after - {:?}", &t);
 
         if is_sub_ctx {
-            Ok((t.0, &tokens[1..]))
+            // check for remaining Tokens
+            if t.1.is_empty() {
+                Ok((t.0, &tokens[1..]))
+            } else {
+                Err(Error::RemainingTokens)
+            }
         } else {
             Ok(t)
         }
@@ -153,14 +158,26 @@ impl From<&str> for Tokens {
 }
 
 impl<const N: usize> From<[Tokens; N]> for Tokens {
-    fn from(value: [Tokens; N]) -> Self {
-        Self::List(value.into())
+    fn from(mut value: [Tokens; N]) -> Self {
+        if value.len() != 1 {
+            Self::List(value.into())
+        } else {
+            // this is a mess
+            let mut s = [Tokens::Token("".into())];
+            value[..1].swap_with_slice(&mut s);
+            let [s, ..] = s;
+            s
+        }
     }
 }
 
 impl<T: Into<Tokens>> From<Vec<T>> for Tokens {
-    fn from(value: Vec<T>) -> Self {
-        Self::List(value.into_iter().map(Into::into).collect())
+    fn from(mut value: Vec<T>) -> Self {
+        if value.len() != 1 {
+            Self::List(value.into_iter().map(Into::into).collect())
+        } else {
+            value.swap_remove(0).into()
+        }
     }
 }
 

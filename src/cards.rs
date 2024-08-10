@@ -105,12 +105,16 @@ impl GlobalLibrary {
         // TODO if you can't select something, it should check that it's there first in condition
 
         // default condition to always
-        let default_condition = Condition::AnyTrue;
+        let default_trigger = Trigger::ActivateInMainStep;
+        let default_condition = Condition::True;
         let default_action = Action::Noop;
         // let default_damage_mod = DamageModifier::None;
         for card in self.cards.values_mut() {
             match card {
                 Card::OshiHoloMember(o) => o.skills.iter_mut().for_each(|s| {
+                    if s.triggers.is_empty() {
+                        s.triggers.push(default_trigger)
+                    }
                     if s.condition.is_empty() {
                         s.condition.push(default_condition.clone())
                     }
@@ -139,6 +143,9 @@ impl GlobalLibrary {
                 Card::Support(s) => {
                     if s.attachment_condition.is_empty() {
                         s.attachment_condition.push(default_condition.clone())
+                    }
+                    if s.triggers.is_empty() {
+                        s.triggers.push(default_trigger)
                     }
                     if s.condition.is_empty() {
                         s.condition.push(default_condition.clone())
@@ -483,6 +490,20 @@ impl HoloMemberCard {
             .any(|ns| ns.into_iter().all_equal())
     }
 
+    pub fn can_use_ability(&self, card: CardRef, ability_idx: usize, game: &Game) -> bool {
+        //  could prevent art by effect
+        if game.has_modifier(card, PreventAbility(ability_idx)) {
+            return false;
+        }
+        if game.has_modifier(card, PreventAbilities) {
+            return false;
+        }
+
+        self.abilities[ability_idx]
+            .condition
+            .evaluate_with_card(game, card)
+    }
+
     pub fn can_use_art(&self, card: CardRef, art_idx: usize, game: &Game) -> bool {
         //  could prevent art by effect
         if game.has_modifier(card, PreventArt(art_idx)) {
@@ -631,6 +652,15 @@ impl SupportCard {
     ) -> bool {
         // TODO fan can be attached. how to send the target card in the condition?
         unimplemented!()
+    }
+
+    pub fn can_use_ability(&self, card: CardRef, game: &Game) -> bool {
+        //  could prevent art by effect
+        if game.has_modifier(card, PreventAbilities) {
+            return false;
+        }
+
+        self.condition.evaluate_with_card(game, card)
     }
 }
 

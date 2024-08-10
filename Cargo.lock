@@ -121,6 +121,7 @@ dependencies = [
  "enum_dispatch",
  "hololive-ucg-poc-derive",
  "iter_tools",
+ "pretty_assertions",
  "rand",
 ]
 

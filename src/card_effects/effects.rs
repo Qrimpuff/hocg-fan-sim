@@ -125,6 +125,8 @@ impl<T: ParseTokens + Debug> ParseTokens for Let<T> {
     }
 }
 
+/////////////////////////////////////
+
 #[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     // add_global_mod <mod> <life_time> -> action
@@ -207,37 +209,46 @@ pub enum CardReferences {
     // attached <card_ref> -> <[card_ref]>
     #[holo_ucg(token = "attached")]
     Attached(CardReference),
-    // from_zone <zone> -> <[card_ref]>
-    #[holo_ucg(token = "from_zone")]
-    FromZone(Zone),
-    // from_zone_top <value> <zone> -> <[card_ref]>
-    #[holo_ucg(token = "from_zone_top")]
-    FromZoneTop(Box<Value>, Zone),
+    // from <zone> -> <[card_ref]>
+    #[holo_ucg(token = "from")]
+    From(Zone),
+    // from_top <value> <zone> -> <[card_ref]>
+    #[holo_ucg(token = "from_top")]
+    FromTop(Box<Value>, Zone),
     // this_card -> <[card_ref]>
     #[holo_ucg(token = "this_card")]
     ThisCard,
     // <$var> -> <[card_ref]>
     #[holo_ucg(transparent)]
     Var(Var),
-    // <[card_ref]> where <condition> -> <[card_ref]>
-    #[holo_ucg(infix = "where")]
-    Where(Box<CardReferences>, Box<Condition>),
+    // filter <[card_ref]> <condition> -> <[card_ref]>
+    #[holo_ucg(token = "filter")]
+    Filter(Box<CardReferences>, Box<Condition>),
+}
+
+impl From<bool> for Condition {
+    fn from(value: bool) -> Self {
+        match value {
+            true => Condition::True,
+            false => Condition::False,
+        }
+    }
 }
 
 #[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
 pub enum Condition {
-    // <[card_ref]> all <condition> -> <condition>
-    #[holo_ucg(infix = "all")]
+    // all <[card_ref]> <condition> -> <condition>
+    #[holo_ucg(token = "all")]
     All(CardReferences, Box<Condition>),
     // <condition> and <condition> -> <condition>
     #[holo_ucg(infix = "and")]
     And(Box<Condition>, Box<Condition>),
-    // <[card_ref]> any <condition> -> <condition>
-    #[holo_ucg(infix = "any")]
-    Any(CardReferences, Box<Condition>),
-    // any -> <condition>
+    // any <[card_ref]> <condition> -> <condition>
     #[holo_ucg(token = "any")]
-    AnyTrue,
+    Any(CardReferences, Box<Condition>),
+    // anything -> <condition>
+    #[holo_ucg(token = "anything")]
+    Anything,
     // <value> == <value> -> <condition>
     #[holo_ucg(infix = "==")]
     Equals(Value, Value),
@@ -298,9 +309,6 @@ pub enum Condition {
     // not <condition> -> <condition>
     #[holo_ucg(token = "not")]
     Not(Box<Condition>),
-    // optional -> <condition>
-    #[holo_ucg(token = "optional")]
-    Optional,
     // <condition> or <condition> -> <condition>
     #[holo_ucg(infix = "or")]
     Or(Box<Condition>, Box<Condition>),
@@ -317,6 +325,9 @@ pub enum Condition {
 
 #[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
 pub enum LetValue {
+    // optional_activate -> <condition>
+    #[holo_ucg(token = "optional_activate")]
+    OptionalActivate,
     // roll_dice -> <value>
     #[holo_ucg(token = "roll_dice")]
     RollDice,

@@ -2,8 +2,6 @@ use std::collections::HashMap;
 use std::ops::Deref;
 
 use iter_tools::Itertools;
-use rand::thread_rng;
-use rand::Rng;
 
 use super::effects::*;
 use crate::events::Shuffle;
@@ -19,8 +17,6 @@ use crate::{
     gameplay::{self, *},
     modifiers::{self},
 };
-
-// TODO clean up this file after the list of effect is finalized
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvaluateContext<'a> {
@@ -65,7 +61,7 @@ impl<'a> EvaluateContext<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LetValue {
     CardReferences(Vec<CardRef>),
-    Condition(bool),
+    Condition(Condition),
     Value(usize),
 }
 
@@ -125,13 +121,13 @@ pub trait EvaluateEffectMut {
 pub trait EvaluateEffect {
     type Value;
 
-    fn evaluate_with_context(&self, ctx: &mut EvaluateContext, game: &Game) -> Self::Value;
+    fn evaluate_with_context(&self, ctx: &EvaluateContext, game: &Game) -> Self::Value;
 
     fn evaluate_with_card(&self, game: &Game, card: CardRef) -> Self::Value
     where
         Self: Sized,
     {
-        self.evaluate_with_context(&mut EvaluateContext::with_card(card, game), game)
+        self.evaluate_with_context(&EvaluateContext::with_card(card, game), game)
     }
     fn evaluate_with_card_event(&self, game: &Game, card: CardRef, event: &Event) -> Self::Value
     where
@@ -139,7 +135,7 @@ pub trait EvaluateEffect {
     {
         let mut ctx = EvaluateContext::with_card(card, game);
         ctx.event = Some(event);
-        self.evaluate_with_context(&mut ctx, game)
+        self.evaluate_with_context(&ctx, game)
     }
 }
 
@@ -176,7 +172,7 @@ where
 {
     type Value = V;
 
-    fn evaluate_with_context(&self, ctx: &mut EvaluateContext, game: &Game) -> Self::Value {
+    fn evaluate_with_context(&self, ctx: &EvaluateContext, game: &Game) -> Self::Value {
         let mut acc: Option<Self::Value> = None;
         for eval in self.iter() {
             acc = if let Some(acc) = acc {
@@ -251,18 +247,22 @@ impl EvaluateEffectMut for Action {
             }
             Action::LetCardReferences(let_card) => {
                 let value = LetValue::CardReferences(let_card.1.evaluate_with_context(ctx, game));
+                // dbg!(&let_card.0, &value, &ctx);
                 ctx.variables.insert(let_card.0 .0.clone(), value);
             }
             Action::LetCondition(let_cond) => {
-                let value = LetValue::Condition(let_cond.1.evaluate_with_context(ctx, game));
+                let value = LetValue::Condition(let_cond.1.clone());
+                // dbg!(&let_cond.0, &value, &ctx);
                 ctx.variables.insert(let_cond.0 .0.clone(), value);
             }
             Action::LetSelect(let_select) => {
                 let value = let_select.1.evaluate_with_context_mut(ctx, game)?;
+                // dbg!(&let_select.0, &value, &ctx);
                 ctx.variables.insert(let_select.0 .0.clone(), value);
             }
             Action::LetValue(let_value) => {
                 let value = LetValue::Value(let_value.1.evaluate_with_context(ctx, game));
+                // dbg!(&let_value.0, &value, &ctx);
                 ctx.variables.insert(let_value.0 .0.clone(), value);
             }
             Action::Noop => {}
@@ -315,15 +315,12 @@ impl EvaluateEffectMut for Action {
 impl EvaluateEffect for CardReference {
     type Value = CardRef;
 
-    fn evaluate_with_context(&self, ctx: &mut EvaluateContext, _game: &Game) -> Self::Value {
+    fn evaluate_with_context(&self, ctx: &EvaluateContext, _game: &Game) -> Self::Value {
         match self {
             CardReference::ThisCard => ctx.active_card.expect("there should be an active card"),
             CardReference::Var(var) => {
                 match ctx.variables.get(&var.0).unwrap_or_else(|| {
-                    panic!(
-                        "the variable should exist: {:?} - variables: {:?}",
-                        var, ctx.variables
-                    )
+                    panic!("the variable should exist: {:?} - ctx: {:?}", var, ctx)
                 }) {
                     LetValue::CardReferences(cards) => {
                         if cards.len() > 1 {
@@ -334,7 +331,7 @@ impl EvaluateEffect for CardReference {
                         }
                         *cards.first().expect("there should be a card")
                     }
-                    _ => panic!("wrong value: {:?} - variables: {:?}", var, ctx.variables),
+                    _ => panic!("wrong value: {:?} - ctx: {:?}", var, ctx),
                 }
             }
         }
@@ -344,17 +341,17 @@ impl EvaluateEffect for CardReference {
 impl EvaluateEffect for CardReferences {
     type Value = Vec<CardRef>;
 
-    fn evaluate_with_context(&self, ctx: &mut EvaluateContext, game: &Game) -> Self::Value {
+    fn evaluate_with_context(&self, ctx: &EvaluateContext, game: &Game) -> Self::Value {
         match self {
             CardReferences::Attached(card) => {
                 let card = card.evaluate_with_context(ctx, game);
                 game.board_for_card(card).attachments(card)
             }
-            CardReferences::FromZone(zone) => {
+            CardReferences::From(zone) => {
                 let (player, zone) = zone.evaluate_with_context(ctx, game);
                 game.board(player).all_cards(zone)
             }
-            CardReferences::FromZoneTop(amount, zone) => {
+            CardReferences::FromTop(amount, zone) => {
                 let amount = amount.evaluate_with_context(ctx, game);
                 let (player, zone) = zone.evaluate_with_context(ctx, game);
                 game.board(player).get_zone(zone).peek_top_cards(amount)
@@ -364,20 +361,17 @@ impl EvaluateEffect for CardReferences {
             }
             CardReferences::Var(var) => {
                 match ctx.variables.get(&var.0).unwrap_or_else(|| {
-                    panic!(
-                        "the variable should exist: {:?} - variables: {:?}",
-                        var, ctx.variables
-                    )
+                    panic!("the variable should exist: {:?} - ctx: {:?}", var, ctx)
                 }) {
                     LetValue::CardReferences(cards) => cards.clone(),
-                    _ => panic!("wrong value: {:?} - variables: {:?}", var, ctx.variables),
+                    _ => panic!("wrong value: {:?} - ctx: {:?}", var, ctx),
                 }
             }
-            CardReferences::Where(cards, condition) => {
+            CardReferences::Filter(cards, condition) => {
                 let cards = cards.evaluate_with_context(ctx, game);
                 cards
                     .into_iter()
-                    .filter(|c| condition.evaluate_with_context(&mut ctx.for_card(*c), game))
+                    .filter(|c| condition.evaluate_with_context(&ctx.for_card(*c), game))
                     .collect_vec()
             }
         }
@@ -387,13 +381,13 @@ impl EvaluateEffect for CardReferences {
 impl EvaluateEffect for Condition {
     type Value = bool;
 
-    fn evaluate_with_context(&self, ctx: &mut EvaluateContext, game: &Game) -> Self::Value {
+    fn evaluate_with_context(&self, ctx: &EvaluateContext, game: &Game) -> Self::Value {
         match self {
             Condition::All(cards, condition) => {
                 let cards = cards.evaluate_with_context(ctx, game);
                 cards
                     .into_iter()
-                    .any(|c| condition.evaluate_with_context(&mut ctx.for_card(c), game))
+                    .any(|c| -> bool { condition.evaluate_with_context(&ctx.for_card(c), game) })
             }
             Condition::And(condition_1, condition_2) => {
                 let condition_1 = condition_1.evaluate_with_context(ctx, game);
@@ -404,9 +398,9 @@ impl EvaluateEffect for Condition {
                 let cards = cards.evaluate_with_context(ctx, game);
                 cards
                     .into_iter()
-                    .all(|c| condition.evaluate_with_context(&mut ctx.for_card(c), game))
+                    .all(|c| condition.evaluate_with_context(&ctx.for_card(c), game))
             }
-            Condition::AnyTrue => true,
+            Condition::Anything => true,
             Condition::Equals(value_1, value_2) => {
                 let value_1 = value_1.evaluate_with_context(ctx, game);
                 let value_2 = value_2.evaluate_with_context(ctx, game);
@@ -489,7 +483,6 @@ impl EvaluateEffect for Condition {
                 let condition = condition.evaluate_with_context(ctx, game);
                 !condition
             }
-            Condition::Optional => todo!(),
             Condition::Or(condition_1, condition_2) => {
                 let condition_1 = condition_1.evaluate_with_context(ctx, game);
                 let condition_2 = condition_2.evaluate_with_context(ctx, game);
@@ -498,13 +491,10 @@ impl EvaluateEffect for Condition {
             Condition::True => true,
             Condition::Var(var) => {
                 match ctx.variables.get(&var.0).unwrap_or_else(|| {
-                    panic!(
-                        "the variable should exist: {:?} - variables: {:?}",
-                        var, ctx.variables
-                    )
+                    panic!("the variable should exist: {:?} - ctx: {:?}", var, ctx)
                 }) {
-                    LetValue::Condition(condition) => *condition,
-                    _ => panic!("wrong value: {:?} - variables: {:?}", var, ctx.variables),
+                    LetValue::Condition(condition) => condition.evaluate_with_context(ctx, game),
+                    _ => panic!("wrong value: {:?} - ctx: {:?}", var, ctx),
                 }
             }
             Condition::Yours => {
@@ -525,12 +515,20 @@ impl EvaluateEffectMut for super::LetValue {
         game: &mut Game,
     ) -> EvaluateResult<Self::Value> {
         match self {
-            super::LetValue::RollDice => Ok(LetValue::Value(thread_rng().gen_range(1..=6))), // TODO add event
+            super::LetValue::OptionalActivate => Ok(LetValue::Condition(
+                game.prompt_for_optional_activate().into(),
+            )),
+            super::LetValue::RollDice => {
+                let player = ctx.active_player.expect("there should be an active player");
+                let number = game.roll_dice(player)?;
+                Ok(LetValue::Value(number))
+            }
             super::LetValue::SelectAny(cards, condition) => {
                 let cards = cards.evaluate_with_context(ctx, game);
                 let choice = game.prompt_for_select(
                     cards.clone(),
                     condition.as_ref().clone(),
+                    ctx,
                     0,
                     usize::MAX,
                 );
@@ -545,7 +543,7 @@ impl EvaluateEffectMut for super::LetValue {
             super::LetValue::SelectOne(cards, condition) => {
                 let cards = cards.evaluate_with_context(ctx, game);
                 let choice =
-                    game.prompt_for_select(cards.clone(), condition.as_ref().clone(), 1, 1);
+                    game.prompt_for_select(cards.clone(), condition.as_ref().clone(), ctx, 1, 1);
                 let leftovers = cards
                     .into_iter()
                     .filter(|c| !choice.contains(c))
@@ -554,12 +552,21 @@ impl EvaluateEffectMut for super::LetValue {
                     .insert("$_leftovers".into(), LetValue::CardReferences(leftovers));
                 Ok(LetValue::CardReferences(choice))
             }
-            super::LetValue::SelectNumberBetween(_, _) => todo!(),
+            super::LetValue::SelectNumberBetween(min, max) => {
+                let min = min.evaluate_with_context(ctx, game);
+                let max = max.evaluate_with_context(ctx, game);
+                Ok(LetValue::Value(game.prompt_for_number(min, max)))
+            }
             super::LetValue::SelectUpTo(amount, cards, condition) => {
                 let amount = amount.evaluate_with_context(ctx, game);
                 let cards = cards.evaluate_with_context(ctx, game);
-                let choice =
-                    game.prompt_for_select(cards.clone(), condition.as_ref().clone(), 0, amount);
+                let choice = game.prompt_for_select(
+                    cards.clone(),
+                    condition.as_ref().clone(),
+                    ctx,
+                    0,
+                    amount,
+                );
                 let leftovers = cards
                     .into_iter()
                     .filter(|c| !choice.contains(c))
@@ -575,7 +582,7 @@ impl EvaluateEffectMut for super::LetValue {
 impl EvaluateEffect for super::LifeTime {
     type Value = LifeTime;
 
-    fn evaluate_with_context(&self, ctx: &mut EvaluateContext, game: &Game) -> Self::Value {
+    fn evaluate_with_context(&self, ctx: &EvaluateContext, game: &Game) -> Self::Value {
         match self {
             super::LifeTime::ThisGame => LifeTime::ThisGame,
             super::LifeTime::ThisTurn => LifeTime::ThisTurn,
@@ -594,7 +601,7 @@ impl EvaluateEffect for super::LifeTime {
 impl EvaluateEffect for Modifier {
     type Value = ModifierKind;
 
-    fn evaluate_with_context(&self, ctx: &mut EvaluateContext, game: &Game) -> Self::Value {
+    fn evaluate_with_context(&self, ctx: &EvaluateContext, game: &Game) -> Self::Value {
         match self {
             Modifier::MoreDamage(amount) => {
                 let amount = amount.evaluate_with_context(ctx, game);
@@ -615,7 +622,7 @@ impl EvaluateEffect for Modifier {
 impl EvaluateEffect for super::Player {
     type Value = Player;
 
-    fn evaluate_with_context(&self, ctx: &mut EvaluateContext, _game: &Game) -> Self::Value {
+    fn evaluate_with_context(&self, ctx: &EvaluateContext, _game: &Game) -> Self::Value {
         let player = ctx.active_player.expect("there should be an active player");
         let opponent = match player {
             Player::One => Player::Two,
@@ -632,7 +639,7 @@ impl EvaluateEffect for super::Player {
 impl EvaluateEffect for Value {
     type Value = usize;
 
-    fn evaluate_with_context(&self, ctx: &mut EvaluateContext, game: &Game) -> Self::Value {
+    fn evaluate_with_context(&self, ctx: &EvaluateContext, game: &Game) -> Self::Value {
         match self {
             Value::Count(cards) => {
                 let cards = cards.evaluate_with_context(ctx, game);
@@ -641,13 +648,10 @@ impl EvaluateEffect for Value {
             Value::Number(number) => number.0,
             Value::Var(var) => {
                 match ctx.variables.get(&var.0).unwrap_or_else(|| {
-                    panic!(
-                        "the variable should exist: {:?} - variables: {:?}",
-                        var, ctx.variables
-                    )
+                    panic!("the variable should exist: {:?} - ctx: {:?}", var, ctx)
                 }) {
                     LetValue::Value(value) => *value,
-                    _ => panic!("wrong value: {:?} - variables: {:?}", var, ctx.variables),
+                    _ => panic!("wrong value: {:?} - ctx: {:?}", var, ctx),
                 }
             }
         }
@@ -657,7 +661,7 @@ impl EvaluateEffect for Value {
 impl EvaluateEffect for super::Zone {
     type Value = (Player, Zone);
 
-    fn evaluate_with_context(&self, ctx: &mut EvaluateContext, _game: &Game) -> Self::Value {
+    fn evaluate_with_context(&self, ctx: &EvaluateContext, _game: &Game) -> Self::Value {
         let player = ctx.active_player.expect("there should be an active player");
         let opponent = match player {
             Player::One => Player::Two,
