@@ -66,7 +66,7 @@ impl ParseTokens for Var {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Number(pub u32);
+pub struct Number(pub usize);
 
 impl From<Number> for Tokens {
     fn from(value: Number) -> Self {
@@ -129,7 +129,7 @@ impl<T: ParseTokens + Debug> ParseTokens for Let<T> {
 pub enum Action {
     // add_global_mod <mod> <life_time> -> action
     #[holo_ucg(token = "add_global_mod")]
-    AddGlobalModifier(Modifier, LifeTime),
+    AddGlobalModifier(Player, Modifier, LifeTime),
     // add_mod <[card_ref]> <mod> <life_time> -> <action>
     #[holo_ucg(token = "add_mod")]
     AddModifier(CardReferences, Modifier, LifeTime),
@@ -151,6 +151,9 @@ pub enum Action {
     // let <$var> = <condition> -> <action>
     #[holo_ucg(transparent)]
     LetCondition(Let<Condition>),
+    // let <$var> = <select> -> <action>
+    #[holo_ucg(transparent)]
+    LetSelect(Let<LetValue>),
     // let <$var> = <value> -> <action>
     #[holo_ucg(transparent)]
     LetValue(Let<Value>),
@@ -160,9 +163,6 @@ pub enum Action {
     // reveal <[card_ref]> -> <action>
     #[holo_ucg(token = "reveal")]
     Reveal(CardReferences),
-    // roll_dice -> <action> $_dice_value
-    #[holo_ucg(token = "roll_dice")]
-    RollDice,
     // send_to <zone> <[card_ref]> -> <action>
     #[holo_ucg(token = "send_to")]
     SendTo(Zone, CardReferences),
@@ -213,18 +213,6 @@ pub enum CardReferences {
     // from_zone_top <value> <zone> -> <[card_ref]>
     #[holo_ucg(token = "from_zone_top")]
     FromZoneTop(Box<Value>, Zone),
-    // from_zone_bottom <value> <zone> -> <[card_ref]>
-    #[holo_ucg(token = "from_zone_bottom")]
-    FromZoneBottom(Box<Value>, Zone),
-    // select_any <[card_ref]> <condition> -> <[card_ref]> $_leftovers
-    #[holo_ucg(token = "select_any")]
-    SelectAny(Box<CardReferences>, Box<Condition>),
-    // select_one <[card_ref]> <condition> -> <[card_ref]> $_leftovers
-    #[holo_ucg(token = "select_one")]
-    SelectOne(Box<CardReferences>, Box<Condition>),
-    // select_up_to <value> <[card_ref]> <condition> -> <[card_ref]> $_leftovers
-    #[holo_ucg(token = "select_up_to")]
-    SelectUpTo(Box<Value>, Box<CardReferences>, Box<Condition>),
     // this_card -> <[card_ref]>
     #[holo_ucg(token = "this_card")]
     ThisCard,
@@ -306,7 +294,7 @@ pub enum Condition {
     IsSupportLimited,
     // <value> <= <value> -> <condition>
     #[holo_ucg(infix = "<=")]
-    LessThanEuqals(Value, Value),
+    LessThanEquals(Value, Value),
     // not <condition> -> <condition>
     #[holo_ucg(token = "not")]
     Not(Box<Condition>),
@@ -325,6 +313,25 @@ pub enum Condition {
     // yours -> <condition>
     #[holo_ucg(token = "yours")]
     Yours,
+}
+
+#[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
+pub enum LetValue {
+    // roll_dice -> <value>
+    #[holo_ucg(token = "roll_dice")]
+    RollDice,
+    // select_any <[card_ref]> <condition> -> <[card_ref]> $_leftovers
+    #[holo_ucg(token = "select_any")]
+    SelectAny(Box<CardReferences>, Box<Condition>),
+    // select_one <[card_ref]> <condition> -> <[card_ref]> $_leftovers
+    #[holo_ucg(token = "select_one")]
+    SelectOne(Box<CardReferences>, Box<Condition>),
+    // select_number_between <value> <value> -> <value>
+    #[holo_ucg(token = "select_number_between")]
+    SelectNumberBetween(Box<Value>, Box<Value>),
+    // select_up_to <value> <[card_ref]> <condition> -> <[card_ref]> $_leftovers
+    #[holo_ucg(token = "select_up_to")]
+    SelectUpTo(Box<Value>, Box<CardReferences>, Box<Condition>),
 }
 
 #[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
@@ -367,10 +374,10 @@ pub enum Modifier {
 
 #[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
 pub enum Player {
-    // you -> <zone>
+    // you -> <player>
     #[holo_ucg(token = "you")]
     You,
-    // opponent -> <zone>
+    // opponent -> <player>
     #[holo_ucg(token = "opponent")]
     Opponent,
 }
@@ -383,9 +390,6 @@ pub enum Value {
     // 123 -> <value>
     #[holo_ucg(transparent)]
     Number(Number),
-    // select_number_between <value> <value> -> <value>
-    #[holo_ucg(token = "select_number_between")]
-    SelectNumberBetween(Box<Value>, Box<Value>),
     // <$var> -> <value>
     #[holo_ucg(transparent)]
     Var(Var),
@@ -414,6 +418,9 @@ pub enum Zone {
     // main_deck -> <zone>
     #[holo_ucg(token = "main_deck")]
     MainDeck,
+    // main_stage -> <zone>
+    #[holo_ucg(token = "main_stage")]
+    MainStage,
     // opponent_back_stage -> <zone>
     #[holo_ucg(token = "opponent_back_stage")]
     OpponentBackStage,
@@ -426,202 +433,6 @@ pub enum Zone {
 }
 
 //////////////////////////////////////
-
-// #[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
-// pub enum TargetPlayer {
-//     #[holo_ucg(token = "self")]
-//     CurrentPlayer,
-//     #[holo_ucg(token = "opponent")]
-//     Opponent,
-//     #[holo_ucg(transparent)]
-//     Var(Var),
-// }
-
-// #[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
-// pub enum TargetPlayers {
-//     // one player
-//     #[holo_ucg(token = "self")]
-//     CurrentPlayer,
-//     #[holo_ucg(token = "opponent")]
-//     Opponent,
-//     // many players
-//     #[holo_ucg(token = "all_players")]
-//     AllPlayers,
-
-//     #[holo_ucg(infix = "with")]
-//     With(Box<TargetPlayers>, Attribute), // TODO not sure about tag, should be condition (player)
-//     #[holo_ucg(transparent)]
-//     Var(Var),
-// }
-
-// #[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
-// pub enum TargetCard {
-//     #[holo_ucg(token = "self")]
-//     CurrentCard,
-//     #[holo_ucg(token = "oshi")]
-//     Oshi,
-//     #[holo_ucg(token = "center_member")]
-//     CenterHoloMember,
-//     #[holo_ucg(token = "collab_member")]
-//     CollabHoloMember,
-//     #[holo_ucg(token = "select_member")]
-//     SelectMember(Box<TargetCards>),
-
-//     #[holo_ucg(transparent)]
-//     Var(Var),
-// }
-
-// #[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
-// pub enum TargetCards {
-//     // one card
-//     #[holo_ucg(token = "self")]
-//     CurrentCard,
-//     #[holo_ucg(token = "oshi")]
-//     Oshi,
-//     #[holo_ucg(token = "center_member")]
-//     CenterHoloMember,
-//     #[holo_ucg(token = "collab_member")]
-//     CollabHoloMember,
-//     #[holo_ucg(token = "select_member")]
-//     SelectMember(Box<TargetCards>),
-//     // many cards
-//     #[holo_ucg(token = "main_stage_members")]
-//     MainStageMembers,
-//     #[holo_ucg(token = "back_stage_members")]
-//     BackStageMembers,
-//     #[holo_ucg(token = "stage_members")]
-//     StageMembers,
-//     #[holo_ucg(token = "attached_cheers")]
-//     AttachedCheers,
-
-//     #[holo_ucg(token = "select_cheers_up_to")]
-//     SelectCheersUpTo(Box<Value>, Box<TargetCards>),
-//     #[holo_ucg(token = "cheers_in_archive")]
-//     CheersInArchive,
-//     #[holo_ucg(infix = "with")]
-//     With(Box<TargetCards>, Attribute),
-//     #[holo_ucg(transparent)]
-//     Var(Var),
-// }
-
-// #[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
-// pub enum Value {
-//     #[holo_ucg(token = "for")]
-//     For(TargetCards, Box<Value>),
-//     #[holo_ucg(token = "get")]
-//     Get(Property),
-//     #[holo_ucg(transparent)]
-//     Number(Number),
-//     #[holo_ucg(transparent)]
-//     Var(Var),
-//     #[holo_ucg(infix = "+")]
-//     Add(Box<Value>, Box<Value>),
-//     #[holo_ucg(infix = "-")]
-//     Subtract(Box<Value>, Box<Value>),
-//     #[holo_ucg(infix = "*")]
-//     Multiply(Box<Value>, Box<Value>),
-//     #[holo_ucg(token = "select_dice_number")]
-//     SelectDiceNumber,
-//     #[holo_ucg(token = "roll_dice")]
-//     RollDice,
-//     #[holo_ucg(token = "all")]
-//     All,
-// }
-
-// #[derive(HoloUcgEffect, Debug, Clone, Copy, PartialEq, Eq)]
-// pub enum DamageModifier {
-//     #[holo_ucg(token = "none")]
-//     None,
-//     #[holo_ucg(token = "plus")]
-//     Plus(Number),
-//     #[holo_ucg(token = "minus")]
-//     Minus(Number),
-//     #[holo_ucg(token = "times")]
-//     Times(Number),
-// }
-
-// #[derive(HoloUcgEffect, Debug, Clone, Copy, PartialEq, Eq)]
-// pub enum Attribute {
-//     // colors
-//     #[holo_ucg(token = "color_white")]
-//     ColorWhite,
-//     #[holo_ucg(token = "color_green")]
-//     ColorGreen,
-//     #[holo_ucg(token = "color_blue")]
-//     ColorBlue,
-//     #[holo_ucg(token = "color_red")]
-//     ColorRed,
-//     #[holo_ucg(token = "color_purple")]
-//     ColorPurple,
-//     #[holo_ucg(token = "color_yellow")]
-//     ColorYellow,
-//     // stages
-//     #[holo_ucg(token = "level_debut")]
-//     LevelDebut,
-//     #[holo_ucg(token = "level_first")]
-//     LevelFirst,
-//     #[holo_ucg(token = "level_second")]
-//     LevelSecond,
-//     // names
-//     #[holo_ucg(token = "name_azki")]
-//     NameAzki,
-// }
-
-// #[derive(HoloUcgEffect, Debug, Clone, Copy, PartialEq, Eq)]
-// pub enum Property {
-//     #[holo_ucg(token = "hp")]
-//     HealthPoint,
-//     #[holo_ucg(token = "r_cost")]
-//     RetreatCost,
-// }
-
-// #[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
-// pub enum Buff {
-//     #[holo_ucg(token = "more_dmg")]
-//     MoreDamage(Value),
-// }
-
-// #[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
-// pub enum Debuff {
-//     #[holo_ucg(token = "less_def")]
-//     LessDefense(Value),
-//     #[holo_ucg(token = "less_atk")]
-//     LessAttack(Value),
-// }
-
-// #[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
-// pub enum Condition {
-//     #[holo_ucg(token = "always")]
-//     Always,
-//     #[holo_ucg(token = "true")]
-//     True,
-//     #[holo_ucg(token = "false")]
-//     False,
-//     #[holo_ucg(infix = "==")]
-//     Equals(Value, Value),
-//     #[holo_ucg(infix = "has")]
-//     Has(TargetCard, Attribute),
-//     #[holo_ucg(infix = "have")]
-//     Have(TargetCards, Attribute),
-//     #[holo_ucg(infix = "!=")]
-//     NotEquals(Value, Value),
-//     #[holo_ucg(infix = "and")]
-//     And(Box<Condition>, Box<Condition>),
-//     #[holo_ucg(infix = "or")]
-//     Or(Box<Condition>, Box<Condition>),
-
-//     #[holo_ucg(token = "is_odd")]
-//     IsOdd(Value),
-//     #[holo_ucg(token = "is_even")]
-//     IsEven(Value),
-
-//     #[holo_ucg(token = "once_per_turn")]
-//     OncePerTurn,
-//     #[holo_ucg(token = "once_per_game")]
-//     OncePerGame,
-//     #[holo_ucg(token = "is_holo_member")]
-//     IsHoloMember,
-// }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Trigger {

@@ -41,6 +41,8 @@ pub enum ModifierKind {
     PreventLimitedSupport,
     PreventBatonPass,
     SkipStep(Step),
+    MoreDamage(usize),
+    NextDiceRoll(usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,7 +130,7 @@ impl Game {
                 .get(player)
                 .into_iter()
                 .flatten()
-                .filter(move |(z, _)| *z == zone || *z == Zone::All)
+                .filter(move |(z, _)| z.includes(zone))
                 .map(|(_, b)| b),
         )
     }

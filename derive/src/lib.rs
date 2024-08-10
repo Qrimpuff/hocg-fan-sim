@@ -353,7 +353,7 @@ fn ser_de_token_for_enum_impl(ast: DeriveInput) -> proc_macro2::TokenStream {
                     return Err(crate::card_effects::error::Error::ExpectedToken);
                 }
 
-                println!("{:?} - {:?}", #str_enum_name, tokens);
+                // println!("{:?} - {:?}", #str_enum_name, tokens);
 
                 #de_variants_infix2
                 #de_variants_tokens2

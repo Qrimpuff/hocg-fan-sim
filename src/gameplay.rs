@@ -2,6 +2,9 @@ use std::fmt::Display;
 use std::num::NonZeroUsize;
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
+use crate::evaluate::EvaluateEffect;
+use crate::Condition;
+
 use super::cards::*;
 use super::modifiers::*;
 use iter_tools::Itertools;
@@ -151,6 +154,22 @@ impl Game {
     pub fn board_for_card_mut(&mut self, card: CardRef) -> &mut GameBoard {
         let player = self.player_for_card(card);
         self.board_mut(player)
+    }
+
+    pub fn group_by_player_and_zone(
+        &self,
+        cards: Vec<CardRef>,
+    ) -> HashMap<(Player, Zone), Vec<CardRef>> {
+        let mut map: HashMap<_, Vec<_>> = HashMap::new();
+        for card in cards {
+            let player = self.player_for_card(card);
+            let zone = self
+                .board(player)
+                .find_card_zone(card)
+                .expect("card should be in zone");
+            map.entry((player, zone)).or_default().push(card);
+        }
+        map
     }
 
     pub fn need_mulligan(&self, player: &GameBoard) -> bool {
@@ -1032,6 +1051,36 @@ impl Game {
             .prompt_choice("choose target for art:", targets)
             .card
     }
+
+    pub fn prompt_for_select(
+        &mut self,
+        cards: Vec<CardRef>,
+        condition: Condition,
+        min: usize,
+        max: usize,
+    ) -> Vec<CardRef> {
+        let choices: Vec<_> = cards
+            .into_iter()
+            .filter(|c| {
+                let cond = condition.evaluate_with_card(self, *c);
+                if !cond {
+                    println!("viewed: {}", CardDisplay::new(*c, self))
+                }
+                cond
+            })
+            .map(|c| CardDisplay::new(c, self))
+            .collect();
+
+        if !choices.is_empty() {
+            self.prompter
+                .prompt_multi_choices("choose cards:", choices, min, max)
+                .into_iter()
+                .map(|c| c.card)
+                .collect()
+        } else {
+            vec![]
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1105,6 +1154,9 @@ impl GameBoard {
     pub fn is_attached_to(&self, attachment: CardRef, card: CardRef) -> bool {
         self.attachments.get(&attachment) == Some(&card)
     }
+    pub fn attached_to(&self, attachment: CardRef) -> Option<CardRef> {
+        self.attachments.get(&attachment).copied()
+    }
 
     pub fn attach_to_card(&mut self, attachment: CardRef, card: CardRef) {
         let current_zone = self.find_card_zone(attachment);
@@ -1118,15 +1170,28 @@ impl GameBoard {
     }
 
     pub fn remove_attachment(&mut self, attachment: CardRef) {
-        self.send_to_zone(attachment, Zone::Archive);
+        self.send_to_zone(
+            attachment,
+            Zone::Archive,
+            Zone::Archive.default_add_location(),
+        );
     }
     pub fn remove_many_attachments(&mut self, attachments: impl IntoIterator<Item = CardRef>) {
-        self.send_many_to_zone(attachments, Zone::Archive);
+        self.send_many_to_zone(
+            attachments,
+            Zone::Archive,
+            Zone::Archive.default_add_location(),
+        );
     }
 
-    pub fn send_all_attachments_to_zone(&mut self, card: CardRef, target_zone: Zone) {
+    pub fn send_all_attachments_to_zone(
+        &mut self,
+        card: CardRef,
+        target_zone: Zone,
+        location: ZoneAddLocation,
+    ) {
         let attached = self.attachments(card);
-        self.send_many_to_zone(attached, target_zone)
+        self.send_many_to_zone(attached, target_zone, location)
     }
 
     /// Mainly used for Bloom
@@ -1157,14 +1222,20 @@ impl GameBoard {
             .collect()
     }
 
-    pub fn send_to_zone(&mut self, card: CardRef, target_zone: Zone) {
+    pub fn send_to_zone(&mut self, card: CardRef, target_zone: Zone, location: ZoneAddLocation) {
         let current_zone = self.find_card_zone(card);
         if let Some(zone) = current_zone {
             self.get_zone_mut(zone).remove_card(card);
-            self.get_zone_mut(target_zone).add_top_card(card);
+            match location {
+                ZoneAddLocation::Top => self.get_zone_mut(target_zone).add_top_card(card),
+                ZoneAddLocation::Bottom => self.get_zone_mut(target_zone).add_bottom_card(card),
+            }
         } else if self.is_attached(card) {
             self.attachments.remove(&card);
-            self.get_zone_mut(target_zone).add_top_card(card);
+            match location {
+                ZoneAddLocation::Top => self.get_zone_mut(target_zone).add_top_card(card),
+                ZoneAddLocation::Bottom => self.get_zone_mut(target_zone).add_bottom_card(card),
+            }
         }
     }
 
@@ -1172,31 +1243,65 @@ impl GameBoard {
         &mut self,
         cards: impl IntoIterator<Item = CardRef>,
         target_zone: Zone,
+        location: ZoneAddLocation,
     ) {
         cards
             .into_iter()
-            .for_each(|c| self.send_to_zone(c, target_zone));
+            .for_each(|c| self.send_to_zone(c, target_zone, location));
     }
 
-    pub fn send_from_zone(&mut self, current_zone: Zone, target_zone: Zone, amount: usize) {
+    pub fn send_from_zone(
+        &mut self,
+        current_zone: Zone,
+        target_zone: Zone,
+        location: ZoneAddLocation,
+        amount: usize,
+    ) {
         for _ in 0..amount {
             if let Some(card) = self.get_zone(current_zone).peek_top_card() {
-                self.send_to_zone(card, target_zone);
+                self.send_to_zone(card, target_zone, location);
             }
         }
     }
 
-    pub fn send_all_from_zone(&mut self, current_zone: Zone, target_zone: Zone) -> usize {
+    pub fn send_all_from_zone(
+        &mut self,
+        current_zone: Zone,
+        target_zone: Zone,
+        location: ZoneAddLocation,
+    ) -> usize {
         let amount = self.get_zone(current_zone).count();
-        self.send_from_zone(current_zone, target_zone, amount);
+        self.send_from_zone(current_zone, target_zone, location, amount);
         amount
+    }
+
+    pub fn all_cards(&self, zone: Zone) -> Vec<CardRef> {
+        let cards = match zone {
+            Zone::All => unreachable!("that unreasonable"),
+            Zone::MainDeck => self.main_deck.iter().copied().collect_vec(),
+            Zone::Oshi => self.oshi.iter().copied().collect_vec(),
+            Zone::Stage => self.stage().collect_vec(),
+            Zone::MainStage => self.main_stage().collect_vec(),
+            Zone::CenterStage => self.center_stage.iter().copied().collect_vec(),
+            Zone::Collab => self.collab.iter().copied().collect_vec(),
+            Zone::BackStage => self.back_stage.iter().copied().collect_vec(),
+            Zone::Life => self.life.iter().copied().collect_vec(),
+            Zone::CheerDeck => self.cheer_deck.iter().copied().collect_vec(),
+            Zone::HoloPower => self.holo_power.iter().copied().collect_vec(),
+            Zone::Archive => self.archive.iter().copied().collect_vec(),
+            Zone::Hand => self.hand.iter().copied().collect_vec(),
+            Zone::ActivateSupport => self.activate_support.iter().copied().collect_vec(),
+        };
+        cards
     }
 
     pub fn get_zone(&self, zone: Zone) -> &dyn ZoneControl {
         match zone {
-            Zone::All => unreachable!("a card cannot be in all zones"),
+            Zone::All => unreachable!("cards cannot be in all zones"),
             Zone::MainDeck => &self.main_deck,
             Zone::Oshi => &self.oshi,
+            Zone::Stage => unreachable!("cards will be in the specific zone"),
+            Zone::MainStage => unreachable!("cards will be in the specific zone"),
             Zone::CenterStage => &self.center_stage,
             Zone::Collab => &self.collab,
             Zone::BackStage => &self.back_stage,
@@ -1211,9 +1316,11 @@ impl GameBoard {
 
     pub fn get_zone_mut(&mut self, zone: Zone) -> &mut dyn ZoneControl {
         match zone {
-            Zone::All => unreachable!("a card cannot be in all zones"),
+            Zone::All => unreachable!("cards cannot be in all zones"),
             Zone::MainDeck => &mut self.main_deck,
             Zone::Oshi => &mut self.oshi,
+            Zone::Stage => unreachable!("cards will be in the specific zone"),
+            Zone::MainStage => unreachable!("cards will be in the specific zone"),
             Zone::CenterStage => &mut self.center_stage,
             Zone::Collab => &mut self.collab,
             Zone::BackStage => &mut self.back_stage,
@@ -1398,6 +1505,8 @@ pub enum Zone {
     All,
     MainDeck,
     Oshi,
+    Stage,     // contains MainStage and CenterStage
+    MainStage, // contains CenterStage and Collab
     CenterStage,
     Collab,
     BackStage,
@@ -1410,9 +1519,46 @@ pub enum Zone {
 }
 
 impl Zone {
-    pub fn is_stage(&self) -> bool {
-        *self == Zone::CenterStage || *self == Zone::Collab || *self == Zone::BackStage
+    pub fn includes(&self, zone: Zone) -> bool {
+        if *self == zone {
+            return true;
+        }
+        match self {
+            Zone::All => true,
+            Zone::Stage => matches!(
+                zone,
+                Zone::MainStage | Zone::CenterStage | Zone::Collab | Zone::BackStage
+            ),
+            Zone::MainStage => matches!(zone, Zone::CenterStage | Zone::Collab),
+            _ => false,
+        }
     }
+
+    pub fn default_add_location(&self) -> ZoneAddLocation {
+        use ZoneAddLocation::*;
+        match self {
+            Zone::All => unreachable!("cannot add to all zone"),
+            Zone::MainDeck => Bottom,
+            Zone::Oshi => Top,
+            Zone::Stage => unreachable!("cannot add to stage"),
+            Zone::MainStage => unreachable!("cannot add to main stage"),
+            Zone::CenterStage => Top,
+            Zone::Collab => Top,
+            Zone::BackStage => Bottom,
+            Zone::Life => Top,
+            Zone::CheerDeck => Bottom,
+            Zone::HoloPower => Top,
+            Zone::Archive => Top,
+            Zone::Hand => Bottom,
+            Zone::ActivateSupport => Top,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum ZoneAddLocation {
+    Top,
+    Bottom,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -1592,6 +1738,8 @@ impl Prompter for RandomPrompter {
     ) -> Vec<T> {
         println!("choosing random choices for: {text}");
         self.print_choices(&choices);
+
+        let max = max.min(choices.len());
 
         let c = choices
             .into_iter()

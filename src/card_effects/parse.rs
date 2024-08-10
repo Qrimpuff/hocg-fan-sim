@@ -43,7 +43,7 @@ impl TakeString for [Tokens] {
     fn take_string(&self) -> Result<(&String, &[Tokens])> {
         let t = self.first().ok_or(Error::ExpectedToken)?;
         if let Tokens::Token(s) = t {
-            println!("take_string - {:?}", (s, &self[1..]));
+            // println!("take_string - {:?}", (s, &self[1..]));
             return Ok((s, &self[1..]));
         }
         Err(Error::ExpectedString)
@@ -57,9 +57,9 @@ pub trait ParseTokens: Debug + Sized {
     fn take_param<T: ParseTokens + Debug>(tokens: &[Tokens]) -> Result<(T, &[Tokens])> {
         let (ctx, is_sub_ctx) = Self::get_tokens_context(tokens)?;
 
-        println!("take_param - before - {:?}", &ctx);
+        // println!("take_param - before - {:?}", &ctx);
         let t = T::parse_tokens(ctx)?;
-        println!("take_param - after - {:?}", &t);
+        // println!("take_param - after - {:?}", &t);
 
         if is_sub_ctx {
             Ok((t.0, &tokens[1..]))

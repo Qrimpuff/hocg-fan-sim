@@ -214,7 +214,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                                 <card that sent the event> -> $_event_from
 
                                 trigger:
-                                    before roll_dice
+                                    before let $roll = roll_dice
                                 condition:
                                     $_event_from all is_member and yours
 
@@ -229,7 +229,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                             ".parse_effect().expect("hSD01-002"),
                             effect: r"
                                 let $num = select_number_between 1 6
-                                add_global_mod next_dice_roll $num until_removed
+                                add_global_mod you next_dice_roll $num until_removed
                             ".parse_effect().expect("hSD01-002"),
                         },
                         OshiSkill {
@@ -507,7 +507,8 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                                 let $choice = select_one from_zone holo_power any
                                 reveal $choice
                                 send_to hand $choice
-                                send_to holo_power select_one from_zone hand any
+                                let $hand = select_one from_zone hand any
+                                send_to holo_power $hand
                             ".parse_effect().expect("hSD01-007"),
                         }],
                         arts: vec![HoloMemberArt {
@@ -580,18 +581,18 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                                 send_to <zone> <[card_ref]> -> <action>
                                 from_zone_top <value> <zone> -> <[card_ref]>
                                 this_card -> <card_ref>
-                                roll_dice -> <mut value>
+                                let $roll = roll_dice -> <mut value>
                                 attach_cards <[card_ref]> <card_ref>
 
 
-                                roll_dice
-                                if $_dice_value <= 4 and exist from_zone back_stage (
+                                let $roll = roll_dice
+                                if $roll <= 4 and exist from_zone back_stage (
                                     let $cheer = from_zone_top 1 cheer_deck
                                     reveal $cheer
                                     let $back_mem = select_one from_zone back_stage is_member
                                     attach_cards $cheer $back_mem
                                 )
-                                if $_dice_value == 1 (
+                                if $roll == 1 (
                                     if optional (
                                         send_to back_stage this_card
                                     )
@@ -599,14 +600,14 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                              */
                             condition: vec![],
                             effect: r"
-                                roll_dice
-                                if (($_dice_value <= 4) and exist from_zone back_stage) (
+                                let $roll = roll_dice
+                                if (($roll <= 4) and exist from_zone back_stage) (
                                     let $cheer = from_zone_top 1 cheer_deck
                                     reveal $cheer
                                     let $back_mem = select_one from_zone back_stage is_member
                                     attach_cards $cheer $back_mem
                                 )
-                                if $_dice_value == 1 (
+                                if $roll == 1 (
                                     if optional (
                                         send_to back_stage this_card
                                     )
@@ -717,23 +718,23 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                                 
                                 add_mod <[card_ref]> <mod> <life_time> -> <action>
                                 this_card -> <card_ref>
-                                roll_dice -> <mut value>
+                                let $roll = roll_dice -> <mut value>
 
-                                roll_dice
-                                if is_odd $_dice_value (
+                                let $roll = roll_dice
+                                if is_odd $roll (
                                     add_mod this_card more_dmg 50 this_art
                                 )
-                                if $_dice_value == 1 (
+                                if $roll == 1 (
                                     add_mod this_card more_dmg 50 this_art
                                 )
                              */
                             condition: vec![],
                             effect: r"
-                                roll_dice
-                                if is_odd $_dice_value (
+                                let $roll = roll_dice
+                                if is_odd $roll (
                                     add_mod this_card more_dmg 50 this_art
                                 )
-                                if $_dice_value == 1 (
+                                if $roll == 1 (
                                     add_mod this_card more_dmg 50 this_art
                                 )
                             ".parse_effect().expect("hSD01-011"),
@@ -823,28 +824,28 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                                 -----------------------------------------
 
                                 this_card -> <card_ref>
-                                roll_dice -> <mut value>
+                                let $roll = roll_dice -> <mut value>
                                 from_zone_top <value> <zone> -> <[card_ref]>
 
-                                roll_dice
-                                if is_odd $_dice_value (
+                                let $roll = roll_dice
+                                if is_odd $roll (
                                     let $cheer = from_zone_top 1 cheer_deck
                                     reveal $cheer
                                     attach_cards $cheer this_card
                                 )
-                                if is_even $_dice_value (
+                                if is_even $roll (
                                     draw 1
                                 )
                              */
                             condition: vec![],
                             effect: r"
-                                roll_dice
-                                if is_odd $_dice_value (
+                                let $roll = roll_dice
+                                if is_odd $roll (
                                     let $cheer = from_zone_top 1 cheer_deck
                                     reveal $cheer
                                     attach_cards $cheer this_card
                                 )
-                                if is_even $_dice_value (
+                                if is_even $roll (
                                     draw 1
                                 )
                             ".parse_effect().expect("hSD01-013"),
@@ -961,7 +962,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         card_number: "hSD01-016".into(),
                         name: "Harusaki Nodoka".into(),
                         kind: SupportKind::Staff,
-                        limited_use: true,
+                        limited: true,
                         text: "Draw 3 cards.".into(),
                         /*
                             TODO effect syntax
@@ -985,7 +986,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         card_number: "hSD01-017".into(),
                         name: "Mane-chan".into(),
                         kind: SupportKind::Staff,
-                        limited_use: true,
+                        limited: true,
                         text: "You can use this card only if you have 1 or more card in hand, not including this card.\n\n Shuffle your hand into your deck, then draw 5 cards.".into(),
                         /*
                             TODO effect syntax
@@ -1032,7 +1033,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         card_number: "hSD01-018".into(),
                         name: "Second PC".into(),
                         kind: SupportKind::Item,
-                        limited_use: false,
+                        limited: false,
                         text: "Look at the top 5 cards of your deck. You may reveal a LIMITED Support card from among them and put it into your hand. Put the rest on the bottom of your deck in any order.".into(),
                         /*
                             TODO effect syntax
@@ -1072,7 +1073,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         card_number: "hSD01-019".into(),
                         name: "Amazing PC".into(),
                         kind: SupportKind::Item,
-                        limited_use: true,
+                        limited: true,
                         text: "You can use this card only if you Archive 1 Cheer card attached to your holomem.\n\n Search your deck for a non-Buzz 1st or 2nd holomem, reveal it, and put it into your hand. Then shuffle your deck.".into(),
                         /*
                             TODO effect syntax
@@ -1128,20 +1129,20 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         card_number: "hSD01-020".into(),
                         name: "hololive Fan Circle".into(),
                         kind: SupportKind::Event,
-                        limited_use: false,
+                        limited: false,
                         text: "Roll a six-sided die: If the result is 3 or greater, attach a Cheer card from your Archive to one of your holomem.".into(),
                         /*
                             TODO effect syntax
 
                             ----------------------------
 
-                            roll_dice -> <action> $_dice_value
+                            let $roll = roll_dice -> <action> $roll
                             select_one <[card_ref]> <condition> -> <[card_ref]> $_leftovers
                             from_zone <zone> -> <[card_ref]>
                             attach_cards <[card_ref]> <card_ref> -> <action>
 
-                            roll_dice
-                            if $_dice_value >= 3 (
+                            let $roll = roll_dice
+                            if $roll >= 3 (
                                 let $cheer = select_one from_zone archive is_cheer
                                 let $mem = select_one from_zone stage is_member
                                 attach_cards $cheer $mem
@@ -1152,11 +1153,13 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         triggers: vec![],
                         condition: vec![],
                         effect: r"
-                                roll_dice
-                                if $_dice_value >= 3 (
+                                let $roll = roll_dice
+                                if $roll >= 3 (
                                     let $cheer = select_one from_zone archive is_cheer
-                                    let $mem = select_one from_zone stage is_member
-                                    attach_cards $cheer $mem
+                                    if exist $cheer (
+                                        let $mem = select_one from_zone stage is_member
+                                        attach_cards $cheer $mem
+                                    )
                                 )
                             ".parse_effect().expect("hSD01-020"),
                         rarity: Rarity::Common,
@@ -1170,7 +1173,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         card_number: "hSD01-021".into(),
                         name: "First Gravity".into(),
                         kind: SupportKind::Event,
-                        limited_use: true,
+                        limited: true,
                         text: "You can use this card only if you have 6 or fewer cards in hand (not including this card). Look at the top 4 cards of your deck.\n\n You may reveal any number of [Tokino Sora] or [AZKi] holomem from among them and put the revealed cards into your hand. Put the rest on the bottom of your deck in any order.".into(),
                         /*
                             TODO effect syntax

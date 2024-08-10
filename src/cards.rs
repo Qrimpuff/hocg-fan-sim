@@ -204,7 +204,10 @@ impl GlobalLibrary {
                 }
                 Card::Support(s) => {
                     if let Err(e) = serialization_round_trip(s.attachment_condition.clone()) {
-                        eprintln!("{}: {} - attachment_condition - {}", s.card_number, s.name, e);
+                        eprintln!(
+                            "{}: {} - attachment_condition - {}",
+                            s.card_number, s.name, e
+                        );
                         has_errors = true;
                     }
                     if let Err(e) = serialization_round_trip(s.condition.clone()) {
@@ -235,6 +238,53 @@ pub enum Card {
     HoloMember(HoloMemberCard),
     Support(SupportCard),
     Cheer(CheerCard),
+}
+
+impl Card {
+    pub fn is_attribute(&self, attribute: HoloMemberExtraAttribute) -> bool {
+        match self {
+            Card::HoloMember(m) => m.attributes.contains(&attribute),
+            _ => false,
+        }
+    }
+
+    pub fn is_color(&self, color: Color) -> bool {
+        match self {
+            Card::OshiHoloMember(o) => o.color == color,
+            Card::HoloMember(m) => m.colors.contains(&color),
+            Card::Support(_s) => false,
+            Card::Cheer(c) => c.color == color,
+        }
+    }
+
+    pub fn is_cheer(&self) -> bool {
+        matches!(self, Card::Cheer(_))
+    }
+
+    pub fn is_level(&self, level: HoloMemberLevel) -> bool {
+        match self {
+            Card::HoloMember(m) => m.level == level,
+            _ => false,
+        }
+    }
+
+    pub fn is_member(&self) -> bool {
+        matches!(self, Card::HoloMember(_))
+    }
+
+    pub fn is_named(&self, name: &str) -> bool {
+        match self {
+            Card::HoloMember(m) => m.names().contains(&name.to_string()),
+            _ => false,
+        }
+    }
+
+    pub fn is_support_limited(&self) -> bool {
+        match self {
+            Card::Support(s) => s.limited,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -553,7 +603,7 @@ pub struct SupportCard {
     pub card_number: CardNumber,
     pub name: String,
     pub kind: SupportKind,
-    pub limited_use: bool, // TODO limited is needed, but not sure how
+    pub limited: bool, // TODO limited is needed, but not sure how
     pub text: String,
     pub attachment_condition: CardEffectCondition, // used by Fan
     pub triggers: CardEffectTrigger,
@@ -566,7 +616,7 @@ pub struct SupportCard {
 
 impl SupportCard {
     pub fn can_use_support(&self, card: CardRef, game: &Game) -> bool {
-        if self.limited_use && game.has_modifier(card, PreventLimitedSupport) {
+        if self.limited && game.has_modifier(card, PreventLimitedSupport) {
             return false;
         }
 

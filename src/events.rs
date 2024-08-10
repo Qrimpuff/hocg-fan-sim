@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+
 use crate::{
     evaluate::{EvaluateEffect, EvaluateEffectMut},
     gameplay::{
         CardRef, Game, GameContinue, GameOutcome, GameOverReason, GameResult, Player, Rps, Step,
-        Zone, MAX_MEMBERS_ON_STAGE,
+        Zone, ZoneAddLocation, MAX_MEMBERS_ON_STAGE,
     },
     modifiers::{DamageMarkers, LifeTime, Modifier, ModifierKind, ModifierRef},
     CardNumber, HoloMemberArtDamage, HoloMemberExtraAttribute, Loadout, OshiSkillKind,
@@ -406,6 +408,7 @@ impl Game {
                 from_zone: Zone::Hand,
                 cards: hand.peek_top_cards(hand.count()),
                 to_zone: Zone::MainDeck,
+                to_zone_location: Zone::MainDeck.default_add_location(),
             }
             .into(),
         )
@@ -461,6 +464,7 @@ impl Game {
                 from_zone: Zone::Hand,
                 cards: vec![card],
                 to_zone: Zone::CenterStage,
+                to_zone_location: Zone::CenterStage.default_add_location(),
             }
             .into(),
         )
@@ -477,6 +481,7 @@ impl Game {
                 from_zone: Zone::BackStage,
                 cards: vec![card],
                 to_zone: Zone::CenterStage,
+                to_zone_location: Zone::CenterStage.default_add_location(),
             }
             .into(),
         )
@@ -497,6 +502,7 @@ impl Game {
                 from_zone: Zone::Hand,
                 cards,
                 to_zone: Zone::BackStage,
+                to_zone_location: Zone::BackStage.default_add_location(),
             }
             .into(),
         )
@@ -515,6 +521,7 @@ impl Game {
                     from_zone: Zone::MainDeck,
                     cards: deck.peek_top_cards(amount),
                     to_zone: Zone::HoloPower,
+                    to_zone_location: Zone::HoloPower.default_add_location(),
                 }
                 .into(),
             )?;
@@ -539,6 +546,7 @@ impl Game {
                 from_zone: Zone::HoloPower,
                 cards: power.peek_top_cards(amount),
                 to_zone: Zone::Archive,
+                to_zone_location: Zone::Archive.default_add_location(),
             }
             .into(),
         )
@@ -562,6 +570,7 @@ impl Game {
                 from_zone: Zone::Collab,
                 cards: vec![card],
                 to_zone: Zone::BackStage,
+                to_zone_location: Zone::BackStage.default_add_location(),
             }
             .into(),
         )
@@ -578,6 +587,7 @@ impl Game {
                 from_zone: Zone::CenterStage,
                 cards: vec![card],
                 to_zone: Zone::BackStage,
+                to_zone_location: Zone::BackStage.default_add_location(),
             }
             .into(),
         )
@@ -611,6 +621,7 @@ impl Game {
                 from_zone: Zone::CheerDeck,
                 cards: cheers.peek_top_cards(amount),
                 to_zone: Zone::Life,
+                to_zone_location: Zone::Life.default_add_location(),
             }
             .into(),
         )
@@ -628,6 +639,67 @@ impl Game {
                     from_zone: zone,
                     cards,
                     to_zone: Zone::Archive,
+                    to_zone_location: Zone::Archive.default_add_location(),
+                }
+                .into(),
+            )?;
+        }
+
+        Ok(GameContinue)
+    }
+
+    pub fn send_cards_to_zone(
+        &mut self,
+        player: Player,
+        cards: Vec<CardRef>,
+        to_zone: Zone,
+        location: ZoneAddLocation,
+    ) -> GameResult {
+        if cards.is_empty() {
+            return Ok(GameContinue);
+        }
+
+        let mut from_zone: HashMap<_, Vec<_>> = HashMap::new();
+        let mut from_cards: HashMap<_, Vec<_>> = HashMap::new();
+
+        // group by card or zone
+        for card in cards {
+            if let Some(attached_to) = self.board(player).attached_to(card) {
+                from_cards.entry(attached_to).or_default().push(card);
+            } else {
+                let zone = self
+                    .board(player)
+                    .find_card_zone(card)
+                    .expect("card should be in a zone");
+                from_zone.entry(zone).or_default().push(card);
+            }
+        }
+
+        for (zone, cards) in from_zone {
+            self.send_event(
+                ZoneToZone {
+                    player,
+                    from_zone: zone,
+                    cards,
+                    to_zone,
+                    to_zone_location: location,
+                }
+                .into(),
+            )?;
+        }
+
+        for (from_card, attachments) in from_cards {
+            let from_zone = self
+                .board(player)
+                .find_card_zone(from_card)
+                .expect("card should be in a zone");
+            self.send_event(
+                AttachToZone {
+                    player,
+                    from_card: (from_zone, from_card),
+                    attachments,
+                    to_zone,
+                    to_zone_location: location,
                 }
                 .into(),
             )?;
@@ -675,10 +747,72 @@ impl Game {
                         from_zone: zone,
                         cards: vec![cheer],
                         to_zone: Zone::Archive,
+                        to_zone_location: Zone::Archive.default_add_location(),
                     }
                     .into(),
                 )?;
             }
+        }
+
+        Ok(GameContinue)
+    }
+
+    pub fn attach_cards_to_card(
+        &mut self,
+        player: Player,
+        attachments: Vec<CardRef>,
+        card: CardRef,
+    ) -> GameResult {
+        if attachments.is_empty() {
+            return Ok(GameContinue);
+        }
+
+        let to_zone = self
+            .board(player)
+            .find_card_zone(card)
+            .expect("card should be in a zone");
+        let mut from_zone: HashMap<_, Vec<_>> = HashMap::new();
+        let mut from_cards: HashMap<_, Vec<_>> = HashMap::new();
+
+        // group by card or zone
+        for card in attachments {
+            if let Some(attached_to) = self.board(player).attached_to(card) {
+                from_cards.entry(attached_to).or_default().push(card);
+            } else {
+                let zone = self
+                    .board(player)
+                    .find_card_zone(card)
+                    .expect("card should be in a zone");
+                from_zone.entry(zone).or_default().push(card);
+            }
+        }
+
+        for (zone, attachments) in from_zone {
+            self.send_event(
+                ZoneToAttach {
+                    player,
+                    from_zone: zone,
+                    attachments,
+                    to_card: (to_zone, card),
+                }
+                .into(),
+            )?;
+        }
+
+        for (from_card, attachments) in from_cards {
+            let from_zone = self
+                .board(player)
+                .find_card_zone(from_card)
+                .expect("card should be in a zone");
+            self.send_event(
+                AttachToAttach {
+                    player,
+                    from_card: (from_zone, from_card),
+                    attachments,
+                    to_card: (to_zone, card),
+                }
+                .into(),
+            )?;
         }
 
         Ok(GameContinue)
@@ -705,6 +839,7 @@ impl Game {
                 from_card: (zone, card),
                 attachments,
                 to_zone: Zone::Archive,
+                to_zone_location: Zone::Archive.default_add_location(),
             }
             .into(),
         )
@@ -1494,6 +1629,7 @@ pub struct ZoneToZone {
     pub from_zone: Zone,
     pub cards: Vec<CardRef>,
     pub to_zone: Zone,
+    pub to_zone_location: ZoneAddLocation,
 }
 impl EvaluateEvent for ZoneToZone {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1504,7 +1640,7 @@ impl EvaluateEvent for ZoneToZone {
         verify_cards_in_zone(game, self.player, self.from_zone, &self.cards);
 
         // cannot send to stage if stage is full
-        if !self.from_zone.is_stage() && self.to_zone.is_stage() {
+        if !Zone::Stage.includes(self.from_zone) && Zone::Stage.includes(self.to_zone) {
             let count = game
                 .board(self.player)
                 .stage()
@@ -1515,11 +1651,14 @@ impl EvaluateEvent for ZoneToZone {
             }
         }
 
-        game.board_mut(self.player)
-            .send_many_to_zone(self.cards.clone(), self.to_zone);
+        game.board_mut(self.player).send_many_to_zone(
+            self.cards.clone(),
+            self.to_zone,
+            self.to_zone_location,
+        );
 
         // lose attachments and buffs when leaving stage
-        if !self.to_zone.is_stage() {
+        if !Zone::Stage.includes(self.to_zone) {
             game.clear_all_damage_markers_from_many_cards(
                 self.player,
                 self.to_zone,
@@ -1594,6 +1733,7 @@ pub struct AttachToZone {
     pub from_card: (Zone, CardRef),
     pub attachments: Vec<CardRef>,
     pub to_zone: Zone,
+    pub to_zone_location: ZoneAddLocation,
 }
 impl EvaluateEvent for AttachToZone {
     fn evaluate_event(&self, game: &mut Game) -> GameResult {
@@ -1604,8 +1744,11 @@ impl EvaluateEvent for AttachToZone {
         verify_cards_in_zone(game, self.player, self.from_card.0, &[self.from_card.1]);
         verify_cards_attached(game, self.player, self.from_card.1, &self.attachments);
 
-        game.board_mut(self.player)
-            .send_many_to_zone(self.attachments.clone(), self.to_zone);
+        game.board_mut(self.player).send_many_to_zone(
+            self.attachments.clone(),
+            self.to_zone,
+            self.to_zone_location,
+        );
 
         Ok(GameContinue)
     }
@@ -1630,6 +1773,7 @@ impl EvaluateEvent for Draw {
                 from_zone: Zone::MainDeck,
                 cards: deck.peek_top_cards(self.amount),
                 to_zone: Zone::Hand,
+                to_zone_location: Zone::Hand.default_add_location(),
             }
             .into(),
         )?;
@@ -1666,6 +1810,7 @@ impl EvaluateEvent for Collab {
                 from_zone: self.card.0,
                 cards: vec![self.card.1],
                 to_zone: Zone::Collab,
+                to_zone_location: Zone::Collab.default_add_location(),
             }
             .into(),
         )?;
@@ -1702,6 +1847,7 @@ impl EvaluateEvent for LoseLives {
                     from_zone: Zone::Life,
                     cards: cheers,
                     to_zone: Zone::Archive,
+                    to_zone_location: Zone::Archive.default_add_location(),
                 }
                 .into(),
             )?;
@@ -1811,7 +1957,7 @@ impl EvaluateEvent for UseSupportCard {
             .lookup_support(self.card.1)
             .expect("only support should be allowed here");
 
-        let limited_use = sup.limited_use;
+        let limited_use = sup.limited;
         let effect = sup.effect.clone();
 
         if !sup.can_use_support(self.card.1, game) {
@@ -1825,6 +1971,7 @@ impl EvaluateEvent for UseSupportCard {
                 from_zone: self.card.0,
                 cards: vec![self.card.1],
                 to_zone: Zone::ActivateSupport,
+                to_zone_location: Zone::ActivateSupport.default_add_location(),
             }
             .into(),
         )?;
