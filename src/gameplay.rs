@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicU8;
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use crate::evaluate::{EvaluateContext, EvaluateEffect};
+use crate::events::EventSpan;
 use crate::{Condition, Trigger};
 
 use super::cards::*;
@@ -17,7 +18,7 @@ use ModifierKind::*;
 pub const STARTING_HAND_SIZE: usize = 7;
 pub const MAX_MEMBERS_ON_STAGE: usize = 6;
 
-static PRIVATE_CARD: CardRef = CardRef(NonZeroU16::MAX);
+pub static PRIVATE_CARD: CardRef = CardRef(NonZeroU16::MAX);
 static NEXT_P1_CARD_REF: AtomicU8 = AtomicU8::new(1);
 static NEXT_P2_CARD_REF: AtomicU8 = AtomicU8::new(1);
 
@@ -99,11 +100,12 @@ pub struct Game {
     pub player_2: GameBoard,
     pub active_player: Player,
     pub active_step: Step,
-    pub turn_number: usize,
+    pub turn_number: u8,
     pub zone_modifiers: HashMap<Player, Vec<(Zone, Modifier)>>,
     pub card_modifiers: HashMap<CardRef, Vec<Modifier>>,
     pub card_damage_markers: HashMap<CardRef, DamageMarkers>,
     pub prompter: RandomPrompter, // will probably be replace by 2 player send/receive channels
+    pub event_span: EventSpan,
 }
 
 impl Game {
@@ -127,6 +129,7 @@ impl Game {
             card_modifiers: HashMap::new(),
             card_damage_markers: HashMap::new(),
             prompter,
+            event_span: EventSpan::new(),
         }
     }
 
@@ -194,7 +197,7 @@ impl Game {
         // - draw 7 cards from main deck
         let mut player_draw = STARTING_HAND_SIZE;
         println!("player {player:?} draws {player_draw}");
-        self.draw_from_main_deck(player, player_draw)?;
+        self.draw_from_main_deck(None, player, player_draw)?;
 
         //   - can mulligan once for 7 cards, then any forced is -1
         //     - at 0 lose the game
@@ -214,14 +217,14 @@ impl Game {
 
             if force_mulligan && !voluntary {
                 // reveal hand
-                self.reveal_all_cards_in_zone(player, Zone::Hand)?;
+                self.reveal_all_cards_in_zone(None, player, Zone::Hand)?;
             }
 
-            self.send_full_hand_to_main_deck(player)?;
-            self.shuffle_main_deck(player)?;
+            self.send_full_hand_to_main_deck(None, player)?;
+            self.shuffle_main_deck(None, player)?;
 
             println!("player {player:?} draws {player_draw}");
-            self.draw_from_main_deck(player, player_draw)?;
+            self.draw_from_main_deck(None, player, player_draw)?;
 
             player_draw -= 1;
             if player_draw == 0 {
@@ -242,10 +245,10 @@ impl Game {
         debug!("card_map: {:?}", self.card_map);
 
         // - game setup
-        self.setup_game()?;
+        self.setup_game(None)?;
 
         // - game start
-        self.report_start_game(self.active_player)?;
+        self.report_start_game(None, self.active_player)?;
 
         Ok(GameContinue)
     }
@@ -292,7 +295,7 @@ impl Game {
         }
 
         println!("- active step: {:?}", self.active_step);
-        self.report_enter_step(self.active_player, self.active_step)?;
+        self.report_enter_step(None, self.active_player, self.active_step)?;
 
         match self.active_step {
             Step::Setup => panic!("should not setup more than once"),
@@ -308,7 +311,7 @@ impl Game {
             }
         }?;
 
-        self.report_exit_step(self.active_player, self.active_step)?;
+        self.report_exit_step(None, self.active_player, self.active_step)?;
 
         // end turn
         if self.active_step == Step::End {
@@ -322,13 +325,13 @@ impl Game {
         self.turn_number += 1;
 
         println!("active player: {:?}", self.active_player);
-        self.report_start_turn(self.active_player)?;
+        self.report_start_turn(None, self.active_player)?;
 
         Ok(GameContinue)
     }
 
     pub fn end_turn(&mut self) -> GameResult {
-        self.report_end_turn(self.active_player)?;
+        self.report_end_turn(None, self.active_player)?;
 
         Ok(GameContinue)
     }
@@ -336,13 +339,13 @@ impl Game {
     pub fn reset_step(&mut self) -> GameResult {
         // - all members from rest to active
         for mem in self.active_board().stage().collect_vec() {
-            self.remove_all_modifiers(mem, Resting)?;
+            self.remove_all_modifiers(None, mem, Resting)?;
         }
 
         // - collab to back stage in rest
         if let Some(mem) = self.active_board().collab {
-            self.add_modifier(mem, Resting, LifeTime::UntilRemoved)?;
-            self.send_from_collab_to_back_stage(self.active_player, mem)?;
+            self.add_modifier(None, mem, Resting, LifeTime::UntilRemoved)?;
+            self.send_from_collab_to_back_stage(None, self.active_player, mem)?;
         }
         // - if no center, back stage to center
         if self.active_board().center_stage.is_none() && !self.active_board().back_stage.is_empty()
@@ -350,7 +353,7 @@ impl Game {
             println!("prompt new center member");
             // TODO request (intent)
             let back = self.prompt_for_back_stage_to_center(self.active_player, false);
-            self.send_from_back_stage_to_center_stage(self.active_player, back)?;
+            self.send_from_back_stage_to_center_stage(None, self.active_player, back)?;
         }
 
         Ok(GameContinue)
@@ -367,7 +370,7 @@ impl Game {
         }
 
         // - draw 1 card from main deck
-        self.draw_from_main_deck(self.active_player, 1)?;
+        self.draw_from_main_deck(None, self.active_player, 1)?;
 
         Ok(GameContinue)
     }
@@ -375,7 +378,7 @@ impl Game {
     pub fn cheer_step(&mut self) -> GameResult {
         // - draw 1 card from cheer deck, attach it
         // TODO request (intent) select member
-        self.attach_cheers_from_zone(self.active_player, Zone::CheerDeck, 1)?;
+        self.attach_cheers_from_zone(None, self.active_player, Zone::CheerDeck, 1)?;
 
         Ok(GameContinue)
     }
@@ -386,14 +389,16 @@ impl Game {
             println!("{} cards in hand", self.active_board().hand().count());
 
             // TODO request (intent) main action, all possible actions
-            match self.prompt_for_main_action(self.active_player) {
+            let action = self.prompt_for_main_action(self.active_player);
+            debug!("ACTION = {action:?}");
+            match action {
                 MainStepAction::BackStageMember(card) => {
                     println!("- action: Back stage member");
                     // - place debut member on back stage
-                    self.send_from_hand_to_back_stage(self.active_player, vec![card])?;
+                    self.send_from_hand_to_back_stage(None, self.active_player, vec![card])?;
 
                     // cannot bloom member you just played
-                    self.add_modifier(card, PreventBloom, LifeTime::ThisTurn)?;
+                    self.add_modifier(None, card, PreventBloom, LifeTime::ThisTurn)?;
 
                     // TODO maybe register for any abilities that could trigger?
                     // TODO remove the registration once they leave the board?
@@ -405,21 +410,21 @@ impl Game {
                     //   - can't bloom on same turn as placed
                     // TODO request bloom target (intent)
                     let card = self.prompt_for_bloom(self.active_player, bloom);
-                    self.bloom_holo_member(self.active_player, bloom, card)?;
+                    self.bloom_holo_member(None, self.active_player, bloom, card)?;
                 }
                 MainStepAction::UseSupportCard(card) => {
                     println!("- action: Use support card");
                     // - use support card
                     //   - only one limited per turn
                     //   - otherwise unlimited
-                    self.use_support_card(self.active_player, card)?;
+                    self.use_support_card(None, self.active_player, card)?;
                 }
                 MainStepAction::CollabMember(card) => {
                     println!("- action: Collab member");
                     // - put back stage member in collab
                     //   - can be done on first turn?
                     //   - draw down card from deck into power zone
-                    self.send_from_back_stage_to_collab(self.active_player, card)?;
+                    self.send_from_back_stage_to_collab(None, self.active_player, card)?;
                 }
                 MainStepAction::BatonPass(card) => {
                     println!("- action: Baton pass");
@@ -437,14 +442,19 @@ impl Game {
                     // TODO request (intent) select back stage member
                     let back = self.prompt_for_back_stage_to_center(self.active_player, true);
                     // swap members
-                    self.baton_pass_center_stage_to_back_stage(self.active_player, center, back)?;
+                    self.baton_pass_center_stage_to_back_stage(
+                        None,
+                        self.active_player,
+                        center,
+                        back,
+                    )?;
                 }
                 MainStepAction::UseOshiSkill(card, i) => {
                     println!("- action: Use skill");
                     // - use oshi skill
                     //   - oshi power uses card in power zone
                     //   - once per turn / once per game
-                    self.use_oshi_skill(self.active_player, card, i)?;
+                    self.use_oshi_skill(None, self.active_player, card, i)?;
                 }
                 MainStepAction::Done => {
                     println!("- action: Done");
@@ -484,7 +494,7 @@ impl Game {
             if let Some(art_idx) = self.prompt_for_art(card) {
                 let target = self.prompt_for_art_target(op);
 
-                self.perform_art(self.active_player, card, art_idx, Some(target))?;
+                self.perform_art(None, self.active_player, card, art_idx, Some(target))?;
             }
         }
 
@@ -500,7 +510,7 @@ impl Game {
             println!("prompt new center member");
             // TODO request (intent)
             let back = self.prompt_for_back_stage_to_center(self.active_player, false);
-            self.send_from_back_stage_to_center_stage(self.active_player, back)?;
+            self.send_from_back_stage_to_center_stage(None, self.active_player, back)?;
         }
 
         Ok(GameContinue)
@@ -517,7 +527,7 @@ impl Game {
             winning_player: Some(self.active_player),
             reason,
         };
-        self.report_game_over(game_outcome)?;
+        self.report_game_over(None, game_outcome)?;
 
         Err(game_outcome)
     }

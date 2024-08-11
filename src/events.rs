@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use crate::{
-    evaluate::{EvaluateEffect, EvaluateEffectMut},
+    evaluate::{EvaluateContext, EvaluateEffect, EvaluateEffectMut},
     gameplay::{
         CardRef, Game, GameContinue, GameOutcome, GameOverReason, GameResult, Player, Rps, Step,
-        Zone, ZoneAddLocation, MAX_MEMBERS_ON_STAGE,
+        Zone, ZoneAddLocation, MAX_MEMBERS_ON_STAGE, PRIVATE_CARD,
     },
     modifiers::{DamageMarkers, LifeTime, Modifier, ModifierKind, ModifierRef},
     CardNumber, HoloMemberArtDamage, HoloMemberExtraAttribute, OshiSkillKind,
@@ -42,9 +42,15 @@ impl<'a> TriggeredEvent<'a> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Event {
+    pub origin: Option<CardRef>,
+    pub kind: EventKind,
+}
+
 #[enum_dispatch(EvaluateEvent)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Event {
+pub enum EventKind {
     // Basic events
     Setup,
     Shuffle,
@@ -243,8 +249,67 @@ pub enum IntentResponse {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventSpan {
+    pub event_origin_stack: Vec<CardRef>,
+}
+
+impl EventSpan {
+    pub fn new() -> Self {
+        Self {
+            event_origin_stack: Vec::new(),
+        }
+    }
+
+    pub fn start_span(&mut self, card: CardRef) {
+        self.event_origin_stack.push(card);
+    }
+
+    pub fn close_span(&mut self, card: CardRef) {
+        assert_eq!(Some(card), self.event_origin_stack.pop());
+    }
+
+    pub fn start_untracked_span(&mut self) {
+        self.event_origin_stack.push(PRIVATE_CARD);
+    }
+
+    pub fn close_untracked_span(&mut self) {
+        assert_eq!(Some(PRIVATE_CARD), self.event_origin_stack.pop());
+    }
+
+    pub fn current_card(&self) -> Option<CardRef> {
+        let card = self.event_origin_stack.last().copied();
+
+        if card == Some(PRIVATE_CARD) {
+            return None;
+        }
+
+        card
+    }
+    pub fn current_card_for_evaluate(&self, ctx: &EvaluateContext) -> Option<CardRef> {
+        if self.current_card() == ctx.active_card {
+            // in an effect, the last card is the current card
+            self.event_origin_stack
+                .get(self.event_origin_stack.len() - 2)
+                .copied()
+        } else {
+            // in a condition, the last card is the event card
+            self.current_card()
+        }
+    }
+}
+
 impl Game {
-    pub fn send_event(&mut self, mut event: Event) -> Result<Event, GameOutcome> {
+    pub fn send_event(
+        &mut self,
+        event_origin: Option<CardRef>,
+        event_type: EventKind,
+    ) -> Result<Event, GameOutcome> {
+        let mut event = Event {
+            origin: event_origin,
+            kind: event_type,
+        };
+
         // trigger before effects
         let before = TriggeredEvent::Before(&event);
         self.evaluate_triggers(before)?;
@@ -252,7 +317,7 @@ impl Game {
         // change the event before it happens, with modifiers from triggers
         event.adjust_event(self)?;
 
-        debug!("EVENT = {event:?}");
+        debug!("EVENT = [{:?}] {event:?}", self.event_span.current_card());
         // perform the modification to the game state
         event.evaluate_event(self)?;
 
@@ -267,15 +332,32 @@ impl Game {
     }
 
     fn evaluate_triggers(&mut self, trigger: TriggeredEvent) -> GameResult {
-        debug!("TRIGGER = {trigger:?}");
+        debug!(
+            "TRIGGER = [{:?}] {trigger:?}",
+            self.event_span.current_card()
+        );
 
-        let all_cards_on_stage = self
-            .player_1
-            .stage()
-            .map(|c| (Player::One, c))
-            .chain(self.player_2.stage().map(|c| (Player::Two, c)))
+        let current_player = self.active_player;
+        let current_player_cards_on_stage = self
+            .board(current_player)
+            .oshi()
+            .into_iter()
+            .chain(self.board(current_player).stage())
+            .map(|c| (current_player, c));
+        let opponent = self.active_player.opponent();
+        let opponent_cards_on_stage = self
+            .board(opponent)
+            .oshi()
+            .into_iter()
+            .chain(self.board(opponent).stage())
+            .map(|c| (opponent, c));
+
+        // current player activate first
+        let all_cards_on_stage = current_player_cards_on_stage
+            .chain(opponent_cards_on_stage)
             .flat_map(|(p, c)| Some(c).into_iter().chain(self.board(p).attachments(c)))
             .collect_vec();
+
         for card in all_cards_on_stage {
             let mut oshi_skill = None;
             let mut member_ability = None;
@@ -325,27 +407,28 @@ impl Game {
             // activate skill or ability
             if let Some(idx) = oshi_skill {
                 // TODO prompt for yes / no (optional)
-                self.activate_oshi_skill(card, idx)?;
+                self.activate_oshi_skill(Some(card), card, idx)?;
             }
             if let Some(idx) = member_ability {
-                self.activate_holo_member_ability(card, idx)?;
+                self.activate_holo_member_ability(Some(card), card, idx)?;
             }
             if support_ability {
-                self.activate_support_ability(card)?;
+                self.activate_support_ability(Some(card), card)?;
             }
         }
 
         Ok(GameContinue)
     }
 
-    pub fn setup_game(&mut self) -> GameResult {
-        self.send_event(Setup {}.into())?;
+    pub fn setup_game(&mut self, event_origin: Option<CardRef>) -> GameResult {
+        self.send_event(event_origin, Setup {}.into())?;
 
         Ok(GameContinue)
     }
 
-    pub fn report_rps_draw(&mut self) -> GameResult {
+    pub fn report_rps_draw(&mut self, event_origin: Option<CardRef>) -> GameResult {
         self.send_event(
+            event_origin,
             RpsOutcome {
                 winning_player: None,
             }
@@ -354,8 +437,9 @@ impl Game {
 
         Ok(GameContinue)
     }
-    pub fn report_rps_win(&mut self, player: Player) -> GameResult {
+    pub fn report_rps_win(&mut self, event_origin: Option<CardRef>, player: Player) -> GameResult {
         self.send_event(
+            event_origin,
             RpsOutcome {
                 winning_player: Some(player),
             }
@@ -364,8 +448,13 @@ impl Game {
 
         Ok(GameContinue)
     }
-    pub fn report_player_going_first(&mut self, player: Player) -> GameResult {
+    pub fn report_player_going_first(
+        &mut self,
+        event_origin: Option<CardRef>,
+        player: Player,
+    ) -> GameResult {
         self.send_event(
+            event_origin,
             PlayerGoingFirst {
                 first_player: player,
             }
@@ -375,31 +464,53 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub fn report_start_game(&mut self, active_player: Player) -> GameResult {
-        self.send_event(GameStart { active_player }.into())?;
+    pub fn report_start_game(
+        &mut self,
+        event_origin: Option<CardRef>,
+        active_player: Player,
+    ) -> GameResult {
+        self.send_event(event_origin, GameStart { active_player }.into())?;
 
         Ok(GameContinue)
     }
-    pub fn report_game_over(&mut self, game_outcome: GameOutcome) -> GameResult {
-        self.send_event(GameOver { game_outcome }.into())?;
-
-        Ok(GameContinue)
-    }
-    pub fn report_game_over_draw(&mut self) -> GameResult {
+    pub fn report_game_over(
+        &mut self,
+        event_origin: Option<CardRef>,
+        game_outcome: GameOutcome,
+    ) -> GameResult {
         self.send_event(
+            event_origin,
             GameOver {
-                game_outcome: GameOutcome {
-                    winning_player: None,
-                    reason: GameOverReason::Draw,
-                },
+                game_outcome,
+                turn_number: self.turn_number,
             }
             .into(),
         )?;
 
         Ok(GameContinue)
     }
-    pub fn report_start_turn(&mut self, active_player: Player) -> GameResult {
+    pub fn report_game_over_draw(&mut self, event_origin: Option<CardRef>) -> GameResult {
         self.send_event(
+            event_origin,
+            GameOver {
+                game_outcome: GameOutcome {
+                    winning_player: None,
+                    reason: GameOverReason::Draw,
+                },
+                turn_number: self.turn_number,
+            }
+            .into(),
+        )?;
+
+        Ok(GameContinue)
+    }
+    pub fn report_start_turn(
+        &mut self,
+        event_origin: Option<CardRef>,
+        active_player: Player,
+    ) -> GameResult {
+        self.send_event(
+            event_origin,
             StartTurn {
                 active_player,
                 turn_number: self.turn_number,
@@ -409,8 +520,13 @@ impl Game {
 
         Ok(GameContinue)
     }
-    pub fn report_end_turn(&mut self, active_player: Player) -> GameResult {
+    pub fn report_end_turn(
+        &mut self,
+        event_origin: Option<CardRef>,
+        active_player: Player,
+    ) -> GameResult {
         self.send_event(
+            event_origin,
             EndTurn {
                 active_player,
                 turn_number: self.turn_number,
@@ -420,8 +536,14 @@ impl Game {
 
         Ok(GameContinue)
     }
-    pub fn report_enter_step(&mut self, active_player: Player, active_step: Step) -> GameResult {
+    pub fn report_enter_step(
+        &mut self,
+        event_origin: Option<CardRef>,
+        active_player: Player,
+        active_step: Step,
+    ) -> GameResult {
         self.send_event(
+            event_origin,
             EnterStep {
                 active_player,
                 active_step,
@@ -431,8 +553,14 @@ impl Game {
 
         Ok(GameContinue)
     }
-    pub fn report_exit_step(&mut self, active_player: Player, active_step: Step) -> GameResult {
+    pub fn report_exit_step(
+        &mut self,
+        event_origin: Option<CardRef>,
+        active_player: Player,
+        active_step: Step,
+    ) -> GameResult {
         self.send_event(
+            event_origin,
             ExitStep {
                 active_player,
                 active_step,
@@ -443,9 +571,14 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub fn send_full_hand_to_main_deck(&mut self, player: Player) -> GameResult {
+    pub fn send_full_hand_to_main_deck(
+        &mut self,
+        event_origin: Option<CardRef>,
+        player: Player,
+    ) -> GameResult {
         let hand = self.board(player).get_zone(Zone::Hand);
         self.send_event(
+            event_origin,
             ZoneToZone {
                 player,
                 from_zone: Zone::Hand,
@@ -459,8 +592,13 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub fn shuffle_main_deck(&mut self, player: Player) -> GameResult {
+    pub fn shuffle_main_deck(
+        &mut self,
+        event_origin: Option<CardRef>,
+        player: Player,
+    ) -> GameResult {
         self.send_event(
+            event_origin,
             Shuffle {
                 player,
                 zone: Zone::MainDeck,
@@ -471,8 +609,13 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub fn shuffle_cheer_deck(&mut self, player: Player) -> GameResult {
+    pub fn shuffle_cheer_deck(
+        &mut self,
+        event_origin: Option<CardRef>,
+        player: Player,
+    ) -> GameResult {
         self.send_event(
+            event_origin,
             Shuffle {
                 player,
                 zone: Zone::CheerDeck,
@@ -483,12 +626,19 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub fn reveal_cards(&mut self, player: Player, zone: Zone, cards: &[CardRef]) -> GameResult {
+    pub fn reveal_cards(
+        &mut self,
+        event_origin: Option<CardRef>,
+        player: Player,
+        zone: Zone,
+        cards: &[CardRef],
+    ) -> GameResult {
         if cards.is_empty() {
             return Ok(GameContinue);
         }
 
         self.send_event(
+            event_origin,
             Reveal {
                 player,
                 zone,
@@ -503,13 +653,24 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub fn reveal_all_cards_in_zone(&mut self, player: Player, zone: Zone) -> GameResult {
+    pub fn reveal_all_cards_in_zone(
+        &mut self,
+        event_origin: Option<CardRef>,
+        player: Player,
+        zone: Zone,
+    ) -> GameResult {
         let cards = self.board(player).get_zone(zone).all_cards();
-        self.reveal_cards(player, zone, &cards)
+        self.reveal_cards(event_origin, player, zone, &cards)
     }
 
-    pub fn send_from_hand_to_center_stage(&mut self, player: Player, card: CardRef) -> GameResult {
+    pub fn send_from_hand_to_center_stage(
+        &mut self,
+        event_origin: Option<CardRef>,
+        player: Player,
+        card: CardRef,
+    ) -> GameResult {
         self.send_event(
+            event_origin,
             ZoneToZone {
                 player,
                 from_zone: Zone::Hand,
@@ -525,10 +686,12 @@ impl Game {
 
     pub fn send_from_back_stage_to_center_stage(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         card: CardRef,
     ) -> GameResult {
         self.send_event(
+            event_origin,
             ZoneToZone {
                 player,
                 from_zone: Zone::BackStage,
@@ -544,6 +707,7 @@ impl Game {
 
     pub fn send_from_hand_to_back_stage(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         cards: Vec<CardRef>,
     ) -> GameResult {
@@ -552,6 +716,7 @@ impl Game {
         }
 
         self.send_event(
+            event_origin,
             ZoneToZone {
                 player,
                 from_zone: Zone::Hand,
@@ -565,7 +730,12 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub fn send_cards_to_holo_power(&mut self, player: Player, amount: usize) -> GameResult {
+    pub fn send_cards_to_holo_power(
+        &mut self,
+        event_origin: Option<CardRef>,
+        player: Player,
+        amount: usize,
+    ) -> GameResult {
         if amount < 1 {
             return Ok(GameContinue);
         }
@@ -573,6 +743,7 @@ impl Game {
         let deck = self.board(player).get_zone(Zone::MainDeck);
         if deck.count() > 0 {
             self.send_event(
+                event_origin,
                 ZoneToZone {
                     player,
                     from_zone: Zone::MainDeck,
@@ -587,7 +758,12 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub fn send_holo_power_to_archive(&mut self, player: Player, amount: usize) -> GameResult {
+    pub fn send_holo_power_to_archive(
+        &mut self,
+        event_origin: Option<CardRef>,
+        player: Player,
+        amount: usize,
+    ) -> GameResult {
         if amount < 1 {
             return Ok(GameContinue);
         }
@@ -598,6 +774,7 @@ impl Game {
         }
 
         self.send_event(
+            event_origin,
             ZoneToZone {
                 player,
                 from_zone: Zone::HoloPower,
@@ -611,8 +788,14 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub fn send_from_back_stage_to_collab(&mut self, player: Player, card: CardRef) -> GameResult {
+    pub fn send_from_back_stage_to_collab(
+        &mut self,
+        event_origin: Option<CardRef>,
+        player: Player,
+        card: CardRef,
+    ) -> GameResult {
         self.send_event(
+            event_origin,
             Collab {
                 player,
                 card: (Zone::BackStage, card),
@@ -624,8 +807,14 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub fn send_from_collab_to_back_stage(&mut self, player: Player, card: CardRef) -> GameResult {
+    pub fn send_from_collab_to_back_stage(
+        &mut self,
+        event_origin: Option<CardRef>,
+        player: Player,
+        card: CardRef,
+    ) -> GameResult {
         self.send_event(
+            event_origin,
             ZoneToZone {
                 player,
                 from_zone: Zone::Collab,
@@ -641,10 +830,12 @@ impl Game {
 
     pub fn send_from_center_stage_to_back_stage(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         card: CardRef,
     ) -> GameResult {
         self.send_event(
+            event_origin,
             ZoneToZone {
                 player,
                 from_zone: Zone::CenterStage,
@@ -660,11 +851,13 @@ impl Game {
 
     pub fn baton_pass_center_stage_to_back_stage(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         from_card: CardRef,
         to_card: CardRef,
     ) -> GameResult {
         self.send_event(
+            event_origin,
             BatonPass {
                 player,
                 from_card: (Zone::CenterStage, from_card),
@@ -676,13 +869,19 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub fn send_cheers_to_life(&mut self, player: Player, amount: usize) -> GameResult {
+    pub fn send_cheers_to_life(
+        &mut self,
+        event_origin: Option<CardRef>,
+        player: Player,
+        amount: usize,
+    ) -> GameResult {
         if amount < 1 {
             return Ok(GameContinue);
         }
 
         let cheers = self.board(player).get_zone(Zone::CheerDeck);
         self.send_event(
+            event_origin,
             ZoneToZone {
                 player,
                 from_zone: Zone::CheerDeck,
@@ -696,13 +895,19 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub fn send_cards_to_archive(&mut self, player: Player, cards: Vec<CardRef>) -> GameResult {
+    pub fn send_cards_to_archive(
+        &mut self,
+        event_origin: Option<CardRef>,
+        player: Player,
+        cards: Vec<CardRef>,
+    ) -> GameResult {
         if cards.is_empty() {
             return Ok(GameContinue);
         }
 
         for (zone, cards) in self.board(player).group_cards_by_zone(&cards) {
             self.send_event(
+                event_origin,
                 ZoneToZone {
                     player,
                     from_zone: zone,
@@ -719,6 +924,7 @@ impl Game {
 
     pub fn send_cards_to_zone(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         cards: Vec<CardRef>,
         to_zone: Zone,
@@ -746,6 +952,7 @@ impl Game {
 
         for (zone, cards) in from_zone {
             self.send_event(
+                event_origin,
                 ZoneToZone {
                     player,
                     from_zone: zone,
@@ -763,6 +970,7 @@ impl Game {
                 .find_card_zone(from_card)
                 .expect("card should be in a zone");
             self.send_event(
+                event_origin,
                 AttachToZone {
                     player,
                     from_card: (from_zone, from_card),
@@ -779,6 +987,7 @@ impl Game {
 
     pub fn attach_cheers_from_zone(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         zone: Zone,
         amount: usize,
@@ -789,7 +998,7 @@ impl Game {
 
         // - draw cards from zone (cheer deck, life), then attach it
         let cheers = self.board(player).get_zone(zone).peek_top_cards(amount);
-        self.reveal_cards(player, zone, &cheers)?;
+        self.reveal_cards(event_origin, player, zone, &cheers)?;
         for cheer in cheers {
             // TODO package with prompt
             // println!("lost a life: {}", CardDisplay::new(cheer, self));
@@ -801,6 +1010,7 @@ impl Game {
                     .expect("the card should be in a zone");
 
                 self.send_event(
+                    event_origin,
                     ZoneToAttach {
                         player,
                         from_zone: zone,
@@ -811,6 +1021,7 @@ impl Game {
                 )?;
             } else {
                 self.send_event(
+                    event_origin,
                     ZoneToZone {
                         player,
                         from_zone: zone,
@@ -828,6 +1039,7 @@ impl Game {
 
     pub fn attach_cards_to_card(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         attachments: Vec<CardRef>,
         card: CardRef,
@@ -858,6 +1070,7 @@ impl Game {
 
         for (zone, attachments) in from_zone {
             self.send_event(
+                event_origin,
                 ZoneToAttach {
                     player,
                     from_zone: zone,
@@ -874,6 +1087,7 @@ impl Game {
                 .find_card_zone(from_card)
                 .expect("card should be in a zone");
             self.send_event(
+                event_origin,
                 AttachToAttach {
                     player,
                     from_card: (from_zone, from_card),
@@ -889,6 +1103,7 @@ impl Game {
 
     pub fn send_attachments_to_archive(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         card: CardRef,
         attachments: Vec<CardRef>,
@@ -903,6 +1118,7 @@ impl Game {
             .expect("the card should be in a zone");
 
         self.send_event(
+            event_origin,
             AttachToZone {
                 player,
                 from_card: (zone, card),
@@ -918,6 +1134,7 @@ impl Game {
 
     pub fn add_many_modifiers_to_many_cards(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         zone: Zone,
         cards: Vec<CardRef>,
@@ -928,6 +1145,7 @@ impl Game {
         }
 
         self.send_event(
+            event_origin,
             AddCardModifiers {
                 player,
                 zone,
@@ -942,6 +1160,7 @@ impl Game {
 
     pub fn remove_many_modifiers_from_many_cards(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         zone: Zone,
         cards: Vec<CardRef>,
@@ -952,6 +1171,7 @@ impl Game {
         }
 
         self.send_event(
+            event_origin,
             RemoveCardModifiers {
                 player,
                 zone,
@@ -966,6 +1186,7 @@ impl Game {
 
     pub fn clear_all_modifiers_from_many_cards(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         zone: Zone,
         cards: Vec<CardRef>,
@@ -980,6 +1201,7 @@ impl Game {
         }
 
         self.send_event(
+            event_origin,
             ClearCardModifiers {
                 player,
                 zone,
@@ -993,6 +1215,7 @@ impl Game {
 
     pub fn add_many_modifiers_to_zone(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         zone: Zone,
         modifiers: Vec<Modifier>,
@@ -1002,6 +1225,7 @@ impl Game {
         }
 
         self.send_event(
+            event_origin,
             AddZoneModifiers {
                 player,
                 zone,
@@ -1015,6 +1239,7 @@ impl Game {
 
     pub fn remove_many_modifiers_from_zone(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         zone: Zone,
         modifiers: Vec<ModifierRef>,
@@ -1024,6 +1249,7 @@ impl Game {
         }
 
         self.send_event(
+            event_origin,
             RemoveZoneModifiers {
                 player,
                 zone,
@@ -1037,6 +1263,7 @@ impl Game {
 
     pub fn deal_damage(
         &mut self,
+        event_origin: Option<CardRef>,
         card: CardRef,
         target: CardRef,
         dmg: DamageMarkers,
@@ -1054,6 +1281,7 @@ impl Game {
             .expect("the target should be in a zone");
 
         self.send_event(
+            event_origin,
             DealDamage {
                 player,
                 card: (card_zone, card),
@@ -1069,6 +1297,7 @@ impl Game {
 
     pub fn add_damage_markers_to_many_cards(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         zone: Zone,
         cards: Vec<CardRef>,
@@ -1079,6 +1308,7 @@ impl Game {
         }
 
         self.send_event(
+            event_origin,
             AddDamageMarkers {
                 player,
                 zone,
@@ -1093,6 +1323,7 @@ impl Game {
 
     pub fn remove_damage_markers_from_many_cards(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         zone: Zone,
         cards: Vec<CardRef>,
@@ -1108,6 +1339,7 @@ impl Game {
         }
 
         self.send_event(
+            event_origin,
             RemoveDamageMarkers {
                 player,
                 zone,
@@ -1122,6 +1354,7 @@ impl Game {
 
     pub fn clear_all_damage_markers_from_many_cards(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         zone: Zone,
         cards: Vec<CardRef>,
@@ -1136,6 +1369,7 @@ impl Game {
         }
 
         self.send_event(
+            event_origin,
             ClearDamageMarkers {
                 player,
                 zone,
@@ -1147,28 +1381,39 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub fn draw_from_main_deck(&mut self, player: Player, amount: usize) -> GameResult {
+    pub fn draw_from_main_deck(
+        &mut self,
+        event_origin: Option<CardRef>,
+        player: Player,
+        amount: usize,
+    ) -> GameResult {
         if amount < 1 {
             return Ok(GameContinue);
         }
 
-        self.send_event(Draw { player, amount }.into())?;
+        self.send_event(event_origin, Draw { player, amount }.into())?;
 
         Ok(GameContinue)
     }
 
-    pub fn lose_lives(&mut self, player: Player, amount: usize) -> GameResult {
+    pub fn lose_lives(
+        &mut self,
+        event_origin: Option<CardRef>,
+        player: Player,
+        amount: usize,
+    ) -> GameResult {
         if amount < 1 {
             return Ok(GameContinue);
         }
 
-        self.send_event(LoseLives { player, amount }.into())?;
+        self.send_event(event_origin, LoseLives { player, amount }.into())?;
 
         Ok(GameContinue)
     }
 
     pub fn bloom_holo_member(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         bloom: CardRef,
         target: CardRef,
@@ -1178,6 +1423,7 @@ impl Game {
             .find_card_zone(target)
             .expect("the card should be on stage");
         self.send_event(
+            event_origin,
             Bloom {
                 player,
                 // can only bloom from hand, for now
@@ -1190,8 +1436,14 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub fn use_support_card(&mut self, player: Player, card: CardRef) -> GameResult {
+    pub fn use_support_card(
+        &mut self,
+        event_origin: Option<CardRef>,
+        player: Player,
+        card: CardRef,
+    ) -> GameResult {
         self.send_event(
+            event_origin,
             ActivateSupportCard {
                 player,
                 // can only use card from hand, for now
@@ -1205,11 +1457,13 @@ impl Game {
 
     pub fn use_oshi_skill(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         card: CardRef,
         skill_idx: usize,
     ) -> GameResult {
         self.send_event(
+            event_origin,
             ActivateOshiSkill {
                 player,
                 // can only use skill from oshi
@@ -1222,9 +1476,15 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub fn activate_oshi_skill(&mut self, card: CardRef, skill_idx: usize) -> GameResult {
+    pub fn activate_oshi_skill(
+        &mut self,
+        event_origin: Option<CardRef>,
+        card: CardRef,
+        skill_idx: usize,
+    ) -> GameResult {
         let player = self.player_for_card(card);
         self.send_event(
+            event_origin,
             ActivateOshiSkill {
                 player,
                 // can only use skill from oshi
@@ -1239,6 +1499,7 @@ impl Game {
 
     pub fn activate_holo_member_ability(
         &mut self,
+        event_origin: Option<CardRef>,
         card: CardRef,
         ability_idx: usize,
     ) -> GameResult {
@@ -1248,6 +1509,7 @@ impl Game {
             .find_card_zone(card)
             .expect("member should be in a zone");
         self.send_event(
+            event_origin,
             ActivateHoloMemberAbility {
                 player,
                 card: (zone, card),
@@ -1259,13 +1521,18 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub fn activate_support_ability(&mut self, card: CardRef) -> GameResult {
+    pub fn activate_support_ability(
+        &mut self,
+        event_origin: Option<CardRef>,
+        card: CardRef,
+    ) -> GameResult {
         let player = self.player_for_card(card);
         let zone = self
             .board(player)
             .find_card_zone(card)
             .expect("member should be in a zone");
         self.send_event(
+            event_origin,
             ActivateSupportAbility {
                 player,
                 card: (zone, card),
@@ -1278,6 +1545,7 @@ impl Game {
 
     pub fn perform_art(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         card: CardRef,
         art_idx: usize,
@@ -1301,6 +1569,7 @@ impl Game {
         }
 
         self.send_event(
+            event_origin,
             PerformArt {
                 player,
                 card: (card_zone, card),
@@ -1314,16 +1583,18 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub fn roll_dice(&mut self, player: Player) -> Result<usize, GameOutcome> {
-        let event = self.send_event(
-            RollDice {
-                player,
-                number: usize::MAX,
-            }
-            .into(),
-        )?;
+    pub fn roll_dice(
+        &mut self,
+        event_origin: Option<CardRef>,
+        player: Player,
+    ) -> Result<u8, GameOutcome> {
+        let event = self.send_event(event_origin, RollDice { player, number: 0 }.into())?;
 
-        let Event::RollDice(roll_dice) = event else {
+        let Event {
+            kind: EventKind::RollDice(roll_dice),
+            ..
+        } = event
+        else {
             unreachable!("the event type cannot change")
         };
 
@@ -1333,11 +1604,21 @@ impl Game {
 
 #[enum_dispatch]
 trait EvaluateEvent {
-    fn adjust_event(&mut self, _game: &mut Game) -> GameResult {
+    fn adjust_event(&mut self, _event_origin: Option<CardRef>, _game: &mut Game) -> GameResult {
         Ok(GameContinue)
     }
 
-    fn evaluate_event(&self, game: &mut Game) -> GameResult;
+    fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult;
+}
+
+impl Event {
+    fn adjust_event(&mut self, game: &mut Game) -> GameResult {
+        self.kind.adjust_event(self.origin, game)
+    }
+
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+        self.kind.evaluate_event(self.origin, game)
+    }
 }
 
 fn verify_cards_in_zone(game: &Game, player: Player, zone: Zone, cards: &[CardRef]) {
@@ -1369,16 +1650,16 @@ pub struct Setup {
     // pub player_2: Loadout,
 }
 impl EvaluateEvent for Setup {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         game.active_step = Step::Setup;
 
         // - shuffle main deck
-        game.shuffle_main_deck(Player::One)?;
-        game.shuffle_main_deck(Player::Two)?;
+        game.shuffle_main_deck(event_origin, Player::One)?;
+        game.shuffle_main_deck(event_origin, Player::Two)?;
 
         // - shuffle cheer deck
-        game.shuffle_cheer_deck(Player::One)?;
-        game.shuffle_cheer_deck(Player::Two)?;
+        game.shuffle_cheer_deck(event_origin, Player::One)?;
+        game.shuffle_cheer_deck(event_origin, Player::Two)?;
 
         // - oshi face down
         // TODO oshi hide
@@ -1395,27 +1676,27 @@ impl EvaluateEvent for Setup {
             match rps_1.vs(rps_2) {
                 RpsOutcome::Win => {
                     println!("player 1 win rps");
-                    game.report_rps_win(Player::One)?;
+                    game.report_rps_win(event_origin, Player::One)?;
                     // TODO choose first or second
                     first_player = Player::One;
                     break;
                 }
                 RpsOutcome::Lose => {
                     println!("player 2 win rps");
-                    game.report_rps_win(Player::Two)?;
+                    game.report_rps_win(event_origin, Player::Two)?;
                     // TODO choose first or second
                     first_player = Player::Two;
                     break;
                 }
                 RpsOutcome::Draw => {
                     println!("draw rps");
-                    game.report_rps_draw()?;
+                    game.report_rps_draw(event_origin)?;
                     continue;
                 }
             }
         }
         // TODO choose first or second
-        game.report_player_going_first(first_player)?;
+        game.report_player_going_first(event_origin, first_player)?;
         let second_player = first_player.opponent();
 
         // - draw 7 cards from main deck
@@ -1431,35 +1712,35 @@ impl EvaluateEvent for Setup {
         // TODO request (intent)
         println!("prompt debut 1");
         let debut_1 = game.prompt_for_first_debut(first_player);
-        game.send_from_hand_to_center_stage(first_player, debut_1)?;
+        game.send_from_hand_to_center_stage(event_origin, first_player, debut_1)?;
 
         // TODO member hide
         // TODO request (intent)
         println!("prompt debut 2");
         let debut_2 = game.prompt_for_first_debut(second_player);
-        game.send_from_hand_to_center_stage(second_player, debut_2)?;
+        game.send_from_hand_to_center_stage(event_origin, second_player, debut_2)?;
 
         // - place other debut / spot members back stage
         // TODO member hide
         // TODO request (intent)
         println!("prompt other debut 1");
         let other_debut_1: Vec<_> = game.prompt_for_first_back_stage(first_player);
-        game.send_from_hand_to_back_stage(first_player, other_debut_1)?;
+        game.send_from_hand_to_back_stage(event_origin, first_player, other_debut_1)?;
 
         // TODO member hide
         // TODO request (intent)
         println!("prompt other debut 2");
         let other_debut_2: Vec<_> = game.prompt_for_first_back_stage(second_player);
-        game.send_from_hand_to_back_stage(second_player, other_debut_2)?;
+        game.send_from_hand_to_back_stage(event_origin, second_player, other_debut_2)?;
 
         // - reveal face down oshi and members
         // oshi and members reveal
-        game.reveal_all_cards_in_zone(first_player, Zone::Oshi)?;
-        game.reveal_all_cards_in_zone(second_player, Zone::Oshi)?;
-        game.reveal_all_cards_in_zone(first_player, Zone::CenterStage)?;
-        game.reveal_all_cards_in_zone(second_player, Zone::CenterStage)?;
-        game.reveal_all_cards_in_zone(first_player, Zone::BackStage)?;
-        game.reveal_all_cards_in_zone(second_player, Zone::BackStage)?;
+        game.reveal_all_cards_in_zone(event_origin, first_player, Zone::Oshi)?;
+        game.reveal_all_cards_in_zone(event_origin, second_player, Zone::Oshi)?;
+        game.reveal_all_cards_in_zone(event_origin, first_player, Zone::CenterStage)?;
+        game.reveal_all_cards_in_zone(event_origin, second_player, Zone::CenterStage)?;
+        game.reveal_all_cards_in_zone(event_origin, first_player, Zone::BackStage)?;
+        game.reveal_all_cards_in_zone(event_origin, second_player, Zone::BackStage)?;
 
         // - draw life cards face down from cheer
         let oshi_1 = game
@@ -1467,23 +1748,25 @@ impl EvaluateEvent for Setup {
             .oshi()
             .and_then(|c| game.lookup_oshi(c))
             .expect("oshi should always be there");
-        game.send_cheers_to_life(first_player, oshi_1.life as usize)?;
+        game.send_cheers_to_life(event_origin, first_player, oshi_1.life as usize)?;
 
         let oshi_2 = game
             .board(second_player)
             .oshi()
             .and_then(|c| game.lookup_oshi(c))
             .expect("oshi should always be there");
-        game.send_cheers_to_life(second_player, oshi_2.life as usize)?;
+        game.send_cheers_to_life(event_origin, second_player, oshi_2.life as usize)?;
 
         // skip the first reset step of each player
         game.add_zone_modifier(
+            event_origin,
             first_player,
             Zone::All,
             SkipStep(Step::Reset),
             LifeTime::NextTurn(first_player),
         )?;
         game.add_zone_modifier(
+            event_origin,
             second_player,
             Zone::All,
             SkipStep(Step::Reset),
@@ -1492,6 +1775,7 @@ impl EvaluateEvent for Setup {
 
         // cannot use limited support on the first turn of the first player
         game.add_zone_modifier(
+            event_origin,
             first_player,
             Zone::All,
             PreventLimitedSupport,
@@ -1500,12 +1784,14 @@ impl EvaluateEvent for Setup {
 
         // cannot bloom on each player's first turn
         game.add_zone_modifier(
+            event_origin,
             first_player,
             Zone::All,
             PreventBloom,
             LifeTime::NextTurn(first_player),
         )?;
         game.add_zone_modifier(
+            event_origin,
             second_player,
             Zone::All,
             PreventBloom,
@@ -1514,6 +1800,7 @@ impl EvaluateEvent for Setup {
 
         // skip the first performance step of the game
         game.add_zone_modifier(
+            event_origin,
             first_player,
             Zone::All,
             SkipStep(Step::Performance),
@@ -1530,7 +1817,7 @@ pub struct Shuffle {
     pub zone: Zone,
 }
 impl EvaluateEvent for Shuffle {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         let zone = game.board_mut(self.player).get_zone_mut(self.zone);
         zone.shuffle();
 
@@ -1543,7 +1830,7 @@ pub struct RpsOutcome {
     pub winning_player: Option<Player>,
 }
 impl EvaluateEvent for RpsOutcome {
-    fn evaluate_event(&self, _game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, _game: &mut Game) -> GameResult {
         // the winning player doesn't change the state of the game
 
         Ok(GameContinue)
@@ -1555,7 +1842,7 @@ pub struct PlayerGoingFirst {
     pub first_player: Player,
 }
 impl EvaluateEvent for PlayerGoingFirst {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         game.active_player = self.first_player;
 
         Ok(GameContinue)
@@ -1569,7 +1856,7 @@ pub struct Reveal {
     pub cards: Vec<(CardRef, CardNumber)>,
 }
 impl EvaluateEvent for Reveal {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         if self.cards.is_empty() {
             return Ok(GameContinue);
         }
@@ -1592,7 +1879,7 @@ pub struct GameStart {
     pub active_player: Player,
 }
 impl EvaluateEvent for GameStart {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         // the state changes on start turn
         game.active_player = self.active_player;
 
@@ -1603,9 +1890,10 @@ impl EvaluateEvent for GameStart {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameOver {
     pub game_outcome: GameOutcome,
+    pub turn_number: u8,
 }
 impl EvaluateEvent for GameOver {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         game.active_step = Step::GameOver;
         game.game_outcome = Some(self.game_outcome);
 
@@ -1616,10 +1904,10 @@ impl EvaluateEvent for GameOver {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartTurn {
     pub active_player: Player,
-    pub turn_number: usize,
+    pub turn_number: u8,
 }
 impl EvaluateEvent for StartTurn {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         game.active_player = self.active_player;
 
         game.start_turn_modifiers(self.active_player);
@@ -1631,15 +1919,15 @@ impl EvaluateEvent for StartTurn {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EndTurn {
     pub active_player: Player,
-    pub turn_number: usize,
+    pub turn_number: u8,
 }
 impl EvaluateEvent for EndTurn {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         assert_eq!(self.active_player, game.active_player);
 
         game.end_turn_modifiers(self.active_player);
 
-        game.remove_expiring_modifiers(LifeTime::ThisTurn)?;
+        game.remove_expiring_modifiers(event_origin, LifeTime::ThisTurn)?;
 
         Ok(GameContinue)
     }
@@ -1651,7 +1939,7 @@ pub struct EnterStep {
     pub active_step: Step,
 }
 impl EvaluateEvent for EnterStep {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         assert_eq!(self.active_player, game.active_player);
         game.active_step = self.active_step;
 
@@ -1665,11 +1953,11 @@ pub struct ExitStep {
     pub active_step: Step,
 }
 impl EvaluateEvent for ExitStep {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         assert_eq!(self.active_player, game.active_player);
         assert_eq!(self.active_step, game.active_step);
 
-        game.remove_expiring_modifiers(LifeTime::ThisStep)?;
+        game.remove_expiring_modifiers(event_origin, LifeTime::ThisStep)?;
 
         Ok(GameContinue)
     }
@@ -1683,7 +1971,7 @@ pub struct AddCardModifiers {
     pub modifiers: Vec<Modifier>,
 }
 impl EvaluateEvent for AddCardModifiers {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         if self.cards.is_empty() || self.modifiers.is_empty() {
             return Ok(GameContinue);
         }
@@ -1709,7 +1997,7 @@ pub struct RemoveCardModifiers {
     pub modifiers: Vec<ModifierRef>,
 }
 impl EvaluateEvent for RemoveCardModifiers {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         if self.cards.is_empty() || self.modifiers.is_empty() {
             return Ok(GameContinue);
         }
@@ -1750,7 +2038,7 @@ pub struct ClearCardModifiers {
     pub cards: Vec<CardRef>,
 }
 impl EvaluateEvent for ClearCardModifiers {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         if self.cards.is_empty() {
             return Ok(GameContinue);
         }
@@ -1772,7 +2060,7 @@ pub struct AddZoneModifiers {
     pub modifiers: Vec<Modifier>,
 }
 impl EvaluateEvent for AddZoneModifiers {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         if self.modifiers.is_empty() {
             return Ok(GameContinue);
         }
@@ -1795,7 +2083,7 @@ pub struct RemoveZoneModifiers {
     pub modifiers: Vec<ModifierRef>,
 }
 impl EvaluateEvent for RemoveZoneModifiers {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         if self.modifiers.is_empty() {
             return Ok(GameContinue);
         }
@@ -1836,7 +2124,7 @@ pub struct AddDamageMarkers {
     pub dmg: DamageMarkers,
 }
 impl EvaluateEvent for AddDamageMarkers {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         if self.cards.is_empty() || self.dmg.0 < 1 {
             return Ok(GameContinue);
         }
@@ -1870,9 +2158,18 @@ impl EvaluateEvent for AddDamageMarkers {
             .sum();
 
         // send member to archive, from attack
-        game.send_cards_to_archive(self.player, defeated)?;
+        for card in defeated {
+            game.send_event(
+                event_origin,
+                HoloMemberDefeated {
+                    player: self.player,
+                    card: (self.zone, card),
+                }
+                .into(),
+            )?;
+        }
 
-        game.lose_lives(self.player, life_loss)?;
+        game.lose_lives(event_origin, self.player, life_loss)?;
 
         Ok(GameContinue)
     }
@@ -1886,7 +2183,7 @@ pub struct RemoveDamageMarkers {
     pub dmg: DamageMarkers,
 }
 impl EvaluateEvent for RemoveDamageMarkers {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         if self.cards.is_empty() || self.dmg.0 < 1 {
             return Ok(GameContinue);
         }
@@ -1908,7 +2205,7 @@ pub struct ClearDamageMarkers {
     pub cards: Vec<CardRef>,
 }
 impl EvaluateEvent for ClearDamageMarkers {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         if self.cards.is_empty() {
             return Ok(GameContinue);
         }
@@ -1930,7 +2227,7 @@ pub struct LookAndSelect {
     pub cards: Vec<CardRef>, // could just be a count, it's just for the opponent
 }
 impl EvaluateEvent for LookAndSelect {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         if self.cards.is_empty() {
             return Ok(GameContinue);
         }
@@ -1951,7 +2248,7 @@ pub struct ZoneToZone {
     pub to_zone_location: ZoneAddLocation,
 }
 impl EvaluateEvent for ZoneToZone {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         if self.cards.is_empty() {
             return Ok(GameContinue);
         }
@@ -1979,6 +2276,7 @@ impl EvaluateEvent for ZoneToZone {
         // lose attachments and buffs when leaving stage
         if !Zone::Stage.includes(self.to_zone) {
             game.clear_all_damage_markers_from_many_cards(
+                event_origin,
                 self.player,
                 self.to_zone,
                 self.cards.clone(),
@@ -1986,9 +2284,9 @@ impl EvaluateEvent for ZoneToZone {
 
             for card in &self.cards {
                 let attachments = game.board(self.player).attachments(*card);
-                game.send_attachments_to_archive(self.player, *card, attachments)?;
+                game.send_attachments_to_archive(event_origin, self.player, *card, attachments)?;
 
-                game.clear_all_modifiers(*card)?;
+                game.clear_all_modifiers(event_origin, *card)?;
             }
         }
 
@@ -2007,7 +2305,7 @@ pub struct ZoneToAttach {
     pub to_card: (Zone, CardRef),
 }
 impl EvaluateEvent for ZoneToAttach {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         if self.attachments.is_empty() {
             return Ok(GameContinue);
         }
@@ -2032,7 +2330,7 @@ pub struct AttachToAttach {
     pub to_card: (Zone, CardRef),
 }
 impl EvaluateEvent for AttachToAttach {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         if self.attachments.is_empty() {
             return Ok(GameContinue);
         }
@@ -2041,8 +2339,13 @@ impl EvaluateEvent for AttachToAttach {
         verify_cards_attached(game, self.player, self.from_card.1, &self.attachments);
         verify_cards_in_zone(game, self.player, self.to_card.0, &[self.to_card.1]);
 
-        // TODO implement
-        unimplemented!()
+        // zone to attach
+        for attachment in &self.attachments {
+            game.board_mut(self.player)
+                .attach_to_card(*attachment, self.to_card.1);
+        }
+
+        Ok(GameContinue)
     }
 }
 
@@ -2055,7 +2358,7 @@ pub struct AttachToZone {
     pub to_zone_location: ZoneAddLocation,
 }
 impl EvaluateEvent for AttachToZone {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         if self.attachments.is_empty() {
             return Ok(GameContinue);
         }
@@ -2080,13 +2383,14 @@ pub struct Draw {
     pub amount: usize,
 }
 impl EvaluateEvent for Draw {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         if self.amount < 1 {
             return Ok(GameContinue);
         }
 
         let deck = game.board(self.player).get_zone(Zone::MainDeck);
         game.send_event(
+            event_origin,
             ZoneToZone {
                 player: self.player,
                 from_zone: Zone::MainDeck,
@@ -2109,7 +2413,7 @@ pub struct Collab {
     pub holo_power_amount: usize,
 }
 impl EvaluateEvent for Collab {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
         // check condition for collab
@@ -2124,6 +2428,7 @@ impl EvaluateEvent for Collab {
         }
 
         game.send_event(
+            event_origin,
             ZoneToZone {
                 player: self.player,
                 from_zone: self.card.0,
@@ -2135,10 +2440,16 @@ impl EvaluateEvent for Collab {
         )?;
 
         //   - draw down card from deck into power zone
-        game.send_cards_to_holo_power(self.player, self.holo_power_amount)?;
+        game.send_cards_to_holo_power(event_origin, self.player, self.holo_power_amount)?;
 
         // can only collab once per turn
-        game.add_zone_modifier(self.player, Zone::All, PreventCollab, LifeTime::ThisTurn)?;
+        game.add_zone_modifier(
+            event_origin,
+            self.player,
+            Zone::All,
+            PreventCollab,
+            LifeTime::ThisTurn,
+        )?;
 
         Ok(GameContinue)
     }
@@ -2151,7 +2462,7 @@ pub struct LoseLives {
     pub amount: usize,
 }
 impl EvaluateEvent for LoseLives {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         if self.amount < 1 {
             return Ok(GameContinue);
         }
@@ -2159,8 +2470,9 @@ impl EvaluateEvent for LoseLives {
         // if the remaining lives are too few, send them to archive
         if game.board(self.player).get_zone(Zone::Life).count() <= self.amount {
             let cheers = game.board(self.player).get_zone(Zone::Life).all_cards();
-            game.reveal_cards(self.player, Zone::Life, &cheers)?;
+            game.reveal_cards(event_origin, self.player, Zone::Life, &cheers)?;
             game.send_event(
+                event_origin,
                 ZoneToZone {
                     player: self.player,
                     from_zone: Zone::Life,
@@ -2171,7 +2483,7 @@ impl EvaluateEvent for LoseLives {
                 .into(),
             )?;
         } else {
-            game.attach_cheers_from_zone(self.player, Zone::Life, self.amount)?;
+            game.attach_cheers_from_zone(event_origin, self.player, Zone::Life, self.amount)?;
         }
 
         Ok(GameContinue)
@@ -2186,7 +2498,7 @@ pub struct Bloom {
     pub to_card: (Zone, CardRef),
 }
 impl EvaluateEvent for Bloom {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.from_card.0, &[self.from_card.1]);
         verify_cards_in_zone(game, self.player, self.to_card.0, &[self.to_card.1]);
 
@@ -2211,7 +2523,12 @@ impl EvaluateEvent for Bloom {
         game.promote_damage_markers(self.from_card.1, self.to_card.1);
 
         // prevent it from blooming again this turn
-        game.add_modifier(self.from_card.1, PreventBloom, LifeTime::ThisTurn)?;
+        game.add_modifier(
+            event_origin,
+            self.from_card.1,
+            PreventBloom,
+            LifeTime::ThisTurn,
+        )?;
 
         Ok(GameContinue)
     }
@@ -2225,7 +2542,7 @@ pub struct BatonPass {
     pub to_card: (Zone, CardRef),
 }
 impl EvaluateEvent for BatonPass {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.from_card.0, &[self.from_card.1]);
         verify_cards_in_zone(game, self.player, self.to_card.0, &[self.to_card.1]);
 
@@ -2245,16 +2562,22 @@ impl EvaluateEvent for BatonPass {
         // TODO cost should automatic when there is a single cheers color
         // TODO request (intent) select attached cheers
         let cheers = game.prompt_for_baton_pass(self.from_card.1, mem.baton_pass_cost);
-        game.send_attachments_to_archive(self.player, self.from_card.1, cheers)?;
+        game.send_attachments_to_archive(event_origin, self.player, self.from_card.1, cheers)?;
 
         // send the center member to the back
-        game.send_from_center_stage_to_back_stage(self.player, self.from_card.1)?;
+        game.send_from_center_stage_to_back_stage(event_origin, self.player, self.from_card.1)?;
 
         // send back stage member to center
-        game.send_from_back_stage_to_center_stage(self.player, self.to_card.1)?;
+        game.send_from_back_stage_to_center_stage(event_origin, self.player, self.to_card.1)?;
 
         // can only baton pass once per turn
-        game.add_zone_modifier(self.player, Zone::All, PreventBatonPass, LifeTime::ThisTurn)?;
+        game.add_zone_modifier(
+            event_origin,
+            self.player,
+            Zone::All,
+            PreventBatonPass,
+            LifeTime::ThisTurn,
+        )?;
 
         Ok(GameContinue)
     }
@@ -2266,7 +2589,7 @@ pub struct ActivateSupportCard {
     pub card: (Zone, CardRef),
 }
 impl EvaluateEvent for ActivateSupportCard {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
         // - use support card
@@ -2285,6 +2608,7 @@ impl EvaluateEvent for ActivateSupportCard {
 
         // send the support card out of the game, so it doesn't affect itself
         game.send_event(
+            event_origin,
             ZoneToZone {
                 player: self.player,
                 from_zone: self.card.0,
@@ -2301,6 +2625,7 @@ impl EvaluateEvent for ActivateSupportCard {
         // limited support can only be used once per turn
         if limited_use {
             game.add_zone_modifier(
+                event_origin,
                 self.player,
                 Zone::All,
                 PreventLimitedSupport,
@@ -2309,7 +2634,7 @@ impl EvaluateEvent for ActivateSupportCard {
         }
 
         // send the used card to the archive
-        game.send_cards_to_archive(game.active_player, vec![self.card.1])
+        game.send_cards_to_archive(event_origin, game.active_player, vec![self.card.1])
     }
 }
 
@@ -2320,7 +2645,7 @@ pub struct ActivateSupportAbility {
     pub card: (Zone, CardRef),
 }
 impl EvaluateEvent for ActivateSupportAbility {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
         let support = game
@@ -2348,7 +2673,7 @@ pub struct ActivateOshiSkill {
     pub skill_idx: usize,
 }
 impl EvaluateEvent for ActivateOshiSkill {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
         let oshi = game
@@ -2372,15 +2697,18 @@ impl EvaluateEvent for ActivateOshiSkill {
 
         // pay the cost of the oshi skill
         // TODO could have a buff that could pay for the skill
-        game.send_holo_power_to_archive(self.player, skill.cost as usize)?;
+        game.send_holo_power_to_archive(event_origin, self.player, skill.cost as usize)?;
 
         effect.evaluate_with_card_mut(game, self.card.1)?;
 
+        game.event_span.start_untracked_span();
         game.add_modifier(
+            event_origin,
             self.card.1,
             PreventOshiSkill(self.skill_idx),
             prevent_life_time,
         )?;
+        game.event_span.close_untracked_span();
 
         Ok(GameContinue)
     }
@@ -2394,7 +2722,7 @@ pub struct ActivateHoloMemberAbility {
     pub ability_idx: usize,
 }
 impl EvaluateEvent for ActivateHoloMemberAbility {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
         let mem = game
@@ -2423,7 +2751,7 @@ pub struct ActivateHoloMemberArtEffect {
     pub skill_idx: usize,
 }
 impl EvaluateEvent for ActivateHoloMemberArtEffect {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
         let oshi = game
@@ -2447,11 +2775,12 @@ impl EvaluateEvent for ActivateHoloMemberArtEffect {
 
         // pay the cost of the oshi skill
         // TODO could have a buff that could pay for the skill
-        game.send_holo_power_to_archive(self.player, skill.cost as usize)?;
+        game.send_holo_power_to_archive(event_origin, self.player, skill.cost as usize)?;
 
         effect.evaluate_with_card_mut(game, self.card.1)?;
 
         game.add_modifier(
+            event_origin,
             self.card.1,
             PreventOshiSkill(self.skill_idx),
             prevent_life_time,
@@ -2470,7 +2799,7 @@ pub struct PerformArt {
     pub target: Option<(Zone, CardRef)>,
 }
 impl EvaluateEvent for PerformArt {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
         if let (Some(target), Some(target_player)) = (self.target, self.target_player) {
@@ -2510,10 +2839,10 @@ impl EvaluateEvent for PerformArt {
 
         // deal damage if there is a target. if any other damage is done, it will be in the effect
         if let Some(target) = self.target {
-            game.deal_damage(self.card.1, target.1, dmg)?;
+            game.deal_damage(event_origin, self.card.1, target.1, dmg)?;
         }
 
-        game.remove_expiring_modifiers(LifeTime::ThisArt)?;
+        game.remove_expiring_modifiers(event_origin, LifeTime::ThisArt)?;
 
         Ok(GameContinue)
     }
@@ -2525,7 +2854,7 @@ pub struct WaitingForPlayerIntent {
     // reason?
 }
 impl EvaluateEvent for WaitingForPlayerIntent {
-    fn evaluate_event(&self, _game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, _game: &mut Game) -> GameResult {
         // TODO implement
         unimplemented!()
     }
@@ -2539,11 +2868,12 @@ pub struct HoloMemberDefeated {
     pub card: (Zone, CardRef),
 }
 impl EvaluateEvent for HoloMemberDefeated {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
-        // TODO implement
-        unimplemented!()
+        game.send_cards_to_archive(event_origin, self.player, vec![self.card.1])?;
+
+        Ok(GameContinue)
     }
 }
 /// used by Suisei oshi skill
@@ -2556,11 +2886,11 @@ pub struct DealDamage {
     pub dmg: DamageMarkers,
 }
 impl EvaluateEvent for DealDamage {
-    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
         verify_cards_in_zone(game, self.target_player, self.target.0, &[self.target.1]);
 
-        game.add_damage_markers(self.target.1, self.dmg)?;
+        game.add_damage_markers(event_origin, self.target.1, self.dmg)?;
 
         Ok(GameContinue)
     }
@@ -2570,10 +2900,10 @@ impl EvaluateEvent for DealDamage {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RollDice {
     pub player: Player,
-    pub number: usize,
+    pub number: u8,
 }
 impl EvaluateEvent for RollDice {
-    fn adjust_event(&mut self, _game: &mut Game) -> GameResult {
+    fn adjust_event(&mut self, _event_origin: Option<CardRef>, _game: &mut Game) -> GameResult {
         // TODO look for modifiers, and consume them, if not permanent
 
         self.number = thread_rng().gen_range(1..=6);
@@ -2581,7 +2911,7 @@ impl EvaluateEvent for RollDice {
         Ok(GameContinue)
     }
 
-    fn evaluate_event(&self, _game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, _game: &mut Game) -> GameResult {
         // nothing to do here
         Ok(GameContinue)
     }

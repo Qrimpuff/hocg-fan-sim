@@ -14,7 +14,7 @@ use cards::*;
 use gameplay::{Game, RandomPrompter};
 use temp::test_library;
 use time::macros::format_description;
-use tracing::{debug, info};
+use tracing::info;
 use tracing_subscriber::{fmt::time::LocalTime, EnvFilter};
 
 type Result<T> = std::result::Result<T, Error>;
@@ -38,9 +38,9 @@ fn main() {
         .with_thread_ids(true)
         .with_env_filter(EnvFilter::from_default_env())
         .init();
-    info!("-- Hololive OCG - Fan Simulator is running --");
+    info!("\n\n\n\n\n\n\n-- Hololive OCG - Fan Simulator is running --");
 
-    let cond = r"
+    let _cond = r"
         let $center_mem = ((from_zone center_stage) where is_member)
         if $center_mem any is_named_tokino_sora (
             draw 1
@@ -52,7 +52,7 @@ fn main() {
         )
     ";
 
-    // dbg!(cond.parse_effect::<Vec<Action>>().expect("IN MAIN"));
+    // dbg!(_cond.parse_effect::<Vec<Action>>().expect("IN MAIN"));
 
     let main_deck_hsd01 = Vec::from_iter(
         None.into_iter()

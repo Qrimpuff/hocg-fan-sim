@@ -124,13 +124,13 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         skills: vec![OshiSkill {
                             kind: OshiSkillKind::Normal,
                             name: "In My Left Hand, a Map".into(),
-                            cost: 3,
+                            cost: 0,
                             text: "[Once per turn] You may use this skill when one of your holomem's abilities instructs you to roll a six-sided die: Declare a number from 1 to 6. You may use the declared number as the result of your die roll.".into(),
                             triggers: vec![
                                 Trigger::OnBeforeRollDice
                             ],
                             condition: test_condition(r"
-                               all $_event_from is_member and yours
+                               all event_origin is_member and yours
                             ").parse_effect().expect("hSD01-002"),
                             effect: test_effect(r"
                                 let $num = select_number_between 1 6

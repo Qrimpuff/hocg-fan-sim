@@ -33,7 +33,7 @@ use hocg_fan_sim_derive::HocgFanSimCardEffect;
 use iter_tools::Itertools;
 
 use crate::{
-    events::{EnterStep, Event, ExitStep, TriggeredEvent},
+    events::{EnterStep, Event, EventKind, ExitStep, TriggeredEvent},
     gameplay::Step,
     Error, ParseTokens, Result, Tokens,
 };
@@ -66,23 +66,23 @@ impl ParseTokens for Var {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Number(pub usize);
+pub struct NumberLiteral(pub usize);
 
-impl From<Number> for Tokens {
-    fn from(value: Number) -> Self {
+impl From<NumberLiteral> for Tokens {
+    fn from(value: NumberLiteral) -> Self {
         value.0.to_string().as_str().into()
     }
 }
 
-impl ParseTokens for Number {
+impl ParseTokens for NumberLiteral {
     fn parse_tokens(tokens: &[Tokens]) -> Result<(Self, &[Tokens])> {
         if let Ok((s, t)) = tokens.take_string() {
             if let Ok(n) = s.parse() {
-                return Ok((Number(n), t));
+                return Ok((NumberLiteral(n), t));
             }
         }
         Err(Error::UnexpectedToken(
-            "Number".into(),
+            "NumberLiteral".into(),
             tokens.take_string()?.0.clone(),
         ))
     }
@@ -143,7 +143,7 @@ pub enum Action {
     AttachCards(CardReferences, CardReference),
     // draw <value> -> <action>
     #[hocg_fan_sim(token = "draw")]
-    Draw(Value),
+    Draw(Number),
     // if <condition> <[action]> -> <action>
     #[hocg_fan_sim(token = "if")]
     If(Condition, Vec<Action>),
@@ -158,7 +158,7 @@ pub enum Action {
     LetSelect(Let<LetValue>),
     // let <$var> = <value> -> <action>
     #[hocg_fan_sim(transparent)]
-    LetValue(Let<Value>),
+    LetNumber(Let<Number>),
     // no_action -> <action>
     #[hocg_fan_sim(token = "no_action")]
     Noop,
@@ -196,6 +196,9 @@ pub fn serialize_actions(actions: Vec<Action>) -> String {
 #[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq)]
 pub enum CardReference {
     // TODO figure out the conversion with CardReferences, could panic
+    // event_origin -> <card_ref>
+    #[hocg_fan_sim(token = "event_origin")]
+    EventOrigin,
     // this_card -> <card_ref>
     #[hocg_fan_sim(token = "this_card")]
     ThisCard,
@@ -209,12 +212,15 @@ pub enum CardReferences {
     // attached <card_ref> -> <[card_ref]>
     #[hocg_fan_sim(token = "attached")]
     Attached(CardReference),
+    // event_origin -> <[card_ref]>
+    #[hocg_fan_sim(token = "event_origin")]
+    EventOrigin,
     // from <zone> -> <[card_ref]>
     #[hocg_fan_sim(token = "from")]
     From(Zone),
     // from_top <value> <zone> -> <[card_ref]>
     #[hocg_fan_sim(token = "from_top")]
-    FromTop(Box<Value>, Zone),
+    FromTop(Box<Number>, Zone),
     // this_card -> <[card_ref]>
     #[hocg_fan_sim(token = "this_card")]
     ThisCard,
@@ -251,7 +257,7 @@ pub enum Condition {
     Anything,
     // <value> == <value> -> <condition>
     #[hocg_fan_sim(infix = "==")]
-    Equals(Value, Value),
+    Equals(Number, Number),
     // exist <[card_ref]> -> <condition>
     #[hocg_fan_sim(token = "exist")]
     Exist(CardReferences),
@@ -260,7 +266,7 @@ pub enum Condition {
     False,
     // <value> >= <value> -> <condition>
     #[hocg_fan_sim(infix = ">=")]
-    GreaterThanEquals(Value, Value),
+    GreaterThanEquals(Number, Number),
     // has_cheers -> <condition>
     #[hocg_fan_sim(token = "has_cheers")]
     HasCheers,
@@ -278,7 +284,7 @@ pub enum Condition {
     IsCheer,
     // is_even <value> -> <condition>
     #[hocg_fan_sim(token = "is_even")]
-    IsEven(Value),
+    IsEven(Number),
     // is_level_first -> <condition>
     #[hocg_fan_sim(token = "is_level_first")]
     IsLevelFirst,
@@ -299,13 +305,13 @@ pub enum Condition {
     IsNot(CardReference),
     // is_odd <value> -> <condition>
     #[hocg_fan_sim(token = "is_odd")]
-    IsOdd(Value),
+    IsOdd(Number),
     // is_support_limited -> <condition>
     #[hocg_fan_sim(token = "is_support_limited")]
     IsSupportLimited,
     // <value> <= <value> -> <condition>
     #[hocg_fan_sim(infix = "<=")]
-    LessThanEquals(Value, Value),
+    LessThanEquals(Number, Number),
     // not <condition> -> <condition>
     #[hocg_fan_sim(token = "not")]
     Not(Box<Condition>),
@@ -339,10 +345,10 @@ pub enum LetValue {
     SelectOne(Box<CardReferences>, Box<Condition>),
     // select_number_between <value> <value> -> <value>
     #[hocg_fan_sim(token = "select_number_between")]
-    SelectNumberBetween(Box<Value>, Box<Value>),
+    SelectNumberBetween(Box<Number>, Box<Number>),
     // select_up_to <value> <[card_ref]> <condition> -> <[card_ref]> $_leftovers
     #[hocg_fan_sim(token = "select_up_to")]
-    SelectUpTo(Box<Value>, Box<CardReferences>, Box<Condition>),
+    SelectUpTo(Box<Number>, Box<CardReferences>, Box<Condition>),
 }
 
 #[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq)]
@@ -374,10 +380,10 @@ pub enum LifeTime {
 pub enum Modifier {
     // more_dmg <value> -> <mod>
     #[hocg_fan_sim(token = "more_dmg")]
-    MoreDamage(Value),
+    MoreDamage(Number),
     // next_dice_roll <value> -> <mod>
     #[hocg_fan_sim(token = "next_dice_roll")]
-    NextDiceRoll(Value),
+    NextDiceRoll(Number),
     // when <condition> <mod>  -> <mod>
     #[hocg_fan_sim(token = "when")]
     When(Condition, Box<Modifier>),
@@ -394,13 +400,13 @@ pub enum Player {
 }
 
 #[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq)]
-pub enum Value {
+pub enum Number {
     // count <[card_ref]> -> <value>
     #[hocg_fan_sim(token = "count")]
     Count(CardReferences),
     // 123 -> <value>
     #[hocg_fan_sim(transparent)]
-    Number(Number),
+    Literal(NumberLiteral),
     // <$var> -> <value>
     #[hocg_fan_sim(transparent)]
     Var(Var),
@@ -463,14 +469,28 @@ impl Trigger {
         match self {
             Trigger::ActivateInMainStep => false,
             Trigger::OnStartTurn => {
-                matches!(triggered_event, TriggeredEvent::After(Event::StartTurn(_)))
+                matches!(
+                    triggered_event,
+                    TriggeredEvent::After(Event {
+                        kind: EventKind::StartTurn(_),
+                        ..
+                    })
+                )
             }
             Trigger::OnEndTurn => {
-                matches!(triggered_event, TriggeredEvent::After(Event::EndTurn(_)))
+                matches!(
+                    triggered_event,
+                    TriggeredEvent::After(Event {
+                        kind: EventKind::EndTurn(_),
+                        ..
+                    })
+                )
             }
             Trigger::OnEnterStep(step) => {
-                if let TriggeredEvent::After(Event::EnterStep(EnterStep { active_step, .. })) =
-                    triggered_event
+                if let TriggeredEvent::After(Event {
+                    kind: EventKind::EnterStep(EnterStep { active_step, .. }),
+                    ..
+                }) = triggered_event
                 {
                     active_step == step
                 } else {
@@ -478,8 +498,10 @@ impl Trigger {
                 }
             }
             Trigger::OnExitStep(step) => {
-                if let TriggeredEvent::After(Event::ExitStep(ExitStep { active_step, .. })) =
-                    triggered_event
+                if let TriggeredEvent::After(Event {
+                    kind: EventKind::ExitStep(ExitStep { active_step, .. }),
+                    ..
+                }) = triggered_event
                 {
                     active_step == step
                 } else {
@@ -489,17 +511,38 @@ impl Trigger {
             Trigger::OnBeforePerformArt => {
                 matches!(
                     triggered_event,
-                    TriggeredEvent::Before(Event::PerformArt(_))
+                    TriggeredEvent::Before(Event {
+                        kind: EventKind::PerformArt(_),
+                        ..
+                    })
                 )
             }
             Trigger::OnAfterPerformArt => {
-                matches!(triggered_event, TriggeredEvent::After(Event::PerformArt(_)))
+                matches!(
+                    triggered_event,
+                    TriggeredEvent::After(Event {
+                        kind: EventKind::PerformArt(_),
+                        ..
+                    })
+                )
             }
             Trigger::OnBeforeRollDice => {
-                matches!(triggered_event, TriggeredEvent::Before(Event::RollDice(_)))
+                matches!(
+                    triggered_event,
+                    TriggeredEvent::Before(Event {
+                        kind: EventKind::RollDice(_),
+                        ..
+                    })
+                )
             }
             Trigger::OnAfterRollDice => {
-                matches!(triggered_event, TriggeredEvent::After(Event::RollDice(_)))
+                matches!(
+                    triggered_event,
+                    TriggeredEvent::After(Event {
+                        kind: EventKind::RollDice(_),
+                        ..
+                    })
+                )
             }
         }
     }

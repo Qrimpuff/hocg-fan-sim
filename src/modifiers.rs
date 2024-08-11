@@ -159,14 +159,16 @@ impl Game {
 
     pub fn add_modifier(
         &mut self,
+        event_origin: Option<CardRef>,
         card: CardRef,
         kind: ModifierKind,
         life_time: LifeTime,
     ) -> GameResult {
-        self.add_many_modifiers(card, vec![(kind, life_time)])
+        self.add_many_modifiers(event_origin, card, vec![(kind, life_time)])
     }
     pub fn add_many_modifiers(
         &mut self,
+        event_origin: Option<CardRef>,
         card: CardRef,
         modifiers: Vec<(ModifierKind, LifeTime)>,
     ) -> GameResult {
@@ -176,6 +178,7 @@ impl Game {
             .find_card_zone(card)
             .expect("the card should be in a zone");
         self.add_many_modifiers_to_many_cards(
+            event_origin,
             player,
             zone,
             vec![card],
@@ -188,15 +191,17 @@ impl Game {
 
     pub fn add_zone_modifier(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         zone: Zone,
         kind: ModifierKind,
         life_time: LifeTime,
     ) -> GameResult {
-        self.add_many_zone_modifiers(player, zone, kind, life_time, 1)
+        self.add_many_zone_modifiers(event_origin, player, zone, kind, life_time, 1)
     }
     pub fn add_many_zone_modifiers(
         &mut self,
+        event_origin: Option<CardRef>,
         player: Player,
         zone: Zone,
         kind: ModifierKind,
@@ -204,6 +209,7 @@ impl Game {
         amount: usize,
     ) -> GameResult {
         self.add_many_modifiers_to_zone(
+            event_origin,
             player,
             zone,
             (0..amount)
@@ -212,11 +218,17 @@ impl Game {
         )
     }
 
-    pub fn remove_all_modifiers(&mut self, card: CardRef, kind: ModifierKind) -> GameResult {
-        self.remove_all_modifiers_with(card, |m| m.kind == kind)
+    pub fn remove_all_modifiers(
+        &mut self,
+        event_origin: Option<CardRef>,
+        card: CardRef,
+        kind: ModifierKind,
+    ) -> GameResult {
+        self.remove_all_modifiers_with(event_origin, card, |m| m.kind == kind)
     }
     pub fn remove_all_modifiers_with(
         &mut self,
+        event_origin: Option<CardRef>,
         card: CardRef,
         filter_fn: impl FnMut(&&Modifier) -> bool,
     ) -> GameResult {
@@ -235,17 +247,27 @@ impl Game {
             .map(|m| m.id)
             .collect();
 
-        self.remove_many_modifiers_from_many_cards(player, zone, vec![card], modifiers)
+        self.remove_many_modifiers_from_many_cards(
+            event_origin,
+            player,
+            zone,
+            vec![card],
+            modifiers,
+        )
     }
 
-    pub fn clear_all_modifiers(&mut self, card: CardRef) -> GameResult {
+    pub fn clear_all_modifiers(
+        &mut self,
+        event_origin: Option<CardRef>,
+        card: CardRef,
+    ) -> GameResult {
         let player = self.player_for_card(card);
         let zone = self
             .board(player)
             .find_card_zone(card)
             .expect("the card should be in a zone");
 
-        self.clear_all_modifiers_from_many_cards(player, zone, vec![card])
+        self.clear_all_modifiers_from_many_cards(event_origin, player, zone, vec![card])
     }
 
     pub fn promote_modifiers(&mut self, attachment: CardRef, parent: CardRef) {
@@ -315,7 +337,11 @@ impl Game {
             });
     }
 
-    pub fn remove_expiring_modifiers(&mut self, life_time: LifeTime) -> GameResult {
+    pub fn remove_expiring_modifiers(
+        &mut self,
+        event_origin: Option<CardRef>,
+        life_time: LifeTime,
+    ) -> GameResult {
         // remove expiring card modifiers
         let c_mods: HashMap<_, Vec<_>> = self
             .card_modifiers
@@ -332,7 +358,7 @@ impl Game {
                 c_m
             });
         for ((p, z, c), m) in c_mods {
-            self.remove_many_modifiers_from_many_cards(p, z, vec![c], m)?;
+            self.remove_many_modifiers_from_many_cards(event_origin, p, z, vec![c], m)?;
         }
 
         // remove expiring zone modifiers
@@ -346,7 +372,7 @@ impl Game {
                 z_m
             });
         for ((p, z), m) in z_mods {
-            self.remove_many_modifiers_from_zone(p, z, m)?;
+            self.remove_many_modifiers_from_zone(event_origin, p, z, m)?;
         }
 
         Ok(GameContinue)
@@ -376,24 +402,34 @@ impl Game {
             .unwrap_or_default()
     }
 
-    pub fn add_damage_markers(&mut self, card: CardRef, dmg: DamageMarkers) -> GameResult {
+    pub fn add_damage_markers(
+        &mut self,
+        event_origin: Option<CardRef>,
+        card: CardRef,
+        dmg: DamageMarkers,
+    ) -> GameResult {
         let player = self.player_for_card(card);
         let zone = self
             .board(player)
             .find_card_zone(card)
             .expect("the card should be in a zone");
 
-        self.add_damage_markers_to_many_cards(player, zone, vec![card], dmg)
+        self.add_damage_markers_to_many_cards(event_origin, player, zone, vec![card], dmg)
     }
 
-    pub fn remove_damage_markers(&mut self, card: CardRef, dmg: DamageMarkers) -> GameResult {
+    pub fn remove_damage_markers(
+        &mut self,
+        event_origin: Option<CardRef>,
+        card: CardRef,
+        dmg: DamageMarkers,
+    ) -> GameResult {
         let player = self.player_for_card(card);
         let zone = self
             .board(player)
             .find_card_zone(card)
             .expect("the card should be in a zone");
 
-        self.remove_damage_markers_from_many_cards(player, zone, vec![card], dmg)
+        self.remove_damage_markers_from_many_cards(event_origin, player, zone, vec![card], dmg)
     }
 
     pub fn promote_damage_markers(&mut self, attachment: CardRef, parent: CardRef) {

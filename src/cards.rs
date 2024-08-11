@@ -4,7 +4,7 @@ use iter_tools::Itertools;
 use tracing::error;
 
 use crate::evaluate::EvaluateEffect;
-use crate::events::{Bloom, Collab, Event, TriggeredEvent};
+use crate::events::{Bloom, Collab, Event, EventKind, TriggeredEvent};
 use crate::gameplay::Zone;
 use crate::modifiers::ModifierKind::*;
 use crate::{
@@ -569,9 +569,13 @@ impl HoloMemberAbility {
     pub fn should_activate(&self, card: CardRef, triggered_event: &TriggeredEvent) -> bool {
         match self.kind {
             MemberAbilityKind::CollabEffect => {
-                if let TriggeredEvent::After(Event::Collab(Collab {
-                    card: collab_card, ..
-                })) = triggered_event
+                if let TriggeredEvent::After(Event {
+                    kind:
+                        EventKind::Collab(Collab {
+                            card: collab_card, ..
+                        }),
+                    ..
+                }) = triggered_event
                 {
                     collab_card.1 == card
                 } else {
@@ -579,10 +583,14 @@ impl HoloMemberAbility {
                 }
             }
             MemberAbilityKind::BloomEffect => {
-                if let TriggeredEvent::After(Event::Bloom(Bloom {
-                    from_card: bloom_card,
+                if let TriggeredEvent::After(Event {
+                    kind:
+                        EventKind::Bloom(Bloom {
+                            from_card: bloom_card,
+                            ..
+                        }),
                     ..
-                })) = triggered_event
+                }) = triggered_event
                 {
                     bloom_card.1 == card
                 } else {
