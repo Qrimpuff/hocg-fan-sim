@@ -1,5 +1,5 @@
 [package]
-name = "hololive-ucg-poc"
+name = "hocg-fan-sim"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,9 +7,13 @@ edition = "2021"
 members = ["derive"]
 
 [dependencies]
-hololive-ucg-poc-derive = { version = "*", path = "derive" }
+hocg-fan-sim-derive = { version = "*", path = "derive" }
 dialoguer = { version = "0.11.0", features = ["fuzzy-select"] }
 rand = "0.8.5"
 enum_dispatch = "0.3.13"
 iter_tools = "0.20.0"
 pretty_assertions = "1.0.0"
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["local-time"] }
+tracing-appender = "0.2.3"
+time = { version = "0.3.36", features = ["macros"] }

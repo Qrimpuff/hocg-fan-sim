@@ -29,7 +29,7 @@
 
 use std::fmt::Debug;
 
-use hololive_ucg_poc_derive::HoloUcgEffect;
+use hocg_fan_sim_derive::HocgFanSimCardEffect;
 use iter_tools::Itertools;
 
 use crate::{
@@ -127,55 +127,55 @@ impl<T: ParseTokens + Debug> ParseTokens for Let<T> {
 
 /////////////////////////////////////
 
-#[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     // add_global_mod <mod> <life_time> -> action
-    #[holo_ucg(token = "add_global_mod")]
+    #[hocg_fan_sim(token = "add_global_mod")]
     AddGlobalModifier(Player, Modifier, LifeTime),
     // add_mod <[card_ref]> <mod> <life_time> -> <action>
-    #[holo_ucg(token = "add_mod")]
+    #[hocg_fan_sim(token = "add_mod")]
     AddModifier(CardReferences, Modifier, LifeTime),
     // add_zone_mod <zone> <mod> <life_time> -> action
-    #[holo_ucg(token = "add_zone_mod")]
+    #[hocg_fan_sim(token = "add_zone_mod")]
     AddZoneModifier(Zone, Modifier, LifeTime),
     // attach_cards <[card_ref]> <card_ref> -> <action>
-    #[holo_ucg(token = "attach_cards")]
+    #[hocg_fan_sim(token = "attach_cards")]
     AttachCards(CardReferences, CardReference),
     // draw <value> -> <action>
-    #[holo_ucg(token = "draw")]
+    #[hocg_fan_sim(token = "draw")]
     Draw(Value),
     // if <condition> <[action]> -> <action>
-    #[holo_ucg(token = "if")]
+    #[hocg_fan_sim(token = "if")]
     If(Condition, Vec<Action>),
     // let <$var> = <[card_ref]> -> <action>
-    #[holo_ucg(transparent)]
+    #[hocg_fan_sim(transparent)]
     LetCardReferences(Let<CardReferences>),
     // let <$var> = <condition> -> <action>
-    #[holo_ucg(transparent)]
+    #[hocg_fan_sim(transparent)]
     LetCondition(Let<Condition>),
     // let <$var> = <select> -> <action>
-    #[holo_ucg(transparent)]
+    #[hocg_fan_sim(transparent)]
     LetSelect(Let<LetValue>),
     // let <$var> = <value> -> <action>
-    #[holo_ucg(transparent)]
+    #[hocg_fan_sim(transparent)]
     LetValue(Let<Value>),
     // no_action -> <action>
-    #[holo_ucg(token = "no_action")]
+    #[hocg_fan_sim(token = "no_action")]
     Noop,
     // reveal <[card_ref]> -> <action>
-    #[holo_ucg(token = "reveal")]
+    #[hocg_fan_sim(token = "reveal")]
     Reveal(CardReferences),
     // send_to <zone> <[card_ref]> -> <action>
-    #[holo_ucg(token = "send_to")]
+    #[hocg_fan_sim(token = "send_to")]
     SendTo(Zone, CardReferences),
     // send_to_bottom <zone> <[card_ref]> -> <action>
-    #[holo_ucg(token = "send_to_bottom")]
+    #[hocg_fan_sim(token = "send_to_bottom")]
     SendToBottom(Zone, CardReferences),
     // send_to_top <zone> <[card_ref]> -> <action>
-    #[holo_ucg(token = "send_to_top")]
+    #[hocg_fan_sim(token = "send_to_top")]
     SendToTop(Zone, CardReferences),
     // shuffle <zone> -> <action>
-    #[holo_ucg(token = "shuffle")]
+    #[hocg_fan_sim(token = "shuffle")]
     Shuffle(Zone),
 }
 
@@ -193,36 +193,36 @@ pub fn serialize_actions(actions: Vec<Action>) -> String {
         .join("\n")
 }
 
-#[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq)]
 pub enum CardReference {
     // TODO figure out the conversion with CardReferences, could panic
     // this_card -> <card_ref>
-    #[holo_ucg(token = "this_card")]
+    #[hocg_fan_sim(token = "this_card")]
     ThisCard,
     // <$var> -> <card_ref>
-    #[holo_ucg(transparent)]
+    #[hocg_fan_sim(transparent)]
     Var(Var),
 }
 
-#[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq)]
 pub enum CardReferences {
     // attached <card_ref> -> <[card_ref]>
-    #[holo_ucg(token = "attached")]
+    #[hocg_fan_sim(token = "attached")]
     Attached(CardReference),
     // from <zone> -> <[card_ref]>
-    #[holo_ucg(token = "from")]
+    #[hocg_fan_sim(token = "from")]
     From(Zone),
     // from_top <value> <zone> -> <[card_ref]>
-    #[holo_ucg(token = "from_top")]
+    #[hocg_fan_sim(token = "from_top")]
     FromTop(Box<Value>, Zone),
     // this_card -> <[card_ref]>
-    #[holo_ucg(token = "this_card")]
+    #[hocg_fan_sim(token = "this_card")]
     ThisCard,
     // <$var> -> <[card_ref]>
-    #[holo_ucg(transparent)]
+    #[hocg_fan_sim(transparent)]
     Var(Var),
     // filter <[card_ref]> <condition> -> <[card_ref]>
-    #[holo_ucg(token = "filter")]
+    #[hocg_fan_sim(token = "filter")]
     Filter(Box<CardReferences>, Box<Condition>),
 }
 
@@ -235,211 +235,211 @@ impl From<bool> for Condition {
     }
 }
 
-#[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq)]
 pub enum Condition {
     // all <[card_ref]> <condition> -> <condition>
-    #[holo_ucg(token = "all")]
+    #[hocg_fan_sim(token = "all")]
     All(CardReferences, Box<Condition>),
     // <condition> and <condition> -> <condition>
-    #[holo_ucg(infix = "and")]
+    #[hocg_fan_sim(infix = "and")]
     And(Box<Condition>, Box<Condition>),
     // any <[card_ref]> <condition> -> <condition>
-    #[holo_ucg(token = "any")]
+    #[hocg_fan_sim(token = "any")]
     Any(CardReferences, Box<Condition>),
     // anything -> <condition>
-    #[holo_ucg(token = "anything")]
+    #[hocg_fan_sim(token = "anything")]
     Anything,
     // <value> == <value> -> <condition>
-    #[holo_ucg(infix = "==")]
+    #[hocg_fan_sim(infix = "==")]
     Equals(Value, Value),
     // exist <[card_ref]> -> <condition>
-    #[holo_ucg(token = "exist")]
+    #[hocg_fan_sim(token = "exist")]
     Exist(CardReferences),
     // false -> <condition>
-    #[holo_ucg(token = "false")]
+    #[hocg_fan_sim(token = "false")]
     False,
     // <value> >= <value> -> <condition>
-    #[holo_ucg(infix = ">=")]
+    #[hocg_fan_sim(infix = ">=")]
     GreaterThanEquals(Value, Value),
     // has_cheers -> <condition>
-    #[holo_ucg(token = "has_cheers")]
+    #[hocg_fan_sim(token = "has_cheers")]
     HasCheers,
     // is_attribute_buzz -> <condition>
-    #[holo_ucg(token = "is_attribute_buzz")]
+    #[hocg_fan_sim(token = "is_attribute_buzz")]
     IsAttributeBuzz,
     // is_color_green -> <condition>
-    #[holo_ucg(token = "is_color_green")]
+    #[hocg_fan_sim(token = "is_color_green")]
     IsColorGreen,
     // is_color_white -> <condition>
-    #[holo_ucg(token = "is_color_white")]
+    #[hocg_fan_sim(token = "is_color_white")]
     IsColorWhite,
     // is_cheer -> <condition>
-    #[holo_ucg(token = "is_cheer")]
+    #[hocg_fan_sim(token = "is_cheer")]
     IsCheer,
     // is_even <value> -> <condition>
-    #[holo_ucg(token = "is_even")]
+    #[hocg_fan_sim(token = "is_even")]
     IsEven(Value),
     // is_level_first -> <condition>
-    #[holo_ucg(token = "is_level_first")]
+    #[hocg_fan_sim(token = "is_level_first")]
     IsLevelFirst,
     // is_level_second -> <condition>
-    #[holo_ucg(token = "is_level_second")]
+    #[hocg_fan_sim(token = "is_level_second")]
     IsLevelSecond,
     // is_member -> <condition>
-    #[holo_ucg(token = "is_member")]
+    #[hocg_fan_sim(token = "is_member")]
     IsMember,
     // is_named_azki -> <condition>
-    #[holo_ucg(token = "is_named_azki")]
+    #[hocg_fan_sim(token = "is_named_azki")]
     IsNamedAzki,
     // is_named_tokino_sora -> <condition>
-    #[holo_ucg(token = "is_named_tokino_sora")]
+    #[hocg_fan_sim(token = "is_named_tokino_sora")]
     IsNamedTokinoSora,
     // is_not <card_ref> -> <condition>
-    #[holo_ucg(token = "is_not")]
+    #[hocg_fan_sim(token = "is_not")]
     IsNot(CardReference),
     // is_odd <value> -> <condition>
-    #[holo_ucg(token = "is_odd")]
+    #[hocg_fan_sim(token = "is_odd")]
     IsOdd(Value),
     // is_support_limited -> <condition>
-    #[holo_ucg(token = "is_support_limited")]
+    #[hocg_fan_sim(token = "is_support_limited")]
     IsSupportLimited,
     // <value> <= <value> -> <condition>
-    #[holo_ucg(infix = "<=")]
+    #[hocg_fan_sim(infix = "<=")]
     LessThanEquals(Value, Value),
     // not <condition> -> <condition>
-    #[holo_ucg(token = "not")]
+    #[hocg_fan_sim(token = "not")]
     Not(Box<Condition>),
     // <condition> or <condition> -> <condition>
-    #[holo_ucg(infix = "or")]
+    #[hocg_fan_sim(infix = "or")]
     Or(Box<Condition>, Box<Condition>),
     // true -> <condition>
-    #[holo_ucg(token = "true")]
+    #[hocg_fan_sim(token = "true")]
     True,
     // <$var> -> <condition>
-    #[holo_ucg(transparent)]
+    #[hocg_fan_sim(transparent)]
     Var(Var),
     // yours -> <condition>
-    #[holo_ucg(token = "yours")]
+    #[hocg_fan_sim(token = "yours")]
     Yours,
 }
 
-#[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq)]
 pub enum LetValue {
     // optional_activate -> <condition>
-    #[holo_ucg(token = "optional_activate")]
+    #[hocg_fan_sim(token = "optional_activate")]
     OptionalActivate,
     // roll_dice -> <value>
-    #[holo_ucg(token = "roll_dice")]
+    #[hocg_fan_sim(token = "roll_dice")]
     RollDice,
     // select_any <[card_ref]> <condition> -> <[card_ref]> $_leftovers
-    #[holo_ucg(token = "select_any")]
+    #[hocg_fan_sim(token = "select_any")]
     SelectAny(Box<CardReferences>, Box<Condition>),
     // select_one <[card_ref]> <condition> -> <[card_ref]> $_leftovers
-    #[holo_ucg(token = "select_one")]
+    #[hocg_fan_sim(token = "select_one")]
     SelectOne(Box<CardReferences>, Box<Condition>),
     // select_number_between <value> <value> -> <value>
-    #[holo_ucg(token = "select_number_between")]
+    #[hocg_fan_sim(token = "select_number_between")]
     SelectNumberBetween(Box<Value>, Box<Value>),
     // select_up_to <value> <[card_ref]> <condition> -> <[card_ref]> $_leftovers
-    #[holo_ucg(token = "select_up_to")]
+    #[hocg_fan_sim(token = "select_up_to")]
     SelectUpTo(Box<Value>, Box<CardReferences>, Box<Condition>),
 }
 
-#[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq)]
 pub enum LifeTime {
     // this_game -> <life_time>
-    #[holo_ucg(token = "this_game")]
+    #[hocg_fan_sim(token = "this_game")]
     ThisGame,
     // this_turn -> <life_time>
-    #[holo_ucg(token = "this_turn")]
+    #[hocg_fan_sim(token = "this_turn")]
     ThisTurn,
     // next_turn <player> -> <life_time>
-    #[holo_ucg(token = "next_turn")]
+    #[hocg_fan_sim(token = "next_turn")]
     NextTurn(Player),
     // this_step -> <life_time>
-    #[holo_ucg(token = "this_step")]
+    #[hocg_fan_sim(token = "this_step")]
     ThisStep,
     // this_art -> <life_time>
-    #[holo_ucg(token = "this_art")]
+    #[hocg_fan_sim(token = "this_art")]
     ThisArt,
     // this_effect -> <life_time>
-    #[holo_ucg(token = "this_effect")]
+    #[hocg_fan_sim(token = "this_effect")]
     ThisEffect,
     // until_removed -> <life_time>
-    #[holo_ucg(token = "until_removed")]
+    #[hocg_fan_sim(token = "until_removed")]
     UntilRemoved,
 }
 
-#[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq)]
 pub enum Modifier {
     // more_dmg <value> -> <mod>
-    #[holo_ucg(token = "more_dmg")]
+    #[hocg_fan_sim(token = "more_dmg")]
     MoreDamage(Value),
     // next_dice_roll <value> -> <mod>
-    #[holo_ucg(token = "next_dice_roll")]
+    #[hocg_fan_sim(token = "next_dice_roll")]
     NextDiceRoll(Value),
     // when <condition> <mod>  -> <mod>
-    #[holo_ucg(token = "when")]
+    #[hocg_fan_sim(token = "when")]
     When(Condition, Box<Modifier>),
 }
 
-#[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq)]
 pub enum Player {
     // you -> <player>
-    #[holo_ucg(token = "you")]
+    #[hocg_fan_sim(token = "you")]
     You,
     // opponent -> <player>
-    #[holo_ucg(token = "opponent")]
+    #[hocg_fan_sim(token = "opponent")]
     Opponent,
 }
 
-#[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq)]
 pub enum Value {
     // count <[card_ref]> -> <value>
-    #[holo_ucg(token = "count")]
+    #[hocg_fan_sim(token = "count")]
     Count(CardReferences),
     // 123 -> <value>
-    #[holo_ucg(transparent)]
+    #[hocg_fan_sim(transparent)]
     Number(Number),
     // <$var> -> <value>
-    #[holo_ucg(transparent)]
+    #[hocg_fan_sim(transparent)]
     Var(Var),
 }
 
-#[derive(HoloUcgEffect, Debug, Clone, PartialEq, Eq)]
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq)]
 pub enum Zone {
     // archive -> <zone>
-    #[holo_ucg(token = "archive")]
+    #[hocg_fan_sim(token = "archive")]
     Archive,
     // back_stage -> <zone>
-    #[holo_ucg(token = "back_stage")]
+    #[hocg_fan_sim(token = "back_stage")]
     BackStage,
     // center_stage -> <zone>
-    #[holo_ucg(token = "center_stage")]
+    #[hocg_fan_sim(token = "center_stage")]
     CenterStage,
     // cheer_deck -> <zone>
-    #[holo_ucg(token = "cheer_deck")]
+    #[hocg_fan_sim(token = "cheer_deck")]
     CheerDeck,
     // hand -> <zone>
-    #[holo_ucg(token = "hand")]
+    #[hocg_fan_sim(token = "hand")]
     Hand,
     // holo_power -> <zone>
-    #[holo_ucg(token = "holo_power")]
+    #[hocg_fan_sim(token = "holo_power")]
     HoloPower,
     // main_deck -> <zone>
-    #[holo_ucg(token = "main_deck")]
+    #[hocg_fan_sim(token = "main_deck")]
     MainDeck,
     // main_stage -> <zone>
-    #[holo_ucg(token = "main_stage")]
+    #[hocg_fan_sim(token = "main_stage")]
     MainStage,
     // opponent_back_stage -> <zone>
-    #[holo_ucg(token = "opponent_back_stage")]
+    #[hocg_fan_sim(token = "opponent_back_stage")]
     OpponentBackStage,
     // opponent_center_stage -> <zone>
-    #[holo_ucg(token = "opponent_center_stage")]
+    #[hocg_fan_sim(token = "opponent_center_stage")]
     OpponentCenterStage,
     // stage -> <zone>
-    #[holo_ucg(token = "stage")]
+    #[hocg_fan_sim(token = "stage")]
     Stage,
 }
 

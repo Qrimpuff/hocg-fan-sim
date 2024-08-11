@@ -7,15 +7,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'hololive-ucg-poc'",
+            "name": "Debug executable 'hocg-fan-sim'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=hololive-ucg-poc",
-                    "--package=hololive-ucg-poc"
+                    "--bin=hocg-fan-sim",
+                    "--package=hocg-fan-sim"
                 ],
                 "filter": {
-                    "name": "hololive-ucg-poc",
+                    "name": "hocg-fan-sim",
                     "kind": "bin"
                 }
             },
@@ -25,16 +25,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'hololive-ucg-poc'",
+            "name": "Debug unit tests in executable 'hocg-fan-sim'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=hololive-ucg-poc",
-                    "--package=hololive-ucg-poc"
+                    "--bin=hocg-fan-sim",
+                    "--package=hocg-fan-sim"
                 ],
                 "filter": {
-                    "name": "hololive-ucg-poc",
+                    "name": "hocg-fan-sim",
                     "kind": "bin"
                 }
             },

@@ -1,2 +1,2 @@
-# hololive-ucg-poc
-Hololive Unofficial Card Game client
+# hocg-fan-sim
+Hololive OCG - Fan Simulator

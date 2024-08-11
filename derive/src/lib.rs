@@ -21,7 +21,7 @@ use syn::{
 ///
 /// Struct fields including their attributes are copied over.
 #[cfg(not(tarpaulin_include))]
-#[proc_macro_derive(HoloUcgEffect, attributes(holo_ucg))]
+#[proc_macro_derive(HocgFanSimCardEffect, attributes(hocg_fan_sim))]
 pub fn enum_variant_type(input: TokenStream) -> TokenStream {
     use syn::parse_macro_input;
 
@@ -39,7 +39,7 @@ fn ser_de_token_for_enum_impl(ast: DeriveInput) -> proc_macro2::TokenStream {
 
     let mut ser_de_token_for_enum = proc_macro2::TokenStream::new();
 
-    let ns: Path = parse_quote!(holo_ucg);
+    let ns: Path = parse_quote!(hocg_fan_sim);
 
     // serialize effect tokens
     let ser_variants_arms = variants.iter().map(|variant| {
@@ -396,14 +396,14 @@ fn attributes(variant: &Variant, ns: &Path) -> (Option<String>, Option<String>, 
                 {
                     infix = Some(lit_str.value());
                 } else {
-                    panic!("Expected `holo_ucg` attribute argument in the form: `#[holo_ucg(token = \"some_token\")]`");
+                    panic!("Expected `hocg_fan_sim` attribute argument in the form: `#[hocg_fan_sim(token = \"some_token\")]`");
                 }
             }
             NestedMeta::Meta(Meta::Path(path)) => {
                 if path.is_ident("transparent") {
                     transparent = true;
                 } else {
-                    panic!("Expected `holo_ucg` attribute argument in the form: `#[holo_ucg(transparent)]`");
+                    panic!("Expected `hocg_fan_sim` attribute argument in the form: `#[hocg_fan_sim(transparent)]`");
                 }
             }
             a => panic!("{:?}", a),
@@ -433,23 +433,23 @@ mod tests {
             pub enum MyEnum {
                 /// Unit variant.
                 #[evt(derive(Clone, Copy, Debug, PartialEq, Eq))]
-                #[holo_ucg(token = "unit", infix = "=")]
+                #[hocg_fan_sim(token = "unit", infix = "=")]
                 Unit,
                 /// Tuple variant.
                 #[evt(derive(Debug))]
-                #[holo_ucg(token = "tuple")]
+                #[hocg_fan_sim(token = "tuple")]
                 Tuple(u32, u64),
                 // /// Tuple variant.
                 #[evt(derive(Debug))]
-                #[holo_ucg(infix = "+")]
+                #[hocg_fan_sim(infix = "+")]
                 TupleInfix(u32, u64),
                 /// Tuple variant.
                 #[evt(derive(Debug))]
-                #[holo_ucg(token = "let", infix = "=")]
+                #[hocg_fan_sim(token = "let", infix = "=")]
                 TuplePrefixInfix(u32, u64),
                 /// Tuple variant.
                 #[evt(derive(Debug))]
-                #[holo_ucg(transparent)]
+                #[hocg_fan_sim(transparent)]
                 Transparent(u32, u32),
             }
         };

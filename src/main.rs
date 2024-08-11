@@ -13,6 +13,9 @@ use card_effects::*;
 use cards::*;
 use gameplay::{Game, RandomPrompter};
 use temp::test_library;
+use time::macros::format_description;
+use tracing::{debug, info};
+use tracing_subscriber::fmt::time::LocalTime;
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -20,6 +23,20 @@ const TEST_TEXT: &str = "for active_holo buff more_def 1 next_turn";
 
 fn main() {
     env::set_var("RUST_BACKTRACE", "1");
+
+    // setup logs
+    let file_appender = tracing_appender::rolling::daily("logs", "hocg-fan-sim.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+    tracing_subscriber::fmt()
+        .with_timer(LocalTime::new(format_description!(
+            "[year]-[month]-[day] [hour repr:24]:[minute]:[second].[subsecond digits:4]"
+        )))
+        .with_writer(non_blocking)
+        .with_ansi(false)
+        // enable thread id to be emitted
+        .with_thread_ids(true)
+        .init();
+    info!("-- Hololive OCG - Fan Simulator is running --");
 
     let cond = r"
         let $center_mem = ((from_zone center_stage) where is_member)
