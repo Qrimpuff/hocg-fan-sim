@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fmt::Display;
-use std::num::NonZeroUsize;
+use std::num::NonZeroU16;
+use std::sync::atomic::AtomicU16;
 
 use crate::evaluate::EvaluateEffect;
 use crate::Condition;
@@ -9,15 +10,14 @@ use crate::Condition;
 use super::cards::*;
 use super::gameplay::*;
 
-use rand::thread_rng;
-use rand::Rng;
+static NEXT_MODIFIER_REF: AtomicU16 = AtomicU16::new(1);
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ModifierRef(NonZeroUsize);
+pub struct ModifierRef(NonZeroU16);
 
 impl Debug for ModifierRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "m_{:016x}", self.0)
+        write!(f, "m_{:04x}", self.0)
     }
 }
 impl Display for ModifierRef {
@@ -68,27 +68,18 @@ pub struct Modifier {
 }
 
 impl Modifier {
-    pub fn for_card(card: CardRef, kind: ModifierKind, life_time: LifeTime) -> Self {
-        let id = ModifierRef(
-            NonZeroUsize::new((thread_rng().gen::<usize>() << 16) ^ usize::from(card.0))
-                .expect("card is non zero"),
-        );
+    pub fn for_card(_card: CardRef, kind: ModifierKind, life_time: LifeTime) -> Self {
+        let next_ref = NEXT_MODIFIER_REF.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let id = ModifierRef(NonZeroU16::new(next_ref).expect("card is non zero"));
         Modifier {
             id,
             kind,
             life_time,
         }
     }
-    pub fn for_zone(player: Player, zone: Zone, kind: ModifierKind, life_time: LifeTime) -> Self {
-        let id = ModifierRef(
-            NonZeroUsize::new(
-                (thread_rng().gen::<usize>() << 16)
-                    + ((zone as usize + 1) << 8)
-                    + (player as usize)
-                    + 1,
-            )
-            .expect("zone is non zero"),
-        );
+    pub fn for_zone(_player: Player, _zone: Zone, kind: ModifierKind, life_time: LifeTime) -> Self {
+        let next_ref = NEXT_MODIFIER_REF.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let id = ModifierRef(NonZeroU16::new(next_ref).expect("zone is non zero"));
         Modifier {
             id,
             kind,

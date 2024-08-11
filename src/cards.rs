@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use iter_tools::Itertools;
+use tracing::error;
 
 use crate::evaluate::EvaluateEffect;
 use crate::events::{Bloom, Collab, Event, TriggeredEvent};
@@ -179,50 +180,50 @@ impl GlobalLibrary {
             match card {
                 Card::OshiHoloMember(o) => o.skills.iter_mut().for_each(|s| {
                     if let Err(e) = serialization_round_trip(s.condition.clone()) {
-                        eprintln!("{}: {} - condition - {}", o.card_number, s.name, e);
+                        error!("{}: {} - condition - {}", o.card_number, s.name, e);
                         has_errors = true;
                     }
                     if let Err(e) = serialization_round_trip(s.effect.clone()) {
-                        eprintln!("{}: {} - effect - {}", o.card_number, s.name, e);
+                        error!("{}: {} - effect - {}", o.card_number, s.name, e);
                         has_errors = true;
                     }
                 }),
                 Card::HoloMember(m) => {
                     m.abilities.iter_mut().for_each(|a| {
                         if let Err(e) = serialization_round_trip(a.condition.clone()) {
-                            eprintln!("{}: {} - condition - {}", m.card_number, a.name, e);
+                            error!("{}: {} - condition - {}", m.card_number, a.name, e);
                             has_errors = true;
                         }
                         if let Err(e) = serialization_round_trip(a.effect.clone()) {
-                            eprintln!("{}: {} - effect - {}", m.card_number, a.name, e);
+                            error!("{}: {} - effect - {}", m.card_number, a.name, e);
                             has_errors = true;
                         }
                     });
                     m.arts.iter_mut().for_each(|a| {
                         if let Err(e) = serialization_round_trip(a.condition.clone()) {
-                            eprintln!("{}: {} - condition - {}", m.card_number, a.name, e);
+                            error!("{}: {} - condition - {}", m.card_number, a.name, e);
                             has_errors = true;
                         }
                         if let Err(e) = serialization_round_trip(a.effect.clone()) {
-                            eprintln!("{}: {} - effect - {}", m.card_number, a.name, e);
+                            error!("{}: {} - effect - {}", m.card_number, a.name, e);
                             has_errors = true;
                         }
                     })
                 }
                 Card::Support(s) => {
                     if let Err(e) = serialization_round_trip(s.attachment_condition.clone()) {
-                        eprintln!(
+                        error!(
                             "{}: {} - attachment_condition - {}",
                             s.card_number, s.name, e
                         );
                         has_errors = true;
                     }
                     if let Err(e) = serialization_round_trip(s.condition.clone()) {
-                        eprintln!("{}: {} - condition - {}", s.card_number, s.name, e);
+                        error!("{}: {} - condition - {}", s.card_number, s.name, e);
                         has_errors = true;
                     }
                     if let Err(e) = serialization_round_trip(s.effect.clone()) {
-                        eprintln!("{}: {} - effect - {}", s.card_number, s.name, e);
+                        error!("{}: {} - effect - {}", s.card_number, s.name, e);
                         has_errors = true;
                     }
                 }

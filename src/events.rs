@@ -7,11 +7,12 @@ use crate::{
         Zone, ZoneAddLocation, MAX_MEMBERS_ON_STAGE,
     },
     modifiers::{DamageMarkers, LifeTime, Modifier, ModifierKind, ModifierRef},
-    CardNumber, HoloMemberArtDamage, HoloMemberExtraAttribute, Loadout, OshiSkillKind,
+    CardNumber, HoloMemberArtDamage, HoloMemberExtraAttribute, OshiSkillKind,
 };
 use enum_dispatch::enum_dispatch;
 use iter_tools::Itertools;
 use rand::{thread_rng, Rng};
+use tracing::{debug, error};
 use ModifierKind::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -251,7 +252,7 @@ impl Game {
         // change the event before it happens, with modifiers from triggers
         event.adjust_event(self)?;
 
-        println!("EVENT = {event:?}");
+        debug!("EVENT = {event:?}");
         // perform the modification to the game state
         event.evaluate_event(self)?;
 
@@ -266,7 +267,7 @@ impl Game {
     }
 
     fn evaluate_triggers(&mut self, trigger: TriggeredEvent) -> GameResult {
-        println!("  trigger = {trigger:?}");
+        debug!("TRIGGER = {trigger:?}");
 
         let all_cards_on_stage = self
             .player_1
@@ -288,7 +289,7 @@ impl Game {
                                 .evaluate_with_card_event(self, card, trigger.event())
                         {
                             // TODO activate skill
-                            println!("  [ACTIVATE SKILL] = {skill:?}");
+                            debug!("ACTIVATE SKILL = {skill:?}");
                             oshi_skill = Some(idx);
                         }
                     }
@@ -303,7 +304,7 @@ impl Game {
                             )
                         {
                             // TODO activate ability
-                            println!("  [ACTIVATE ABILITY] = {ability:?}");
+                            debug!("ACTIVATE ABILITY = {ability:?}");
                             member_ability = Some(idx);
                         }
                     }
@@ -314,7 +315,7 @@ impl Game {
                             .evaluate_with_card_event(self, card, trigger.event())
                     {
                         // TODO activate skill
-                        println!("  [ACTIVATE SUPPORT] = {s:?}");
+                        debug!("ACTIVATE SUPPORT = {s:?}");
                         support_ability = true;
                     }
                 }
@@ -333,6 +334,12 @@ impl Game {
                 self.activate_support_ability(card)?;
             }
         }
+
+        Ok(GameContinue)
+    }
+
+    pub fn setup_game(&mut self) -> GameResult {
+        self.send_event(Setup {}.into())?;
 
         Ok(GameContinue)
     }
@@ -1338,10 +1345,7 @@ fn verify_cards_in_zone(game: &Game, player: Player, zone: Zone, cards: &[CardRe
     let from_zone = game.board(player).get_zone(zone);
     let all_card_in_zone = cards.iter().all(|c| from_zone.is_in_zone(*c));
     if !all_card_in_zone {
-        // println!("{game:#?}");
-        // println!("{player:#?}");
-        // println!("{zone:#?}");
-        // println!("{cards:#?}");
+        error!("not all cards are in zone - game: {game:#?} - player: {player:#?} - zone: {zone:#?} - cards: {cards:#?}");
         panic!("not all cards are in zone")
     }
 }
@@ -1351,10 +1355,7 @@ fn verify_cards_attached(game: &Game, player: Player, card: CardRef, attachments
     let board = game.board(player);
     let all_card_attached = attachments.iter().all(|a| board.is_attached_to(*a, card));
     if !all_card_attached {
-        // println!("{game:#?}");
-        // println!("{player:#?}");
-        // println!("{card:#?}");
-        // println!("{attachments:#?}");
+        error!("not all cards are attached - game: {game:#?} - player: {player:#?} - card: {card:#?} - attachments: {attachments:#?}");
         panic!("not all cards are attached")
     }
 }
@@ -1362,14 +1363,164 @@ fn verify_cards_attached(game: &Game, player: Player, card: CardRef, attachments
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Setup {
     // send both decks loadout, private, asymmetric
-    pub you: Player,
-    pub player_1: Loadout,
-    pub player_2: Loadout,
+    // TODO not sure what to do with these
+    // pub you: Player,
+    // pub player_1: Loadout,
+    // pub player_2: Loadout,
 }
 impl EvaluateEvent for Setup {
-    fn evaluate_event(&self, _game: &mut Game) -> GameResult {
-        // TODO implement
-        unimplemented!()
+    fn evaluate_event(&self, game: &mut Game) -> GameResult {
+        game.active_step = Step::Setup;
+
+        // - shuffle main deck
+        game.shuffle_main_deck(Player::One)?;
+        game.shuffle_main_deck(Player::Two)?;
+
+        // - shuffle cheer deck
+        game.shuffle_cheer_deck(Player::One)?;
+        game.shuffle_cheer_deck(Player::Two)?;
+
+        // - oshi face down
+        // TODO oshi hide
+        // TODO send (event) put oshi, not needed ? starts hidden
+
+        // - rock/paper/scissor to choose first
+        // TODO request (intent)
+        let first_player;
+        loop {
+            println!("prompt rps");
+            let rps_1 = game.prompt_for_rps();
+            let rps_2 = game.prompt_for_rps();
+            use super::gameplay::RpsOutcome;
+            match rps_1.vs(rps_2) {
+                RpsOutcome::Win => {
+                    println!("player 1 win rps");
+                    game.report_rps_win(Player::One)?;
+                    // TODO choose first or second
+                    first_player = Player::One;
+                    break;
+                }
+                RpsOutcome::Lose => {
+                    println!("player 2 win rps");
+                    game.report_rps_win(Player::Two)?;
+                    // TODO choose first or second
+                    first_player = Player::Two;
+                    break;
+                }
+                RpsOutcome::Draw => {
+                    println!("draw rps");
+                    game.report_rps_draw()?;
+                    continue;
+                }
+            }
+        }
+        // TODO choose first or second
+        game.report_player_going_first(first_player)?;
+        let second_player = first_player.opponent();
+
+        // - draw 7 cards from main deck
+        //   - can mulligan once, forced for -1 card. at 0 lose the game
+        // TODO request (intent)
+        game.handle_mulligan(first_player)?;
+
+        // TODO request (intent)
+        game.handle_mulligan(second_player)?;
+
+        // - place debut member center face down
+        // TODO member hide
+        // TODO request (intent)
+        println!("prompt debut 1");
+        let debut_1 = game.prompt_for_first_debut(first_player);
+        game.send_from_hand_to_center_stage(first_player, debut_1)?;
+
+        // TODO member hide
+        // TODO request (intent)
+        println!("prompt debut 2");
+        let debut_2 = game.prompt_for_first_debut(second_player);
+        game.send_from_hand_to_center_stage(second_player, debut_2)?;
+
+        // - place other debut / spot members back stage
+        // TODO member hide
+        // TODO request (intent)
+        println!("prompt other debut 1");
+        let other_debut_1: Vec<_> = game.prompt_for_first_back_stage(first_player);
+        game.send_from_hand_to_back_stage(first_player, other_debut_1)?;
+
+        // TODO member hide
+        // TODO request (intent)
+        println!("prompt other debut 2");
+        let other_debut_2: Vec<_> = game.prompt_for_first_back_stage(second_player);
+        game.send_from_hand_to_back_stage(second_player, other_debut_2)?;
+
+        // - reveal face down oshi and members
+        // oshi and members reveal
+        game.reveal_all_cards_in_zone(first_player, Zone::Oshi)?;
+        game.reveal_all_cards_in_zone(second_player, Zone::Oshi)?;
+        game.reveal_all_cards_in_zone(first_player, Zone::CenterStage)?;
+        game.reveal_all_cards_in_zone(second_player, Zone::CenterStage)?;
+        game.reveal_all_cards_in_zone(first_player, Zone::BackStage)?;
+        game.reveal_all_cards_in_zone(second_player, Zone::BackStage)?;
+
+        // - draw life cards face down from cheer
+        let oshi_1 = game
+            .board(first_player)
+            .oshi()
+            .and_then(|c| game.lookup_oshi(c))
+            .expect("oshi should always be there");
+        game.send_cheers_to_life(first_player, oshi_1.life as usize)?;
+
+        let oshi_2 = game
+            .board(second_player)
+            .oshi()
+            .and_then(|c| game.lookup_oshi(c))
+            .expect("oshi should always be there");
+        game.send_cheers_to_life(second_player, oshi_2.life as usize)?;
+
+        // skip the first reset step of each player
+        game.add_zone_modifier(
+            first_player,
+            Zone::All,
+            SkipStep(Step::Reset),
+            LifeTime::NextTurn(first_player),
+        )?;
+        game.add_zone_modifier(
+            second_player,
+            Zone::All,
+            SkipStep(Step::Reset),
+            LifeTime::NextTurn(second_player),
+        )?;
+
+        // cannot use limited support on the first turn of the first player
+        game.add_zone_modifier(
+            first_player,
+            Zone::All,
+            PreventLimitedSupport,
+            LifeTime::NextTurn(first_player),
+        )?;
+
+        // cannot bloom on each player's first turn
+        game.add_zone_modifier(
+            first_player,
+            Zone::All,
+            PreventBloom,
+            LifeTime::NextTurn(first_player),
+        )?;
+        game.add_zone_modifier(
+            second_player,
+            Zone::All,
+            PreventBloom,
+            LifeTime::NextTurn(second_player),
+        )?;
+
+        // skip the first performance step of the game
+        game.add_zone_modifier(
+            first_player,
+            Zone::All,
+            SkipStep(Step::Performance),
+            LifeTime::NextTurn(first_player),
+        )?;
+
+        Ok(GameContinue)
     }
 }
 

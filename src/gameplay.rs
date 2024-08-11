@@ -1,5 +1,6 @@
 use std::fmt::Display;
-use std::num::NonZeroUsize;
+use std::num::NonZeroU16;
+use std::sync::atomic::AtomicU8;
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use crate::evaluate::{EvaluateContext, EvaluateEffect};
@@ -10,25 +11,47 @@ use super::modifiers::*;
 use iter_tools::Itertools;
 use rand::seq::IteratorRandom;
 use rand::{thread_rng, Rng};
+use tracing::debug;
 use ModifierKind::*;
 
 pub const STARTING_HAND_SIZE: usize = 7;
 pub const MAX_MEMBERS_ON_STAGE: usize = 6;
 
-static PRIVATE_CARD: CardRef = CardRef(NonZeroUsize::MAX);
+static PRIVATE_CARD: CardRef = CardRef(NonZeroU16::MAX);
+static NEXT_P1_CARD_REF: AtomicU8 = AtomicU8::new(1);
+static NEXT_P2_CARD_REF: AtomicU8 = AtomicU8::new(1);
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CardRef(pub(crate) NonZeroUsize);
+pub struct CardRef(pub(crate) NonZeroU16);
 
 impl Debug for CardRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "c_{:016x}", self.0)
+        write!(f, "c_{:04x}", self.0)
     }
 }
 impl Display for CardRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
     }
+}
+
+pub fn register_card(
+    player: Player,
+    card_type_id: u16,
+    card_number: &CardNumber,
+    card_map: &mut HashMap<CardRef, (Player, CardNumber)>,
+) -> CardRef {
+    let next_ref = match player {
+        Player::One => NEXT_P1_CARD_REF.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        Player::Two => NEXT_P2_CARD_REF.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        Player::Both => todo!(),
+    } as u16;
+    let card = CardRef(
+        NonZeroU16::new((next_ref << 8) + (card_type_id << 4) + (player as u16) + 1)
+            .expect("that plus one makes it non zero"),
+    );
+    card_map.insert(card, (player, card_number.clone()));
+    card
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -65,19 +88,6 @@ pub enum GameOverReason {
     EmptyStage,
     EmptyLife,
     Draw,
-}
-
-pub fn register_card(
-    player: Player,
-    card_number: &CardNumber,
-    card_map: &mut HashMap<CardRef, (Player, CardNumber)>,
-) -> CardRef {
-    let card = CardRef(
-        NonZeroUsize::new((thread_rng().gen::<usize>() << 4) + (player as usize) + 1)
-            .expect("that plus one makes it non zero"),
-    );
-    card_map.insert(card, (player, card_number.clone()));
-    card
 }
 
 #[derive(Debug)]
@@ -229,154 +239,10 @@ impl Game {
     }
 
     pub fn start_game(&mut self) -> GameResult {
-        println!("card_map: {:?}", self.card_map);
+        debug!("card_map: {:?}", self.card_map);
 
-        self.active_step = Step::Setup;
-
-        // - shuffle main deck
-        self.shuffle_main_deck(Player::One)?;
-        self.shuffle_main_deck(Player::Two)?;
-
-        // - shuffle cheer deck
-        self.shuffle_cheer_deck(Player::One)?;
-        self.shuffle_cheer_deck(Player::Two)?;
-
-        // - oshi face down
-        // TODO oshi hide
-        // TODO send (event) put oshi, not needed ? starts hidden
-
-        // - rock/paper/scissor to choose first
-        // TODO request (intent)
-        loop {
-            println!("prompt rps");
-            let rps_1 = self.prompt_for_rps();
-            let rps_2 = self.prompt_for_rps();
-            match rps_1.vs(rps_2) {
-                RpsOutcome::Win => {
-                    println!("player 1 win rps");
-                    self.report_rps_win(Player::One)?;
-                    // TODO choose first or second
-                    self.active_player = Player::One;
-                    break;
-                }
-                RpsOutcome::Lose => {
-                    println!("player 2 win rps");
-                    self.report_rps_win(Player::Two)?;
-                    // TODO choose first or second
-                    self.active_player = Player::Two;
-                    break;
-                }
-                RpsOutcome::Draw => {
-                    println!("draw rps");
-                    self.report_rps_draw()?;
-                    continue;
-                }
-            }
-        }
-        // TODO choose first or second
-        self.report_player_going_first(self.active_player)?;
-
-        // - draw 7 cards from main deck
-        //   - can mulligan once, forced for -1 card. at 0 lose the game
-        // TODO request (intent)
-        self.handle_mulligan(Player::One)?;
-
-        // TODO request (intent)
-        self.handle_mulligan(Player::Two)?;
-
-        // - place debut member center face down
-        // TODO member hide
-        // TODO request (intent)
-        println!("prompt debut 1");
-        let debut_1 = self.prompt_for_first_debut(Player::One);
-        self.send_from_hand_to_center_stage(Player::One, debut_1)?;
-
-        // TODO member hide
-        // TODO request (intent)
-        println!("prompt debut 2");
-        let debut_2 = self.prompt_for_first_debut(Player::Two);
-        self.send_from_hand_to_center_stage(Player::Two, debut_2)?;
-
-        // - place other debut / spot members back stage
-        // TODO member hide
-        // TODO request (intent)
-        println!("prompt other debut 1");
-        let other_debut_1: Vec<_> = self.prompt_for_first_back_stage(Player::One);
-        self.send_from_hand_to_back_stage(Player::One, other_debut_1)?;
-
-        // TODO member hide
-        // TODO request (intent)
-        println!("prompt other debut 2");
-        let other_debut_2: Vec<_> = self.prompt_for_first_back_stage(Player::Two);
-        self.send_from_hand_to_back_stage(Player::Two, other_debut_2)?;
-
-        // - reveal face down oshi and members
-        // oshi and members reveal
-        self.reveal_all_cards_in_zone(Player::One, Zone::Oshi)?;
-        self.reveal_all_cards_in_zone(Player::Two, Zone::Oshi)?;
-        self.reveal_all_cards_in_zone(Player::One, Zone::CenterStage)?;
-        self.reveal_all_cards_in_zone(Player::Two, Zone::CenterStage)?;
-        self.reveal_all_cards_in_zone(Player::One, Zone::BackStage)?;
-        self.reveal_all_cards_in_zone(Player::Two, Zone::BackStage)?;
-
-        // - draw life cards face down from cheer
-        let oshi_1 = self
-            .player_1
-            .oshi
-            .and_then(|c| self.lookup_oshi(c))
-            .expect("oshi should always be there");
-        self.send_cheers_to_life(Player::One, oshi_1.life as usize)?;
-
-        let oshi_2 = self
-            .player_2
-            .oshi
-            .and_then(|c| self.lookup_oshi(c))
-            .expect("oshi should always be there");
-        self.send_cheers_to_life(Player::Two, oshi_2.life as usize)?;
-
-        // skip the first reset step of each player
-        self.add_zone_modifier(
-            Player::One,
-            Zone::All,
-            SkipStep(Step::Reset),
-            LifeTime::NextTurn(Player::One),
-        )?;
-        self.add_zone_modifier(
-            Player::Two,
-            Zone::All,
-            SkipStep(Step::Reset),
-            LifeTime::NextTurn(Player::Two),
-        )?;
-
-        // cannot use limited support on the first turn of the first player
-        self.add_zone_modifier(
-            self.active_player,
-            Zone::All,
-            PreventLimitedSupport,
-            LifeTime::NextTurn(self.active_player),
-        )?;
-
-        // cannot bloom on each player's first turn
-        self.add_zone_modifier(
-            Player::One,
-            Zone::All,
-            PreventBloom,
-            LifeTime::NextTurn(Player::One),
-        )?;
-        self.add_zone_modifier(
-            Player::Two,
-            Zone::All,
-            PreventBloom,
-            LifeTime::NextTurn(Player::Two),
-        )?;
-
-        // skip the first performance step of the game
-        self.add_zone_modifier(
-            self.active_player,
-            Zone::All,
-            SkipStep(Step::Performance),
-            LifeTime::NextTurn(self.active_player),
-        )?;
+        // - game setup
+        self.setup_game()?;
 
         // - game start
         self.report_start_game(self.active_player)?;
@@ -1102,8 +968,8 @@ impl Game {
 
 #[derive(Debug)]
 pub struct GameBoard {
-    main_deck: Vec<CardRef>,
     oshi: Option<CardRef>,
+    main_deck: Vec<CardRef>,
     center_stage: Option<CardRef>,
     collab: Option<CardRef>,
     back_stage: Vec<CardRef>,
@@ -1123,12 +989,12 @@ impl GameBoard {
         card_map: &mut HashMap<CardRef, (Player, CardNumber)>,
     ) -> GameBoard {
         GameBoard {
+            oshi: Some(register_card(player, 0, &loadout.oshi, card_map)),
             main_deck: loadout
                 .main_deck
                 .iter()
-                .map(|c| register_card(player, c, card_map))
+                .map(|c| register_card(player, 1, c, card_map))
                 .collect(),
-            oshi: Some(register_card(player, &loadout.oshi, card_map)),
             center_stage: None,
             collab: None,
             back_stage: Vec::new(),
@@ -1136,7 +1002,7 @@ impl GameBoard {
             cheer_deck: loadout
                 .cheer_deck
                 .iter()
-                .map(|c| register_card(player, c, card_map))
+                .map(|c| register_card(player, 2, c, card_map))
                 .collect(),
             holo_power: Vec::new(),
             archive: Vec::new(),
@@ -1146,6 +1012,9 @@ impl GameBoard {
         }
     }
 
+    pub fn oshi(&self) -> Option<CardRef> {
+        self.oshi
+    }
     pub fn hand(&self) -> impl Iterator<Item = CardRef> + '_ {
         self.hand.iter().copied()
     }

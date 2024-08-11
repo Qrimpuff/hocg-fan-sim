@@ -1,4 +1,5 @@
 use iter_tools::Itertools;
+use tracing::error;
 
 use super::error::*;
 use std::fmt::{Debug, Display};
@@ -109,7 +110,7 @@ pub trait ParseTokens: Debug + Sized {
             if ok.1.is_empty() {
                 Ok(ok.0)
             } else {
-                dbg!(&ok.1);
+                error!("RemainingTokens: {:?}", &ok.1);
                 Err(Error::RemainingTokens)
             }
         })

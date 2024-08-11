@@ -15,7 +15,7 @@ use gameplay::{Game, RandomPrompter};
 use temp::test_library;
 use time::macros::format_description;
 use tracing::{debug, info};
-use tracing_subscriber::fmt::time::LocalTime;
+use tracing_subscriber::{fmt::time::LocalTime, EnvFilter};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -23,6 +23,7 @@ const TEST_TEXT: &str = "for active_holo buff more_def 1 next_turn";
 
 fn main() {
     env::set_var("RUST_BACKTRACE", "1");
+    env::set_var("RUST_LOG", "DEBUG");
 
     // setup logs
     let file_appender = tracing_appender::rolling::daily("logs", "hocg-fan-sim.log");
@@ -35,6 +36,7 @@ fn main() {
         .with_ansi(false)
         // enable thread id to be emitted
         .with_thread_ids(true)
+        .with_env_filter(EnvFilter::from_default_env())
         .init();
     info!("-- Hololive OCG - Fan Simulator is running --");
 
