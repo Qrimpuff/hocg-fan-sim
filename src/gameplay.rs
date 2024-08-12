@@ -1,18 +1,23 @@
 use std::fmt::Display;
 use std::num::NonZeroU16;
 use std::sync::atomic::AtomicU8;
+use std::sync::mpsc::{Receiver, Sender};
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
-use crate::evaluate::{EvaluateContext, EvaluateEffect};
-use crate::events::EventSpan;
-use crate::{Condition, Trigger};
+use crate::card_effects::evaluate::{EvaluateContext, EvaluateEffect};
+use crate::card_effects::{Condition, Trigger};
+use crate::events::{
+    CardMapping, ClientReceive, ClientSend, Event, EventKind, EventSpan, IntentRequest,
+    IntentResponse,
+};
+use crate::prompters::Prompter;
 
 use super::cards::*;
 use super::modifiers::*;
 use iter_tools::Itertools;
 use rand::seq::IteratorRandom;
 use rand::{thread_rng, Rng};
-use tracing::debug;
+use tracing::{debug, error};
 use ModifierKind::*;
 
 pub const STARTING_HAND_SIZE: usize = 7;
@@ -55,8 +60,9 @@ pub fn register_card(
     card
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
 pub enum Player {
+    #[default]
     One,
     Two,
     Both,
@@ -104,8 +110,8 @@ pub struct Game {
     pub zone_modifiers: HashMap<Player, Vec<(Zone, Modifier)>>,
     pub card_modifiers: HashMap<CardRef, Vec<Modifier>>,
     pub card_damage_markers: HashMap<CardRef, DamageMarkers>,
-    pub prompter: RandomPrompter, // will probably be replace by 2 player send/receive channels
     pub event_span: EventSpan,
+    pub player_1_channels: (Sender<ClientReceive>, Receiver<ClientSend>),
 }
 
 impl Game {
@@ -113,7 +119,7 @@ impl Game {
         library: Arc<GlobalLibrary>,
         player_1: &Loadout,
         player_2: &Loadout,
-        prompter: RandomPrompter,
+        player_1_client: (Sender<ClientReceive>, Receiver<ClientSend>),
     ) -> Game {
         let mut card_map = HashMap::new();
         Game {
@@ -128,8 +134,16 @@ impl Game {
             zone_modifiers: HashMap::new(),
             card_modifiers: HashMap::new(),
             card_damage_markers: HashMap::new(),
-            prompter,
             event_span: EventSpan::new(),
+            player_1_channels: player_1_client,
+        }
+    }
+
+    pub fn client(&mut self, player: Player) -> &mut (Sender<ClientReceive>, Receiver<ClientSend>) {
+        match player {
+            Player::One => &mut self.player_1_channels,
+            Player::Two => &mut self.player_1_channels,
+            _ => unreachable!("both players cannot be active at the same time"),
         }
     }
 
@@ -205,7 +219,7 @@ impl Game {
             let voluntary = player_draw == STARTING_HAND_SIZE;
             let force_mulligan = self.need_mulligan(self.board(player));
             println!("prompt mulligan: {player:?}");
-            let mulligan = force_mulligan || voluntary && self.prompt_for_mulligan();
+            let mulligan = force_mulligan || voluntary && self.prompt_for_mulligan(player);
             if !mulligan {
                 break;
             }
@@ -243,6 +257,16 @@ impl Game {
 
     pub fn start_game(&mut self) -> GameResult {
         debug!("card_map: {:?}", self.card_map);
+
+        // TODO send the mapping gradually through out the game
+        let card_map = self.card_map.clone();
+        self.client(self.active_player)
+            .0
+            .send(ClientReceive::Event(Event {
+                origin: None,
+                kind: EventKind::CardMapping(CardMapping { card_map }),
+            }))
+            .unwrap();
 
         // - game setup
         self.setup_game(None)?;
@@ -469,32 +493,51 @@ impl Game {
     }
 
     pub fn performance_step(&mut self) -> GameResult {
-        // TODO request (intent) select art
-        // TODO request (intent) select target, can be preloaded
-        // TODO or request (intent) perform art action, all possible actions
+        loop {
+            // TODO request (intent) select art
+            // TODO request (intent) select target, can be preloaded
+            // TODO or request (intent) perform art action, all possible actions
 
-        // TODO have art step actions, similar to main step
-        // that way the player can choose the attack order. also allow to skip
+            // TODO have art step actions, similar to main step
+            // that way the player can choose the attack order. also allow to skip
 
-        // - can use 2 attacks (center, collab)
-        // - can choose target (center, collab)
-        // - need required attached cheers to attack
-        // - apply damage and effects
-        // - remove member if defeated
-        //   - lose 1 life
-        //   - attach lost life (cheer)
-        let op = self.active_player.opponent();
-        let main_stage: Vec<_> = self.active_board().main_stage().collect();
-        for card in main_stage {
-            if self.board(op).main_stage().count() < 1 {
-                println!("no more member to target");
-                continue;
-            }
+            // - can use 2 attacks (center, collab)
+            // - can choose target (center, collab)
+            // - need required attached cheers to attack
+            // - apply damage and effects
+            // - remove member if defeated
+            //   - lose 1 life
+            //   - attach lost life (cheer)
+            // let op = self.active_player.opponent();
+            // let main_stage: Vec<_> = self.active_board().main_stage().collect();
+            // for card in main_stage {
+            //     if self.board(op).main_stage().count() < 1 {
+            //         println!("no more member to target");
+            //         continue;
+            //     }
 
-            if let Some(art_idx) = self.prompt_for_art(card) {
-                let target = self.prompt_for_art_target(op);
+            //     if let Some(art_idx) = self.prompt_for_art(card) {
+            //         let target = self.prompt_for_art_target(op);
 
-                self.perform_art(None, self.active_player, card, art_idx, Some(target))?;
+            //         self.perform_art(None, self.active_player, card, art_idx, Some(target))?;
+            //     }
+            // }
+
+            let action = self.prompt_for_art_action(self.active_player);
+            debug!("ACTION = {action:?}");
+            match action {
+                PerformanceStepAction::UseArt {
+                    card,
+                    art_idx,
+                    target,
+                } => {
+                    println!("- action: Use art");
+                    self.perform_art(None, self.active_player, card, art_idx, Some(target))?;
+                }
+                PerformanceStepAction::Done => {
+                    println!("- action: Done");
+                    break;
+                }
             }
         }
 
@@ -649,56 +692,161 @@ impl Game {
         required.is_empty()
     }
 
-    pub fn prompt_for_rps(&mut self) -> Rps {
-        self.prompter.prompt_choice(
-            "choose rock, paper or scissor:",
-            vec![Rps::Rock, Rps::Paper, Rps::Scissor],
-        )
+    pub fn prompt_for_rps(&mut self, player: Player) -> Rps {
+        // self.prompter.prompt_choice_rps(
+        //     "choose rock, paper or scissor:",
+        //     vec![Rps::Rock, Rps::Paper, Rps::Scissor],
+        // )
+        self.client(player)
+            .0
+            .send(ClientReceive::IntentRequest(IntentRequest::Rps {
+                player,
+                select_rps: vec![Rps::Rock, Rps::Paper, Rps::Scissor],
+            }));
+        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+        let choice = match resp {
+            IntentResponse::Rps {
+                player: resp_player,
+                select_rps,
+            } => {
+                assert_eq!(player, resp_player);
+                select_rps
+            }
+            error => {
+                error!("unexpected response: {:?}", error);
+                panic!("unexpected response")
+            }
+        };
+        assert!(vec![Rps::Rock, Rps::Paper, Rps::Scissor].contains(&choice));
+        choice
     }
 
-    pub fn prompt_for_mulligan(&mut self) -> bool {
-        self.prompter
-            .prompt_choice("do you want to mulligan?", vec!["Yes", "No"])
-            == "Yes"
+    pub fn prompt_for_mulligan(&mut self, player: Player) -> bool {
+        // self.prompter
+        //     .prompt_choice("do you want to mulligan?", vec!["Yes", "No"])
+        //     == "Yes"
+
+        self.client(player)
+            .0
+            .send(ClientReceive::IntentRequest(IntentRequest::Mulligan {
+                player,
+                select_yes_no: vec![true, false],
+            }));
+        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+        let choice = match resp {
+            IntentResponse::Mulligan {
+                player: resp_player,
+                select_yes_no,
+            } => {
+                assert_eq!(player, resp_player);
+                select_yes_no
+            }
+            error => {
+                error!("unexpected response: {:?}", error);
+                panic!("unexpected response")
+            }
+        };
+        assert!(vec![true, false].contains(&choice));
+        choice
     }
 
     pub fn prompt_for_first_debut(&mut self, player: Player) -> CardRef {
         // TODO extract that filtering to a reusable function
-        let debuts: Vec<_> = self
-            .board(player)
-            .hand()
+        let hand = self.board(player).hand().collect_vec();
+        let debuts: Vec<_> = hand
+            .iter()
+            .copied()
             .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
             .filter(|(_, m)| m.level == HoloMemberLevel::Debut)
-            .map(|(c, _)| CardDisplay::new(c, self))
+            // .map(|(c, _)| CardDisplay::new(c, self))
+            .map(|(c, _)| c)
             .collect();
 
         assert!(!debuts.is_empty());
-        self.prompter
-            .prompt_choice("choose first debut:", debuts)
-            .card
+        // self.prompter
+        //     .prompt_choice("choose first debut:", debuts)
+        //     .card
+
+        self.client(player).0.send(ClientReceive::IntentRequest(
+            IntentRequest::LookSelectZoneToZone {
+                player,
+                from_zone: Zone::Hand,
+                to_zone: Zone::CenterStage,
+                look_cards: hand,
+                select_cards: debuts.clone(),
+                min_amount: 1,
+                max_amount: 1,
+            },
+        ));
+        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+        let card = match resp {
+            IntentResponse::LookSelectZoneToZone {
+                player: resp_player,
+                mut select_cards,
+            } => {
+                assert_eq!(player, resp_player);
+                select_cards.swap_remove(0)
+            }
+            error => {
+                error!("unexpected response: {:?}", error);
+                panic!("unexpected response")
+            }
+        };
+        assert!(debuts.contains(&card));
+        card
     }
 
     pub fn prompt_for_first_back_stage(&mut self, player: Player) -> Vec<CardRef> {
         // TODO extract that filtering to a reusable function
-        let debuts: Vec<_> = self
-            .board(player)
-            .hand()
+        let hand = self.board(player).hand().collect_vec();
+        let debuts: Vec<_> = hand
+            .iter()
+            .copied()
             .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
             .filter(|(_, m)| m.level == HoloMemberLevel::Debut || m.level == HoloMemberLevel::Spot)
-            .map(|(c, _)| CardDisplay::new(c, self))
+            // .map(|(c, _)| CardDisplay::new(c, self))
+            .map(|(c, _)| c)
             .collect();
 
         if !debuts.is_empty() {
-            self.prompter
-                .prompt_multi_choices(
-                    "choose first back stage:",
-                    debuts,
-                    0,
-                    MAX_MEMBERS_ON_STAGE - 1,
-                )
-                .into_iter()
-                .map(|c| c.card)
-                .collect()
+            // self.prompter
+            //     .prompt_multi_choices(
+            //         "choose first back stage:",
+            //         debuts,
+            //         0,
+            //         MAX_MEMBERS_ON_STAGE - 1,
+            //     )
+            //     .into_iter()
+            //     .map(|c| c.card)
+            //     .collect()
+
+            self.client(player).0.send(ClientReceive::IntentRequest(
+                IntentRequest::LookSelectZoneToZone {
+                    player,
+                    from_zone: Zone::Hand,
+                    to_zone: Zone::BackStage,
+                    look_cards: hand,
+                    select_cards: debuts.clone(),
+                    min_amount: 0,
+                    max_amount: MAX_MEMBERS_ON_STAGE - 1,
+                },
+            ));
+            let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+            let cards = match resp {
+                IntentResponse::LookSelectZoneToZone {
+                    player: resp_player,
+                    select_cards,
+                } => {
+                    assert_eq!(player, resp_player);
+                    select_cards
+                }
+                error => {
+                    error!("unexpected response: {:?}", error);
+                    panic!("unexpected response")
+                }
+            };
+            assert!(cards.iter().all(|c| debuts.contains(c)));
+            cards
         } else {
             vec![]
         }
@@ -706,32 +854,61 @@ impl Game {
 
     pub fn prompt_for_back_stage_to_center(&mut self, player: Player, baton_pass: bool) -> CardRef {
         // TODO extract that filtering to a reusable function
-        let mut back = self
-            .board(player)
-            .back_stage()
+        let back = self.board(player).back_stage().collect_vec();
+        let mut not_resting = back
+            .iter()
+            .copied()
             .filter(|b| !self.has_modifier(*b, Resting))
-            .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
+            .filter_map(|c| self.lookup_holo_member(c).map(|m| c))
             .collect_vec();
 
         // if there are only resting members, select one of them
         // baton pass cannot be resting
-        if back.is_empty() && !baton_pass {
-            back = self
+        if not_resting.is_empty() && !baton_pass {
+            not_resting = self
                 .board(player)
                 .back_stage()
-                .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
+                .filter_map(|c| self.lookup_holo_member(c).map(|m| c))
                 .collect_vec();
         }
 
-        let back = back
-            .into_iter()
-            .map(|(c, _)| CardDisplay::new(c, self))
-            .collect_vec();
+        // let back = not_resting
+        //     .into_iter()
+        //     .map(|(c, _)| CardDisplay::new(c, self))
+        //     .collect_vec();
 
         assert!(!back.is_empty());
-        self.prompter
-            .prompt_choice("choose send to center stage:", back)
-            .card
+        // self.prompter
+        //     .prompt_choice("choose send to center stage:", back)
+        //     .card
+
+        self.client(player).0.send(ClientReceive::IntentRequest(
+            IntentRequest::LookSelectZoneToZone {
+                player,
+                from_zone: Zone::Hand,
+                to_zone: Zone::CenterStage,
+                look_cards: back,
+                select_cards: not_resting.clone(),
+                min_amount: 1,
+                max_amount: 1,
+            },
+        ));
+        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+        let mem = match resp {
+            IntentResponse::LookSelectZoneToZone {
+                player: resp_player,
+                mut select_cards,
+            } => {
+                assert_eq!(player, resp_player);
+                select_cards.swap_remove(0)
+            }
+            error => {
+                error!("unexpected response: {:?}", error);
+                panic!("unexpected response")
+            }
+        };
+        assert!(not_resting.contains(&mem));
+        mem
     }
 
     pub fn prompt_for_cheer(&mut self, player: Player) -> Option<CardRef> {
@@ -739,15 +916,38 @@ impl Game {
         let mems: Vec<_> = self
             .board(player)
             .stage()
-            .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
-            .map(|(c, _)| CardDisplay::new(c, self))
+            .filter_map(|c| self.lookup_holo_member(c).map(|m| c))
+            // .map(|(c, _)| CardDisplay::new(c, self))
             .collect();
 
         if !mems.is_empty() {
+            self.client(player).0.send(ClientReceive::IntentRequest(
+                IntentRequest::SelectToAttach {
+                    player,
+                    zones: vec![], // TODO not sure if that's needed
+                    select_cards: mems.clone(),
+                },
+            ));
+            let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+            let card = match resp {
+                IntentResponse::SelectToAttach {
+                    player: resp_player,
+                    select_card,
+                } => {
+                    assert_eq!(player, resp_player);
+                    select_card
+                }
+                error => {
+                    error!("unexpected response: {:?}", error);
+                    panic!("unexpected response")
+                }
+            };
+            assert!(mems.contains(&card));
             Some(
-                self.prompter
-                    .prompt_choice("choose receive cheer:", mems)
-                    .card,
+                // self.prompter
+                //     .prompt_choice("choose receive cheer:", mems)
+                //     .card,
+                card,
             )
         } else {
             None
@@ -786,7 +986,7 @@ impl Game {
                     .then_some(MainStepAction::UseSupportCard(c)),
                 Card::Cheer(_) => unreachable!("cheer cannot be in hand"),
             })
-            .map(|a| MainStepActionDisplay::new(a, self))
+            // .map(|a| MainStepActionDisplay::new(a, self))
             .collect();
 
         // actions from board
@@ -806,8 +1006,7 @@ impl Game {
                         .then_some(MainStepAction::CollabMember(c)),
                     Card::Support(_) => unreachable!("support cannot be in the back stage"),
                     Card::Cheer(_) => unreachable!("cheer cannot be in the back stage"),
-                })
-                .map(|a| MainStepActionDisplay::new(a, self)),
+                }), // .map(|a| MainStepActionDisplay::new(a, self)),
         );
         // baton pass
         actions.extend(
@@ -822,8 +1021,7 @@ impl Game {
                         .then_some(MainStepAction::BatonPass(c)),
                     Card::Support(_) => unreachable!("support cannot be in the center stage"),
                     Card::Cheer(_) => unreachable!("cheer cannot be in the center stage"),
-                })
-                .map(|a| MainStepActionDisplay::new(a, self)),
+                }), // .map(|a| MainStepActionDisplay::new(a, self)),
         );
         // skills
         actions.extend(
@@ -844,17 +1042,40 @@ impl Game {
                     Card::HoloMember(_) => todo!("members are not in oshi position"),
                     Card::Support(_) => todo!("supports are not in oshi position"),
                     Card::Cheer(_) => todo!("cheers are not in oshi position"),
-                })
-                .map(|a| MainStepActionDisplay::new(a, self)),
+                }), // .map(|a| MainStepActionDisplay::new(a, self)),
         );
 
-        actions.push(MainStepActionDisplay::new(MainStepAction::Done, self));
+        // actions.push(MainStepActionDisplay::new(MainStepAction::Done, self));
+        actions.push(MainStepAction::Done);
         actions.sort();
 
         assert!(!actions.is_empty());
-        self.prompter
-            .prompt_choice("main step action:", actions)
-            .action
+        // self.prompter
+        //     .prompt_choice("main step action:", actions)
+        //     .action;
+
+        self.client(player).0.send(ClientReceive::IntentRequest(
+            IntentRequest::MainStepAction {
+                player,
+                select_actions: actions.clone(),
+            },
+        ));
+        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+        let select_action = match resp {
+            IntentResponse::MainStepAction {
+                player: resp_player,
+                select_action,
+            } => {
+                assert_eq!(player, resp_player);
+                select_action
+            }
+            error => {
+                error!("unexpected response: {:?}", error);
+                panic!("unexpected response")
+            }
+        };
+        assert!(actions.contains(&select_action));
+        select_action
     }
 
     pub fn prompt_for_bloom(&mut self, player: Player, card: CardRef) -> CardRef {
@@ -867,74 +1088,188 @@ impl Game {
             .stage()
             .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
             .filter(|target| bloom.can_bloom_target(card, self, *target))
-            .map(|(c, _)| CardDisplay::new(c, self))
+            // .map(|(c, _)| CardDisplay::new(c, self))
+            .map(|(c, _)| c)
             .collect();
 
         assert!(!stage.is_empty());
-        self.prompter.prompt_choice("choose for bloom:", stage).card
+        // self.prompter.prompt_choice("choose for bloom:", stage).card
+        self.client(player).0.send(ClientReceive::IntentRequest(
+            IntentRequest::SelectToAttach {
+                player,
+                zones: vec![], // TODO not sure if that's needed
+                select_cards: stage.clone(),
+            },
+        ));
+        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+        let card = match resp {
+            IntentResponse::SelectToAttach {
+                player: resp_player,
+                select_card,
+            } => {
+                assert_eq!(player, resp_player);
+                select_card
+            }
+            error => {
+                error!("unexpected response: {:?}", error);
+                panic!("unexpected response")
+            }
+        };
+        assert!(stage.contains(&card));
+        card
     }
 
     pub fn prompt_for_baton_pass(
         &mut self,
+        player: Player,
         card: CardRef,
         cost: HoloMemberBatonPassCost,
     ) -> Vec<CardRef> {
         // TODO extract that filtering to a reusable function
         let cheers: Vec<_> = self
             .attached_cheers(card)
-            .map(|c| CardDisplay::new(c, self))
+            // .map(|c| CardDisplay::new(c, self))
             .collect();
 
         if !cheers.is_empty() {
-            self.prompter
-                .prompt_multi_choices("choose cheers to remove:", cheers, cost.into(), cost.into())
-                .into_iter()
-                .map(|c| c.card)
-                .collect()
+            // self.prompter
+            //     .prompt_multi_choices("choose cheers to remove:", cheers, cost.into(), cost.into())
+            //     .into_iter()
+            //     .map(|c| c.card)
+            //     .collect()
+            let zone = self.board(player).find_card_zone(card).unwrap();
+            self.client(player).0.send(ClientReceive::IntentRequest(
+                IntentRequest::SelectAttachments {
+                    player,
+                    card: (zone, card),
+                    select_attachments: cheers.clone(),
+                    min_amount: cost.into(),
+                    max_amount: cost.into(),
+                },
+            ));
+            let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+            let attachments = match resp {
+                IntentResponse::SelectAttachments {
+                    player: resp_player,
+                    select_attachments,
+                } => {
+                    assert_eq!(player, resp_player);
+                    select_attachments
+                }
+                error => {
+                    error!("unexpected response: {:?}", error);
+                    panic!("unexpected response")
+                }
+            };
+            assert!(attachments.iter().all(|c| cheers.contains(c)));
+            attachments
         } else {
             panic!("baton pass should not be an option, if there is no cheers")
         }
     }
 
-    pub fn prompt_for_art(&mut self, card: CardRef) -> Option<usize> {
-        if let Some(mem) = self.lookup_holo_member(card) {
-            let arts: Vec<_> = mem
-                .arts
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| mem.can_use_art(card, *i, self))
-                .map(|(i, _)| ArtDisplay::new(card, i, self))
-                .collect();
-            // TODO add skip art, it's not required to use an art
-
-            if !arts.is_empty() {
-                Some(self.prompter.prompt_choice("choose for art:", arts).idx)
-            } else {
-                None
-            }
-        } else {
-            panic!("only members can have arts")
-        }
-    }
-
-    pub fn prompt_for_art_target(&mut self, player: Player) -> CardRef {
-        // TODO extract that filtering to a reusable function
-        let targets: Vec<_> = self
+    pub fn prompt_for_art_action(&mut self, player: Player) -> PerformanceStepAction {
+        let mut actions = vec![];
+        for mem in self
             .board(player)
             .main_stage()
             .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
-            // TODO check for rest?
-            .map(|(c, _)| CardDisplay::new(c, self))
-            .collect();
+        {
+            for op in self
+                .board(player.opponent())
+                .main_stage()
+                .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
+            {
+                for art in mem
+                    .1
+                    .arts
+                    .iter()
+                    .enumerate()
+                    // TODO check opponent condition
+                    .filter(|(i, _)| mem.1.can_use_art(mem.0, *i, self))
+                {
+                    actions.push(PerformanceStepAction::UseArt {
+                        card: mem.0,
+                        art_idx: art.0,
+                        target: op.0,
+                    });
+                }
+            }
+        }
 
-        assert!(!targets.is_empty());
-        self.prompter
-            .prompt_choice("choose target for art:", targets)
-            .card
+        // actions.push(MainStepActionDisplay::new(MainStepAction::Done, self));
+        actions.push(PerformanceStepAction::Done);
+        actions.sort();
+
+        assert!(!actions.is_empty());
+        // self.prompter
+        //     .prompt_choice("main step action:", actions)
+        //     .action;
+
+        self.client(player).0.send(ClientReceive::IntentRequest(
+            IntentRequest::PerformanceStepAction {
+                player,
+                select_actions: actions.clone(),
+            },
+        ));
+        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+        let select_action = match resp {
+            IntentResponse::PerformanceStepAction {
+                player: resp_player,
+                select_action,
+            } => {
+                assert_eq!(player, resp_player);
+                select_action
+            }
+            error => {
+                error!("unexpected response: {:?}", error);
+                panic!("unexpected response")
+            }
+        };
+        assert!(actions.contains(&select_action));
+        select_action
     }
+
+    // pub fn prompt_for_art(&mut self, card: CardRef) -> Option<usize> {
+    //     if let Some(mem) = self.lookup_holo_member(card) {
+    //         let arts: Vec<_> = mem
+    //             .arts
+    //             .iter()
+    //             .enumerate()
+    //             .filter(|(i, _)| mem.can_use_art(card, *i, self))
+    //             .map(|(i, _)| ArtDisplay::new(card, i, self))
+    //             .collect();
+    //         // TODO add skip art, it's not required to use an art
+
+    //         if !arts.is_empty() {
+    //             Some(self.prompter.prompt_choice("choose for art:", arts).idx)
+    //         } else {
+    //             None
+    //         }
+    //     } else {
+    //         panic!("only members can have arts")
+    //     }
+    // }
+
+    // pub fn prompt_for_art_target(&mut self, player: Player) -> CardRef {
+    //     // TODO extract that filtering to a reusable function
+    //     let targets: Vec<_> = self
+    //         .board(player)
+    //         .main_stage()
+    //         .filter_map(|c| self.lookup_holo_member(c).map(|m| (c, m)))
+    //         // TODO check for rest?
+    //         .map(|(c, _)| CardDisplay::new(c, self))
+    //         .collect();
+
+    //     assert!(!targets.is_empty());
+    //     self.prompter
+    //         .prompt_choice("choose target for art:", targets)
+    //         .card
+    // }
 
     pub fn prompt_for_select(
         &mut self,
+        player: Player,
         cards: Vec<CardRef>,
         condition: Condition,
         ctx: &EvaluateContext,
@@ -942,41 +1277,95 @@ impl Game {
         max: usize,
     ) -> Vec<CardRef> {
         let choices: Vec<_> = cards
-            .into_iter()
+            .iter()
+            .copied()
             .filter(|c| {
                 let cond = condition.evaluate_with_context(&ctx.for_card(*c), self);
                 if !cond {
-                    println!("viewed: {}", CardDisplay::new(*c, self))
+                    // println!("viewed: {}", CardDisplay::new(*c, self))
                 }
                 cond
             })
-            .map(|c| CardDisplay::new(c, self))
+            // .map(|c| CardDisplay::new(c, self))
             .collect();
 
         if !choices.is_empty() {
-            self.prompter
-                .prompt_multi_choices("choose cards:", choices, min, max)
-                .into_iter()
-                .map(|c| c.card)
-                .collect()
+            // self.prompter
+            //     .prompt_multi_choices("choose cards:", choices, min, max)
+            //     .into_iter()
+            //     .map(|c| c.card)
+            //     .collect()
+            self.client(player).0.send(ClientReceive::IntentRequest(
+                IntentRequest::LookSelectZoneToZone {
+                    player,
+                    // TODO these zones are not correct
+                    from_zone: Zone::All,
+                    to_zone: Zone::All,
+                    look_cards: cards,
+                    select_cards: choices.clone(),
+                    min_amount: min,
+                    max_amount: max,
+                },
+            ));
+            let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+            let cards = match resp {
+                IntentResponse::LookSelectZoneToZone {
+                    player: resp_player,
+                    select_cards,
+                } => {
+                    assert_eq!(player, resp_player);
+                    select_cards
+                }
+                error => {
+                    error!("unexpected response: {:?}", error);
+                    panic!("unexpected response")
+                }
+            };
+            assert!(cards.iter().all(|c| choices.contains(c)));
+            cards
         } else {
             vec![]
         }
     }
 
-    pub fn prompt_for_optional_activate(&mut self) -> bool {
-        self.prompter
-            .prompt_choice("do you want to activate the effect?", vec!["Yes", "No"])
-            == "Yes"
+    pub fn prompt_for_optional_activate(&mut self, player: Player) -> bool {
+        // self.prompter
+        //     .prompt_choice("do you want to activate the effect?", vec!["Yes", "No"])
+        //     == "Yes"
+        // TODO use mulligan logic for now
+        debug!("prompt_for_optional_activate");
+        self.prompt_for_mulligan(player)
     }
 
-    pub fn prompt_for_number(&mut self, min: usize, max: usize) -> usize {
-        self.prompter
-            .prompt_choice("choose a number:", (min..=max).collect_vec())
+    pub fn prompt_for_number(&mut self, player: Player, min: usize, max: usize) -> usize {
+        // self.prompter
+        //     .prompt_choice("choose a number:", (min..=max).collect_vec())
+        self.client(player)
+            .0
+            .send(ClientReceive::IntentRequest(IntentRequest::SelectNumber {
+                player,
+                select_numbers: (min..=max).collect_vec(),
+            }));
+        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+        let choice = match resp {
+            IntentResponse::SelectNumber {
+                player: resp_player,
+                select_number,
+            } => {
+                assert_eq!(player, resp_player);
+                select_number
+            }
+            error => {
+                error!("unexpected response: {:?}", error);
+                panic!("unexpected response")
+            }
+        };
+        assert!((min..=max).collect_vec().contains(&choice));
+        choice
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub struct GameBoard {
     oshi: Option<CardRef>,
     main_deck: Vec<CardRef>,
@@ -1457,8 +1846,9 @@ pub enum ZoneAddLocation {
     Bottom,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum Step {
+    #[default]
     Setup,
     Reset,
     Draw,
@@ -1518,13 +1908,13 @@ pub enum MainStepAction {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct MainStepActionDisplay {
-    action: MainStepAction,
+pub struct MainStepActionDisplay {
+    pub action: MainStepAction,
     text: String,
 }
 
 impl MainStepActionDisplay {
-    pub fn new(action: MainStepAction, game: &Game) -> MainStepActionDisplay {
+    pub fn new(action: MainStepAction, game: &GameState) -> MainStepActionDisplay {
         let text = match action {
             MainStepAction::BackStageMember(card) => {
                 let display = CardDisplay::new(card, game);
@@ -1548,11 +1938,13 @@ impl MainStepActionDisplay {
             }
             MainStepAction::UseOshiSkill(card, idx) => {
                 let display = CardDisplay::new(card, game);
-                let oshi = game.lookup_oshi(card).expect("it should be an oshi");
-                format!(
-                    "use skill: [-{}] {} - {display}",
-                    oshi.skills[idx].cost, oshi.skills[idx].name
-                )
+                // FIXME fix this code
+                "<broken>".into()
+                // let oshi = game.lookup_oshi(card).expect("it should be an oshi");
+                // format!(
+                //     "use skill: [-{}] {} - {display}",
+                //     oshi.skills[idx].cost, oshi.skills[idx].name
+                // )
             }
             MainStepAction::Done => "done".into(),
         };
@@ -1567,131 +1959,18 @@ impl Display for MainStepActionDisplay {
     }
 }
 
-#[derive(Debug)]
-pub struct DefaultPrompter {}
-impl DefaultPrompter {
-    pub fn new() -> Self {
-        DefaultPrompter {}
-    }
-}
-
-impl Prompter for DefaultPrompter {
-    fn prompt_choice<'a, T: ToString>(&mut self, text: &str, choices: Vec<T>) -> T {
-        println!("choosing first choice for: {text}");
-        self.print_choices(&choices);
-
-        let c = choices
-            .into_iter()
-            .next()
-            .expect("always at least one choice");
-        println!("{}", c.to_string());
-        c
-    }
-
-    fn prompt_multi_choices<'a, T: ToString>(
-        &mut self,
-        text: &str,
-        choices: Vec<T>,
-        min: usize,
-        _max: usize,
-    ) -> Vec<T> {
-        println!("choosing first choices for: {text}");
-        self.print_choices(&choices);
-
-        let c: Vec<_> = choices.into_iter().take(min).collect();
-        println!("{}", c.iter().map(T::to_string).collect_vec().join(", "));
-        c
-    }
-}
-
-#[derive(Debug)]
-pub struct RandomPrompter {}
-impl RandomPrompter {
-    pub fn new() -> Self {
-        RandomPrompter {}
-    }
-}
-
-impl Prompter for RandomPrompter {
-    fn prompt_choice<'a, T: ToString>(&mut self, text: &str, choices: Vec<T>) -> T {
-        println!("choosing random choice for: {text}");
-        self.print_choices(&choices);
-
-        let c = choices
-            .into_iter()
-            .choose(&mut thread_rng())
-            .expect("always at least one choice");
-        println!("{}", c.to_string());
-        c
-    }
-
-    fn prompt_multi_choices<'a, T: ToString>(
-        &mut self,
-        text: &str,
-        choices: Vec<T>,
-        min: usize,
-        max: usize,
-    ) -> Vec<T> {
-        println!("choosing random choices for: {text}");
-        self.print_choices(&choices);
-
-        let max = max.min(choices.len());
-
-        let c = choices
-            .into_iter()
-            .choose_multiple(&mut thread_rng(), thread_rng().gen_range(min..=max));
-        println!("{}", c.iter().map(T::to_string).collect_vec().join(", "));
-        c
-    }
-}
-
-pub trait Prompter: Debug {
-    fn prompt_choice<T: ToString>(&mut self, text: &str, choices: Vec<T>) -> T;
-    fn prompt_multi_choices<T: ToString>(
-        &mut self,
-        text: &str,
-        choices: Vec<T>,
-        min: usize,
-        max: usize,
-    ) -> Vec<T>;
-
-    fn print_choices<T: ToString>(&mut self, choices: &[T]) {
-        println!(
-            "options:\n{}",
-            choices
-                .iter()
-                .map(|c| format!("  - {}", c.to_string()))
-                .collect_vec()
-                .join("\n")
-        );
-    }
-    // fn prompt_rps_choice();
-    // fn prompt_mulligan_choice();
-    // fn prompt_card_in_hand_choice();
-    // fn prompt_card_on_stage_choice();
-    // fn prompt_zone_choice();
-    // fn prompt_main_step_action_choice();
-    //     // place debut member on back stage
-    //     // bloom member (evolve e.g. debut -> 1st )
-    //     // use support card
-    //     // put back stage member in collab
-    //     // retreat switch (baton pass)
-    //     // use abilities (including oshi)
-    // fn prompt_ability_choice();
-    // fn prompt_attack_choice();
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct CardDisplay {
-    card: CardRef,
+pub struct CardDisplay {
+    pub card: CardRef,
     text: String,
 }
 
 impl CardDisplay {
-    pub fn new(card: CardRef, game: &Game) -> CardDisplay {
+    pub fn new(card: CardRef, game: &GameState) -> CardDisplay {
         let text = match game.lookup_card(card) {
             Card::OshiHoloMember(o) => {
-                let life_remaining = game.board_for_card(card).life.count();
+                // let life_remaining = game.board_for_card(card).life.count();
+                let life_remaining = -1;
                 format!(
                     "{} (Oshi) ({}/{} life) ({}) {}",
                     o.name, life_remaining, o.life, o.card_number, card,
@@ -1702,20 +1981,22 @@ impl CardDisplay {
                     "{} ({:?}) ({}/{}){} ({}) {}",
                     m.name,
                     m.level,
-                    game.remaining_hp(card),
+                    // game.remaining_hp(card),
+                    -1,
                     m.hp,
-                    if game.attached_cheers(card).any(|_| true) {
-                        format!(
-                            " (cheers: {})",
-                            game.attached_cheers(card)
-                                .filter_map(|c| game.lookup_cheer(c))
-                                .map(|c| format!("{:?}", c.color))
-                                .collect_vec()
-                                .join(", ")
-                        )
-                    } else {
-                        "".into()
-                    },
+                    // if game.attached_cheers(card).any(|_| true) {
+                    //     format!(
+                    //         " (cheers: {})",
+                    //         game.attached_cheers(card)
+                    //             .filter_map(|c| game.lookup_cheer(c))
+                    //             .map(|c| format!("{:?}", c.color))
+                    //             .collect_vec()
+                    //             .join(", ")
+                    //     )
+                    // } else {
+                    //     "".into()
+                    // },
+                    "",
                     m.card_number,
                     card,
                 )
@@ -1733,8 +2014,19 @@ impl Display for CardDisplay {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+
+pub enum PerformanceStepAction {
+    UseArt {
+        card: CardRef,
+        art_idx: usize,
+        target: CardRef,
+    },
+    Done,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct ArtDisplay {
+pub struct ArtDisplay {
     card: CardRef,
     idx: usize,
     text: String,
@@ -1766,5 +2058,39 @@ impl ArtDisplay {
 impl Display for ArtDisplay {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.text)
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct GameState {
+    pub game_outcome: Option<GameOutcome>,
+    pub library: Arc<GlobalLibrary>,
+    pub card_map: HashMap<CardRef, (Player, CardNumber)>, // TODO use a different pair because rarity is not include in card number
+    pub player_1: GameBoard,
+    pub player_2: GameBoard,
+    pub active_player: Player,
+    pub active_step: Step,
+    pub turn_number: u8,
+    pub zone_modifiers: HashMap<Player, Vec<(Zone, Modifier)>>,
+    pub card_modifiers: HashMap<CardRef, Vec<Modifier>>,
+    pub card_damage_markers: HashMap<CardRef, DamageMarkers>,
+}
+
+impl GameState {
+    pub fn new(library: Arc<GlobalLibrary>) -> Self {
+        GameState {
+            library,
+            ..Default::default()
+        }
+    }
+    pub fn lookup_card_number(&self, card: CardRef) -> &CardNumber {
+        let (_, card_number) = self.card_map.get(&card).expect("should be in the map");
+        card_number
+    }
+    pub fn lookup_card(&self, card: CardRef) -> &Card {
+        let card_number = self.lookup_card_number(card);
+        self.library
+            .lookup_card(card_number)
+            .expect("should be in the library")
     }
 }

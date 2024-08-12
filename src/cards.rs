@@ -1,16 +1,14 @@
 use std::collections::HashMap;
 
+use evaluate::EvaluateEffect;
 use iter_tools::Itertools;
 use tracing::error;
 
-use crate::evaluate::EvaluateEffect;
+use crate::card_effects::*;
 use crate::events::{Bloom, Collab, Event, EventKind, TriggeredEvent};
 use crate::gameplay::Zone;
+use crate::gameplay::{CardRef, Game};
 use crate::modifiers::ModifierKind::*;
-use crate::{
-    gameplay::{CardRef, Game},
-    Action, Condition, Error, ParseEffect, ParseTokens, SerializeEffect, Trigger,
-};
 
 /**
  * Cards:
@@ -84,7 +82,7 @@ pub struct Loadout {
     // cosmetic...
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub struct GlobalLibrary {
     // TODO use a different key because rarity is not include in card number
     pub cards: HashMap<CardNumber, Card>,
@@ -160,7 +158,7 @@ impl GlobalLibrary {
         }
 
         // verify effect serialization consistency (de -> ser -> de)
-        fn serialization_round_trip<T>(effect: T) -> crate::Result<()>
+        fn serialization_round_trip<T>(effect: T) -> crate::card_effects::Result<()>
         where
             T: SerializeEffect + ParseTokens + PartialEq + Clone,
         {
@@ -240,7 +238,7 @@ impl GlobalLibrary {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Card {
     OshiHoloMember(OshiHoloMemberCard),
     HoloMember(HoloMemberCard),
@@ -330,7 +328,7 @@ pub type CardEffectCondition = Vec<Condition>;
 pub type CardEffect = Vec<Action>;
 pub type HoloMemberBatonPassCost = u8;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OshiHoloMemberCard {
     pub card_number: CardNumber,
     pub name: String,
@@ -364,7 +362,7 @@ impl OshiHoloMemberCard {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OshiSkill {
     pub kind: OshiSkillKind,
     pub name: String,
@@ -381,7 +379,7 @@ pub enum OshiSkillKind {
     Special,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HoloMemberCard {
     pub card_number: CardNumber,
     pub name: String,
@@ -556,7 +554,7 @@ pub enum HoloMemberExtraAttribute {
     Unknown,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HoloMemberAbility {
     pub kind: MemberAbilityKind,
     pub name: String,
@@ -609,7 +607,7 @@ pub enum MemberAbilityKind {
     Gift(CardEffectTrigger), // TODO verify if gift is correct. what kind of effect they have?
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HoloMemberArt {
     pub name: String,
     pub cost: HoloMemberArtCost,
@@ -628,7 +626,7 @@ pub enum HoloMemberArtDamage {
     Uncertain,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SupportCard {
     pub card_number: CardNumber,
     pub name: String,
@@ -681,7 +679,7 @@ pub enum SupportKind {
     Fan,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CheerCard {
     pub card_number: CardNumber,
     pub name: String,

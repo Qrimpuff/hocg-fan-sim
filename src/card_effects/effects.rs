@@ -35,10 +35,9 @@ use iter_tools::Itertools;
 use crate::{
     events::{EnterStep, Event, EventKind, ExitStep, TriggeredEvent},
     gameplay::Step,
-    Error, ParseTokens, Result, Tokens,
 };
 
-use super::{TakeParam, TakeString};
+use super::*;
 
 // TODO clean up this file after the list of effect is finalized
 

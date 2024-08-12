@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 
 use crate::{
-    evaluate::{EvaluateContext, EvaluateEffect, EvaluateEffectMut},
+    card_effects::evaluate::{EvaluateContext, EvaluateEffect, EvaluateEffectMut},
+    cards::*,
     gameplay::{
-        CardRef, Game, GameContinue, GameOutcome, GameOverReason, GameResult, Player, Rps, Step,
-        Zone, ZoneAddLocation, MAX_MEMBERS_ON_STAGE, PRIVATE_CARD,
+        CardRef, Game, GameContinue, GameOutcome, GameOverReason, GameResult, MainStepAction,
+        PerformanceStepAction, Player, Rps, Step, Zone, ZoneAddLocation, MAX_MEMBERS_ON_STAGE,
+        PRIVATE_CARD,
     },
     modifiers::{DamageMarkers, LifeTime, Modifier, ModifierKind, ModifierRef},
-    CardNumber, HoloMemberArtDamage, HoloMemberExtraAttribute, OshiSkillKind,
 };
 use enum_dispatch::enum_dispatch;
 use iter_tools::Itertools;
@@ -57,6 +58,7 @@ pub enum EventKind {
     RpsOutcome,
     PlayerGoingFirst,
     Reveal,
+    CardMapping,
 
     GameStart,
     GameOver,
@@ -132,7 +134,8 @@ pub enum IntentRequest {
         to_zone: Zone,
         look_cards: Vec<CardRef>,
         select_cards: Vec<CardRef>,
-        amount: usize,
+        min_amount: usize,
+        max_amount: usize,
     },
     // MemberForCheer, // attach target
     SelectToAttach {
@@ -154,7 +157,8 @@ pub enum IntentRequest {
         player: Player,
         card: (Zone, CardRef),
         select_attachments: Vec<CardRef>,
-        amount: usize,
+        min_amount: usize,
+        max_amount: usize,
     },
     // UseOshiSkill,
     PerformanceStepAction {
@@ -167,46 +171,46 @@ pub enum IntentRequest {
     // Card effect intents
     //...
     /// used by AZKi oshi skill
-    RollDiceNumber {
+    SelectNumber {
         player: Player,
         select_numbers: Vec<usize>,
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MainStepAction {
-    BackStageMember {
-        card: (Zone, CardRef),
-    },
-    BloomMember {
-        card: (Zone, CardRef),
-        target: (Zone, CardRef),
-    },
-    UseSupportCard {
-        card: (Zone, CardRef),
-    },
-    CollabMember {
-        card: (Zone, CardRef),
-    },
-    BatonPass {
-        card: (Zone, CardRef),
-    },
-    UseSkill {
-        card: (Zone, CardRef),
-        skill_idx: usize,
-    },
-    Skip,
-}
+// #[derive(Debug, Clone, PartialEq, Eq)]
+// pub enum MainStepAction {
+//     BackStageMember {
+//         card: (Zone, CardRef),
+//     },
+//     BloomMember {
+//         card: (Zone, CardRef),
+//         target: (Zone, CardRef),
+//     },
+//     UseSupportCard {
+//         card: (Zone, CardRef),
+//     },
+//     CollabMember {
+//         card: (Zone, CardRef),
+//     },
+//     BatonPass {
+//         card: (Zone, CardRef),
+//     },
+//     UseSkill {
+//         card: (Zone, CardRef),
+//         skill_idx: usize,
+//     },
+//     Skip,
+// }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PerformanceStepAction {
-    UseArt {
-        card: (Zone, CardRef),
-        art_idx: usize,
-        target: (Zone, CardRef),
-    },
-    Skip,
-}
+// #[derive(Debug, Clone, PartialEq, Eq)]
+// pub enum PerformanceStepAction {
+//     UseArt {
+//         card: (Zone, CardRef),
+//         art_idx: usize,
+//         target: (Zone, CardRef),
+//     },
+//     Skip,
+// }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IntentResponse {
@@ -243,7 +247,7 @@ pub enum IntentResponse {
     // Card effect intents
     //...
     /// used by AZKi oshi skill
-    RollDiceNumber {
+    SelectNumber {
         player: Player,
         select_number: usize,
     },
@@ -323,6 +327,10 @@ impl Game {
 
         // TODO sanitize the event before sending it to each player
         // TODO send event to each player
+        self.client(self.active_player)
+            .0
+            .send(ClientReceive::Event(event.clone()))
+            .unwrap();
 
         // trigger after effects
         let after = TriggeredEvent::After(&event);
@@ -363,7 +371,7 @@ impl Game {
             let mut member_ability = None;
             let mut support_ability = false;
             match self.lookup_card(card) {
-                crate::Card::OshiHoloMember(o) => {
+                Card::OshiHoloMember(o) => {
                     for (idx, skill) in o.skills.iter().enumerate() {
                         if skill.triggers.iter().any(|t| t.should_activate(&trigger))
                             && skill
@@ -376,7 +384,7 @@ impl Game {
                         }
                     }
                 }
-                crate::Card::HoloMember(m) => {
+                Card::HoloMember(m) => {
                     for (idx, ability) in m.abilities.iter().enumerate() {
                         if ability.should_activate(card, &trigger)
                             && ability.condition.evaluate_with_card_event(
@@ -391,7 +399,7 @@ impl Game {
                         }
                     }
                 }
-                crate::Card::Support(s) => {
+                Card::Support(s) => {
                     if s.triggers.iter().any(|t| t.should_activate(&trigger))
                         && s.condition
                             .evaluate_with_card_event(self, card, trigger.event())
@@ -401,7 +409,7 @@ impl Game {
                         support_ability = true;
                     }
                 }
-                crate::Card::Cheer(_) => {} // cheers do not have triggers yet
+                Card::Cheer(_) => {} // cheers do not have triggers yet
             }
 
             // activate skill or ability
@@ -1670,8 +1678,8 @@ impl EvaluateEvent for Setup {
         let first_player;
         loop {
             println!("prompt rps");
-            let rps_1 = game.prompt_for_rps();
-            let rps_2 = game.prompt_for_rps();
+            let rps_1 = game.prompt_for_rps(Player::One);
+            let rps_2 = game.prompt_for_rps(Player::Two);
             use super::gameplay::RpsOutcome;
             match rps_1.vs(rps_2) {
                 RpsOutcome::Win => {
@@ -1871,6 +1879,16 @@ impl EvaluateEvent for Reveal {
         // TODO implement for network
 
         Ok(GameContinue)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CardMapping {
+    pub card_map: HashMap<CardRef, (Player, CardNumber)>,
+}
+impl EvaluateEvent for CardMapping {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, _game: &mut Game) -> GameResult {
+        unimplemented!("it's a temporary patch")
     }
 }
 
@@ -2561,7 +2579,7 @@ impl EvaluateEvent for BatonPass {
         // pay the baton pass cost
         // TODO cost should automatic when there is a single cheers color
         // TODO request (intent) select attached cheers
-        let cheers = game.prompt_for_baton_pass(self.from_card.1, mem.baton_pass_cost);
+        let cheers = game.prompt_for_baton_pass(self.player, self.from_card.1, mem.baton_pass_cost);
         game.send_attachments_to_archive(event_origin, self.player, self.from_card.1, cheers)?;
 
         // send the center member to the back

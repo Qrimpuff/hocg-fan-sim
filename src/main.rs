@@ -1,23 +1,16 @@
 #![allow(dead_code)]
 
-mod card_effects;
-mod cards;
-mod events;
-mod gameplay;
-mod modifiers;
-mod temp;
+use std::thread;
+use std::{env, iter, sync::mpsc};
 
-use std::{env, iter};
-
-use card_effects::*;
-use cards::*;
-use gameplay::{Game, RandomPrompter};
-use temp::test_library;
+use hocg_fan_sim::client::DefaultEventHandler;
+use hocg_fan_sim::gameplay::Game;
+use hocg_fan_sim::prompters::RandomPrompter;
+use hocg_fan_sim::temp::test_library;
+use hocg_fan_sim::{cards::*, client::Client};
 use time::macros::format_description;
 use tracing::info;
 use tracing_subscriber::{fmt::time::LocalTime, EnvFilter};
-
-type Result<T> = std::result::Result<T, Error>;
 
 const TEST_TEXT: &str = "for active_holo buff more_def 1 next_turn";
 
@@ -93,12 +86,25 @@ fn main() {
         cheer_deck: cheer_deck_hsd01,
     };
 
+    let channel_1 = mpsc::channel();
+    let channel_2 = mpsc::channel();
+
     let mut game = Game::setup(
         test_library().clone(),
         &player_1,
         &player_2,
-        RandomPrompter::new(),
+        (channel_1.0, channel_2.1),
     );
+    let mut client = Client::new(
+        test_library().clone(),
+        (channel_2.0, channel_1.1),
+        DefaultEventHandler {},
+        RandomPrompter {},
+    );
+    thread::spawn(move || {
+        client.receive_requests();
+    });
+
     // println!("{:#?}", &game);
     game.start_game().unwrap();
     // println!("{:#?}", &game);

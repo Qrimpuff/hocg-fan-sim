@@ -1,7 +1,7 @@
-mod effects;
-mod error;
+pub mod effects;
+pub mod error;
 pub mod evaluate;
-mod parse;
+pub mod parse;
 
 pub use effects::*;
 pub use error::*;

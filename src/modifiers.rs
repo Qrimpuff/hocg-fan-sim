@@ -4,8 +4,8 @@ use std::fmt::Display;
 use std::num::NonZeroU16;
 use std::sync::atomic::AtomicU16;
 
-use crate::evaluate::EvaluateEffect;
-use crate::Condition;
+use crate::card_effects::evaluate::EvaluateEffect;
+use crate::card_effects::Condition;
 
 use super::cards::*;
 use super::gameplay::*;

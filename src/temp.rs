@@ -1,8 +1,9 @@
 use std::sync::{Arc, OnceLock};
 
-use crate::{cards::*, ParseEffect, SerializeEffect, Trigger};
+use crate::{card_effects::{ParseEffect, SerializeEffect, Trigger}, cards::*};
 use HoloMemberHashTag::*;
 use pretty_assertions::assert_eq;
+
 
 pub fn test_library() -> &'static Arc<GlobalLibrary> {
     static TEST_LIBRARY: OnceLock<Arc<GlobalLibrary>> = OnceLock::new();

@@ -4,14 +4,12 @@ use std::ops::Deref;
 use iter_tools::Itertools;
 
 use super::effects::*;
+use crate::cards::*;
 use crate::events::Shuffle;
 use crate::gameplay::Player;
 use crate::gameplay::Zone;
 use crate::modifiers::LifeTime;
 use crate::modifiers::ModifierKind;
-use crate::Color;
-use crate::HoloMemberExtraAttribute;
-use crate::HoloMemberLevel;
 use crate::{
     events::Event,
     gameplay::{self, *},
@@ -546,17 +544,22 @@ impl EvaluateEffectMut for super::LetValue {
         game: &mut Game,
     ) -> EvaluateResult<Self::Value> {
         match self {
-            super::LetValue::OptionalActivate => Ok(LetValue::Condition(
-                game.prompt_for_optional_activate().into(),
-            )),
+            super::LetValue::OptionalActivate => {
+                let player = ctx.active_player.expect("there should be an active player");
+                Ok(LetValue::Condition(
+                    game.prompt_for_optional_activate(player).into(),
+                ))
+            }
             super::LetValue::RollDice => {
                 let player = ctx.active_player.expect("there should be an active player");
                 let number = game.roll_dice(ctx.active_card, player)?;
                 Ok(LetValue::Number(number as usize))
             }
             super::LetValue::SelectAny(cards, condition) => {
+                let player = ctx.active_player.expect("there should be an active player");
                 let cards = cards.evaluate_with_context(ctx, game);
                 let choice = game.prompt_for_select(
+                    player,
                     cards.clone(),
                     condition.as_ref().clone(),
                     ctx,
@@ -572,9 +575,16 @@ impl EvaluateEffectMut for super::LetValue {
                 Ok(LetValue::CardReferences(choice))
             }
             super::LetValue::SelectOne(cards, condition) => {
+                let player = ctx.active_player.expect("there should be an active player");
                 let cards = cards.evaluate_with_context(ctx, game);
-                let choice =
-                    game.prompt_for_select(cards.clone(), condition.as_ref().clone(), ctx, 1, 1);
+                let choice = game.prompt_for_select(
+                    player,
+                    cards.clone(),
+                    condition.as_ref().clone(),
+                    ctx,
+                    1,
+                    1,
+                );
                 let leftovers = cards
                     .into_iter()
                     .filter(|c| !choice.contains(c))
@@ -584,14 +594,17 @@ impl EvaluateEffectMut for super::LetValue {
                 Ok(LetValue::CardReferences(choice))
             }
             super::LetValue::SelectNumberBetween(min, max) => {
+                let player = ctx.active_player.expect("there should be an active player");
                 let min = min.evaluate_with_context(ctx, game);
                 let max = max.evaluate_with_context(ctx, game);
-                Ok(LetValue::Number(game.prompt_for_number(min, max)))
+                Ok(LetValue::Number(game.prompt_for_number(player, min, max)))
             }
             super::LetValue::SelectUpTo(amount, cards, condition) => {
+                let player = ctx.active_player.expect("there should be an active player");
                 let amount = amount.evaluate_with_context(ctx, game);
                 let cards = cards.evaluate_with_context(ctx, game);
                 let choice = game.prompt_for_select(
+                    player,
                     cards.clone(),
                     condition.as_ref().clone(),
                     ctx,
