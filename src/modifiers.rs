@@ -25,6 +25,13 @@ impl Display for ModifierRef {
         write!(f, "{self:?}")
     }
 }
+impl From<&str> for ModifierRef {
+    fn from(value: &str) -> Self {
+        let hex = u16::from_str_radix(value.trim_start_matches("m_"), 16).unwrap();
+        let num = NonZeroU16::new(hex).unwrap();
+        ModifierRef(num)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ModifierKind {
@@ -64,7 +71,7 @@ pub enum LifeTime {
 pub struct Modifier {
     pub id: ModifierRef,
     pub kind: ModifierKind,
-    life_time: LifeTime,
+    pub life_time: LifeTime,
 }
 
 impl Modifier {

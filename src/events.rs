@@ -12,7 +12,7 @@ use crate::{
 };
 use enum_dispatch::enum_dispatch;
 use iter_tools::Itertools;
-use rand::{thread_rng, Rng};
+use rand::Rng;
 use tracing::{debug, error};
 use ModifierKind::*;
 
@@ -1834,8 +1834,13 @@ pub struct Shuffle {
 }
 impl EvaluateEvent for Shuffle {
     fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
-        let zone = game.board_mut(self.player).get_zone_mut(self.zone);
-        zone.shuffle();
+        // need that split, because the borrow checker needs to know we are accessing different fields
+        let zone = match self.player {
+            Player::One => game.state.player_1.get_zone_mut(self.zone),
+            Player::Two => game.state.player_2.get_zone_mut(self.zone),
+            _ => unreachable!("both players cannot be active at the same time"),
+        };
+        zone.shuffle(&mut game.rng);
 
         Ok(GameContinue)
     }
@@ -2947,10 +2952,10 @@ pub struct RollDice {
     pub number: u8,
 }
 impl EvaluateEvent for RollDice {
-    fn adjust_event(&mut self, _event_origin: Option<CardRef>, _game: &mut Game) -> GameResult {
+    fn adjust_event(&mut self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         // TODO look for modifiers, and consume them, if not permanent
 
-        self.number = thread_rng().gen_range(1..=6);
+        self.number = game.rng.gen_range(1..=6);
 
         Ok(GameContinue)
     }

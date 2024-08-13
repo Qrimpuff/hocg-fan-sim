@@ -2,14 +2,17 @@ use std::sync::mpsc::{Receiver, Sender};
 
 use tracing::debug;
 
-use crate::{events::*, gameplay::GameState};
+use crate::{
+    events::*,
+    gameplay::{GameContinue, GameOutcome, GameResult, GameState},
+};
 
 pub struct Client<E, I> {
-    game: GameState,
-    send: Sender<ClientSend>,
-    receive: Receiver<ClientReceive>,
-    event_handler: E,
-    intent_handler: I,
+    pub game: GameState,
+    pub send: Sender<ClientSend>,
+    pub receive: Receiver<ClientReceive>,
+    pub event_handler: E,
+    pub intent_handler: I,
 }
 impl<E, I> Client<E, I>
 where
@@ -30,18 +33,63 @@ where
         }
     }
 
-    pub fn handle_request(&mut self) {
-        let req = self.receive.recv().unwrap();
+    pub fn handle_request(&mut self) -> GameResult {
+        let req = self
+            .receive
+            .recv()
+            .map_err(|_| self.game.game_outcome.expect("game should be over"))?;
         match req {
             ClientReceive::Event(event) => {
-                // TODO add to card mapping
                 debug!("RECEIVED EVENT = {:?}", event);
-                if let Event {
-                    kind: EventKind::CardMapping(CardMapping { card_map }, ..),
-                    ..
-                } = &event
-                {
-                    self.game.card_map.clone_from(card_map);
+
+                match &event.kind {
+                    // EventKind::Setup(_) => todo!(),
+                    // EventKind::Shuffle(_) => todo!(),
+                    // EventKind::RpsOutcome(_) => todo!(),
+                    // EventKind::PlayerGoingFirst(_) => todo!(),
+                    // EventKind::Reveal(_) => todo!(),
+                    // TODO add to card mapping, by reveal, or gradually
+                    EventKind::CardMapping(CardMapping { card_map }, ..) => {
+                        self.game.card_map.clone_from(card_map);
+                    }
+                    // EventKind::GameStart(_) => todo!(),
+                    EventKind::GameOver(game_over) => {
+                        self.game.game_outcome = Some(game_over.game_outcome);
+                        return Err(game_over.game_outcome);
+                    }
+                    // EventKind::StartTurn(_) => todo!(),
+                    // EventKind::EndTurn(_) => todo!(),
+                    // EventKind::EnterStep(_) => todo!(),
+                    // EventKind::ExitStep(_) => todo!(),
+                    // EventKind::AddCardModifiers(_) => todo!(),
+                    // EventKind::RemoveCardModifiers(_) => todo!(),
+                    // EventKind::ClearCardModifiers(_) => todo!(),
+                    // EventKind::AddZoneModifiers(_) => todo!(),
+                    // EventKind::RemoveZoneModifiers(_) => todo!(),
+                    // EventKind::AddDamageMarkers(_) => todo!(),
+                    // EventKind::RemoveDamageMarkers(_) => todo!(),
+                    // EventKind::ClearDamageMarkers(_) => todo!(),
+                    // EventKind::LookAndSelect(_) => todo!(),
+                    // EventKind::ZoneToZone(_) => todo!(),
+                    // EventKind::ZoneToAttach(_) => todo!(),
+                    // EventKind::AttachToAttach(_) => todo!(),
+                    // EventKind::AttachToZone(_) => todo!(),
+                    // EventKind::Draw(_) => todo!(),
+                    // EventKind::Collab(_) => todo!(),
+                    // EventKind::LoseLives(_) => todo!(),
+                    // EventKind::Bloom(_) => todo!(),
+                    // EventKind::BatonPass(_) => todo!(),
+                    // EventKind::ActivateSupportCard(_) => todo!(),
+                    // EventKind::ActivateSupportAbility(_) => todo!(),
+                    // EventKind::ActivateOshiSkill(_) => todo!(),
+                    // EventKind::ActivateHoloMemberAbility(_) => todo!(),
+                    // EventKind::ActivateHoloMemberArtEffect(_) => todo!(),
+                    // EventKind::PerformArt(_) => todo!(),
+                    // EventKind::WaitingForPlayerIntent(_) => todo!(),
+                    // EventKind::HoloMemberDefeated(_) => todo!(),
+                    // EventKind::DealDamage(_) => todo!(),
+                    // EventKind::RollDice(_) => todo!(),
+                    _ => {}
                 }
 
                 self.event_handler.handle_event(&self.game, event);
@@ -53,12 +101,16 @@ where
                 self.send.send(ClientSend::IntentResponse(resp)).unwrap();
             }
         }
+
+        Ok(GameContinue)
     }
 
-    pub fn receive_requests(&mut self) {
-        loop {
-            self.handle_request();
-        }
+    pub fn receive_requests(&mut self) -> GameOutcome {
+        // loop until the end of the game
+        while self.handle_request().is_ok() {}
+
+        debug!("GAME OUTCOME = {:?}", self.game.game_outcome);
+        self.game.game_outcome.expect("game should be over")
     }
 }
 

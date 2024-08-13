@@ -422,7 +422,7 @@ impl EvaluateEffect for Condition {
                 let cards = cards.evaluate_with_context(ctx, game);
                 cards
                     .into_iter()
-                    .any(|c| -> bool { condition.evaluate_with_context(&ctx.for_card(c), game) })
+                    .all(|c| -> bool { condition.evaluate_with_context(&ctx.for_card(c), game) })
             }
             Condition::And(condition_1, condition_2) => {
                 let condition_1 = condition_1.evaluate_with_context(ctx, game);
@@ -433,7 +433,7 @@ impl EvaluateEffect for Condition {
                 let cards = cards.evaluate_with_context(ctx, game);
                 cards
                     .into_iter()
-                    .all(|c| condition.evaluate_with_context(&ctx.for_card(c), game))
+                    .any(|c| condition.evaluate_with_context(&ctx.for_card(c), game))
             }
             Condition::Anything => true,
             Condition::Equals(value_1, value_2) => {

@@ -2,7 +2,7 @@ use std::fmt::Display;
 use std::num::NonZeroU16;
 use std::sync::atomic::AtomicU8;
 use std::sync::mpsc::{Receiver, Sender};
-use std::{collections::HashMap, fmt::Debug, sync::Arc};
+use std::{collections::HashMap, fmt::Debug};
 
 use crate::card_effects::evaluate::{EvaluateContext, EvaluateEffect};
 use crate::card_effects::{Condition, Trigger};
@@ -14,7 +14,9 @@ use crate::temp::test_library;
 
 use super::cards::*;
 use super::modifiers::*;
+use debug_ignore::DebugIgnore;
 use iter_tools::Itertools;
+use rand::RngCore;
 use tracing::{debug, error};
 use ModifierKind::*;
 
@@ -36,6 +38,13 @@ impl Debug for CardRef {
 impl Display for CardRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
+    }
+}
+impl From<&str> for CardRef {
+    fn from(value: &str) -> Self {
+        let hex = u16::from_str_radix(value.trim_start_matches("c_"), 16).unwrap();
+        let num = NonZeroU16::new(hex).unwrap();
+        CardRef(num)
     }
 }
 
@@ -97,6 +106,7 @@ pub enum GameOverReason {
 
 #[derive(Debug)]
 pub struct Game {
+    pub rng: DebugIgnore<Box<dyn RngCore>>,
     pub state: GameState,
     pub player_1_channels: (Sender<ClientReceive>, Receiver<ClientSend>),
     pub player_2_channels: (Sender<ClientReceive>, Receiver<ClientSend>),
@@ -124,6 +134,20 @@ impl Game {
             event_span: EventSpan::new(),
         };
         Game {
+            rng: DebugIgnore(Box::new(rand::thread_rng())),
+            state,
+            player_1_channels: player_1_client,
+            player_2_channels: player_2_client,
+        }
+    }
+    pub fn with_game_state<R: RngCore + 'static>(
+        state: GameState,
+        player_1_client: (Sender<ClientReceive>, Receiver<ClientSend>),
+        player_2_client: (Sender<ClientReceive>, Receiver<ClientSend>),
+        rng: R,
+    ) -> Self {
+        Game {
+            rng: DebugIgnore(Box::new(rng)),
             state,
             player_1_channels: player_1_client,
             player_2_channels: player_2_client,
@@ -1323,20 +1347,20 @@ impl Game {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GameBoard {
-    oshi: Option<CardRef>,
-    main_deck: Vec<CardRef>,
-    center_stage: Option<CardRef>,
-    collab: Option<CardRef>,
-    back_stage: Vec<CardRef>,
-    life: Vec<CardRef>,
-    cheer_deck: Vec<CardRef>,
-    holo_power: Vec<CardRef>,
-    archive: Vec<CardRef>,
-    hand: Vec<CardRef>,
-    activate_support: Vec<CardRef>,
-    attachments: HashMap<CardRef, CardRef>,
+    pub oshi: Option<CardRef>,
+    pub main_deck: Vec<CardRef>,
+    pub center_stage: Option<CardRef>,
+    pub collab: Option<CardRef>,
+    pub back_stage: Vec<CardRef>,
+    pub life: Vec<CardRef>,
+    pub cheer_deck: Vec<CardRef>,
+    pub holo_power: Vec<CardRef>,
+    pub archive: Vec<CardRef>,
+    pub hand: Vec<CardRef>,
+    pub activate_support: Vec<CardRef>,
+    pub attachments: HashMap<CardRef, CardRef>,
 }
 
 impl GameBoard {
@@ -1628,7 +1652,7 @@ pub trait ZoneControl {
     fn add_bottom_card(&mut self, card: CardRef);
     fn replace_card(&mut self, from_card: CardRef, to_card: CardRef);
     fn is_in_zone(&self, card: CardRef) -> bool;
-    fn shuffle(&mut self);
+    fn shuffle(&mut self, rng: &mut Box<dyn RngCore>);
 }
 
 impl ZoneControl for Option<CardRef> {
@@ -1682,7 +1706,7 @@ impl ZoneControl for Option<CardRef> {
         *self == Some(card)
     }
 
-    fn shuffle(&mut self) {
+    fn shuffle(&mut self, _rng: &mut Box<dyn RngCore>) {
         // nothing to shuffle
     }
 }
@@ -1738,8 +1762,8 @@ impl ZoneControl for Vec<CardRef> {
         self.iter().any(|c| *c == card)
     }
 
-    fn shuffle(&mut self) {
-        rand::seq::SliceRandom::shuffle(&mut self[..], &mut rand::thread_rng());
+    fn shuffle(&mut self, rng: &mut Box<dyn RngCore>) {
+        rand::seq::SliceRandom::shuffle(&mut self[..], rng);
     }
 }
 
@@ -2048,7 +2072,7 @@ impl Display for ArtDisplay {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GameState {
     pub game_outcome: Option<GameOutcome>,
     pub card_map: HashMap<CardRef, (Player, CardNumber)>, // TODO use a different pair because rarity is not include in card number

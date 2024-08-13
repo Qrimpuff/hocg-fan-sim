@@ -17,3 +17,4 @@ tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "local-time"] }
 tracing-appender = "0.2.3"
 time = { version = "0.3.36", features = ["macros"] }
+debug-ignore = "1.0.5"

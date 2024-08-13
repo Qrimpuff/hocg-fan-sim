@@ -87,6 +87,59 @@ impl Prompter for RandomPrompter {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct BufferedPrompter {
+    buffer: Vec<Vec<usize>>,
+}
+impl BufferedPrompter {
+    pub fn new(buffer: &[&[usize]]) -> Self {
+        BufferedPrompter {
+            buffer: buffer
+                .iter()
+                .map(|b| b.iter().copied().collect_vec())
+                .collect_vec(),
+        }
+    }
+}
+
+impl Prompter for BufferedPrompter {
+    fn prompt_choice<'a, T: ToString>(&mut self, text: &str, mut choices: Vec<T>) -> T {
+        println!("choosing buffered choice for: {text}");
+        self.print_choices(&choices);
+
+        let mut buf = self.buffer.remove(0);
+        assert!(buf.len() == 1);
+        let c = choices.remove(buf.remove(0));
+        println!("{}", c.to_string());
+        c
+    }
+
+    fn prompt_multi_choices<'a, T: ToString>(
+        &mut self,
+        text: &str,
+        choices: Vec<T>,
+        min: usize,
+        max: usize,
+    ) -> Vec<T> {
+        println!("choosing buffered choices for: {text}");
+        self.print_choices(&choices);
+
+        let max = max.min(choices.len());
+
+        let buf = self.buffer.remove(0);
+        assert!(buf.len() >= min);
+        assert!(buf.len() <= max);
+        let c = choices
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| buf.contains(i))
+            .map(|(_, c)| c)
+            .collect_vec();
+        println!("{}", c.iter().map(T::to_string).collect_vec().join(", "));
+        c
+    }
+}
+
 pub trait Prompter: Debug {
     fn prompt_choice<T: ToString>(&mut self, text: &str, choices: Vec<T>) -> T;
     fn prompt_multi_choices<T: ToString>(
