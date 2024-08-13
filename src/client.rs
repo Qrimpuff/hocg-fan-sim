@@ -1,11 +1,8 @@
-use std::sync::{
-    mpsc::{Receiver, Sender},
-    Arc,
-};
+use std::sync::mpsc::{Receiver, Sender};
 
 use tracing::debug;
 
-use crate::{cards::GlobalLibrary, events::*, gameplay::GameState};
+use crate::{events::*, gameplay::GameState};
 
 pub struct Client<E, I> {
     game: GameState,
@@ -20,13 +17,12 @@ where
     I: IntentRequestHandler,
 {
     pub fn new(
-        library: Arc<GlobalLibrary>,
         channels: (Sender<ClientSend>, Receiver<ClientReceive>),
         event_handler: E,
         intent_handler: I,
     ) -> Self {
         Client {
-            game: GameState::new(library),
+            game: GameState::new(),
             send: channels.0,
             receive: channels.1,
             event_handler,
@@ -73,7 +69,13 @@ pub trait IntentRequestHandler {
     fn handle_intent_request(&mut self, game: &GameState, req: IntentRequest) -> IntentResponse;
 }
 
+#[derive(Default)]
 pub struct DefaultEventHandler {}
+impl DefaultEventHandler {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
 impl EventHandler for DefaultEventHandler {
     fn handle_event(&mut self, _game: &GameState, _event: Event) {
         // do nothing

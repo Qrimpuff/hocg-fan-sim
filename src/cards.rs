@@ -358,7 +358,7 @@ impl OshiHoloMemberCard {
 
         self.skills[skill_idx]
             .condition
-            .evaluate_with_card(game, card)
+            .evaluate_with_card(&game.state, card)
     }
 }
 
@@ -500,7 +500,7 @@ impl HoloMemberCard {
 
         self.abilities[ability_idx]
             .condition
-            .evaluate_with_card(game, card)
+            .evaluate_with_card(&game.state, card)
     }
 
     pub fn can_use_art(&self, card: CardRef, art_idx: usize, game: &Game) -> bool {
@@ -520,7 +520,7 @@ impl HoloMemberCard {
             return false;
         }
 
-        self.arts[art_idx].condition.evaluate_with_card(game, card)
+        self.arts[art_idx].condition.evaluate_with_card(&game.state, card)
     }
 }
 
@@ -648,7 +648,7 @@ impl SupportCard {
             return false;
         }
 
-        self.condition.evaluate_with_card(game, card)
+        self.condition.evaluate_with_card(&game.state, card)
     }
 
     pub fn can_attach_target(
@@ -667,7 +667,7 @@ impl SupportCard {
             return false;
         }
 
-        self.condition.evaluate_with_card(game, card)
+        self.condition.evaluate_with_card(&game.state, card)
     }
 }
 

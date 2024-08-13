@@ -102,7 +102,7 @@ impl Modifier {
     pub fn end_turn(&mut self, _active_player: Player) {}
 }
 
-impl Game {
+impl GameState {
     pub fn find_modifiers(&self, card: CardRef) -> impl Iterator<Item = &Modifier> + '_ {
         let (player, _) = self.card_map.get(&card).expect("should be in the map");
 
@@ -155,6 +155,51 @@ impl Game {
                 _ => Some(&m.kind),
             })
             .any(filter_fn)
+    }
+
+    // damage markers
+    pub fn has_damage(&self, card: CardRef) -> bool {
+        self.card_damage_markers
+            .get(&card)
+            .filter(|dmg| dmg.0 > 0)
+            .is_some()
+    }
+
+    pub fn remaining_hp(&self, card: CardRef) -> HoloMemberHp {
+        let dmg = self.get_damage(card);
+        let hp = self
+            .lookup_holo_member(card)
+            .expect("should be a member")
+            .hp;
+        hp.saturating_sub(dmg.to_hp())
+    }
+
+    pub fn get_damage(&self, card: CardRef) -> DamageMarkers {
+        self.card_damage_markers
+            .get(&card)
+            .copied()
+            .unwrap_or_default()
+    }
+}
+
+impl Game {
+    pub fn find_modifiers(&self, card: CardRef) -> impl Iterator<Item = &Modifier> + '_ {
+        self.state.find_modifiers(card)
+    }
+
+    /// is used with Zone::All
+    pub fn player_has_modifier(&self, player: Player, kind: ModifierKind) -> bool {
+        self.state.player_has_modifier(player, kind)
+    }
+    pub fn has_modifier(&self, card: CardRef, kind: ModifierKind) -> bool {
+        self.state.has_modifier(card, kind)
+    }
+    pub fn has_modifier_with(
+        &self,
+        card: CardRef,
+        filter_fn: impl FnMut(&ModifierKind) -> bool,
+    ) -> bool {
+        self.state.has_modifier_with(card, filter_fn)
     }
 
     pub fn add_modifier(
@@ -239,6 +284,7 @@ impl Game {
             .expect("the card should be in a zone");
 
         let modifiers = self
+            .state
             .card_modifiers
             .get(&card)
             .into_iter()
@@ -271,8 +317,9 @@ impl Game {
     }
 
     pub fn promote_modifiers(&mut self, attachment: CardRef, parent: CardRef) {
-        if let Some((_, modifiers)) = self.card_modifiers.remove_entry(&parent) {
-            self.card_modifiers
+        if let Some((_, modifiers)) = self.state.card_modifiers.remove_entry(&parent) {
+            self.state
+                .card_modifiers
                 .entry(attachment)
                 .or_default()
                 .extend(modifiers);
@@ -283,13 +330,15 @@ impl Game {
         // house keeping for the card modifiers
         // split in 2 because can't modify and player_for_card at the same time
         let to_modify: Vec<_> = self
+            .state
             .card_modifiers
             .iter()
             .enumerate()
             .filter(|(_, (c, _))| self.player_for_card(**c) == player)
             .map(|(i, _)| i)
             .collect();
-        self.card_modifiers
+        self.state
+            .card_modifiers
             .iter_mut()
             .enumerate()
             .filter(|(i, _)| to_modify.contains(i))
@@ -299,7 +348,8 @@ impl Game {
             });
 
         // house keeping for the zone modifiers
-        self.zone_modifiers
+        self.state
+            .zone_modifiers
             .get_mut(&player)
             .into_iter()
             .flatten()
@@ -312,13 +362,15 @@ impl Game {
         // house keeping for the card modifiers
         // split in 2 because can't modify and player_for_card at the same time
         let to_modify: Vec<_> = self
+            .state
             .card_modifiers
             .iter()
             .enumerate()
             .filter(|(_, (c, _))| self.player_for_card(**c) == player)
             .map(|(i, _)| i)
             .collect();
-        self.card_modifiers
+        self.state
+            .card_modifiers
             .iter_mut()
             .enumerate()
             .filter(|(i, _)| to_modify.contains(i))
@@ -328,7 +380,8 @@ impl Game {
             });
 
         // house keeping for the zone modifiers
-        self.zone_modifiers
+        self.state
+            .zone_modifiers
             .get_mut(&player)
             .into_iter()
             .flatten()
@@ -344,6 +397,7 @@ impl Game {
     ) -> GameResult {
         // remove expiring card modifiers
         let c_mods: HashMap<_, Vec<_>> = self
+            .state
             .card_modifiers
             .iter()
             .flat_map(|(c, ms)| ms.iter().map(move |m| (c, m)))
@@ -363,6 +417,7 @@ impl Game {
 
         // remove expiring zone modifiers
         let z_mods: HashMap<_, Vec<_>> = self
+            .state
             .zone_modifiers
             .iter()
             .flat_map(|(p, ms)| ms.iter().map(move |(z, m)| (p, z, m)))
@@ -380,26 +435,15 @@ impl Game {
 
     // damage markers
     pub fn has_damage(&self, card: CardRef) -> bool {
-        self.card_damage_markers
-            .get(&card)
-            .filter(|dmg| dmg.0 > 0)
-            .is_some()
+        self.state.has_damage(card)
     }
 
     pub fn remaining_hp(&self, card: CardRef) -> HoloMemberHp {
-        let dmg = self.get_damage(card);
-        let hp = self
-            .lookup_holo_member(card)
-            .expect("should be a member")
-            .hp;
-        hp.saturating_sub(dmg.to_hp())
+        self.state.remaining_hp(card)
     }
 
     pub fn get_damage(&self, card: CardRef) -> DamageMarkers {
-        self.card_damage_markers
-            .get(&card)
-            .copied()
-            .unwrap_or_default()
+        self.state.get_damage(card)
     }
 
     pub fn add_damage_markers(
@@ -433,8 +477,12 @@ impl Game {
     }
 
     pub fn promote_damage_markers(&mut self, attachment: CardRef, parent: CardRef) {
-        if let Some((_, dmg)) = self.card_damage_markers.remove_entry(&parent) {
-            *self.card_damage_markers.entry(attachment).or_default() += dmg;
+        if let Some((_, dmg)) = self.state.card_damage_markers.remove_entry(&parent) {
+            *self
+                .state
+                .card_damage_markers
+                .entry(attachment)
+                .or_default() += dmg;
         }
     }
 }

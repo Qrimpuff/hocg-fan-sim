@@ -6,7 +6,6 @@ use std::{env, iter, sync::mpsc};
 use hocg_fan_sim::client::DefaultEventHandler;
 use hocg_fan_sim::gameplay::Game;
 use hocg_fan_sim::prompters::RandomPrompter;
-use hocg_fan_sim::temp::test_library;
 use hocg_fan_sim::{cards::*, client::Client};
 use time::macros::format_description;
 use tracing::info;
@@ -86,23 +85,36 @@ fn main() {
         cheer_deck: cheer_deck_hsd01,
     };
 
-    let channel_1 = mpsc::channel();
-    let channel_2 = mpsc::channel();
+    let p1_channel_1 = mpsc::channel();
+    let p1_channel_2 = mpsc::channel();
+    let p2_channel_1 = mpsc::channel();
+    let p2_channel_2 = mpsc::channel();
 
     let mut game = Game::setup(
-        test_library().clone(),
         &player_1,
         &player_2,
-        (channel_1.0, channel_2.1),
+        (p1_channel_1.0, p1_channel_2.1),
+        (p2_channel_1.0, p2_channel_2.1),
     );
-    let mut client = Client::new(
-        test_library().clone(),
-        (channel_2.0, channel_1.1),
-        DefaultEventHandler {},
-        RandomPrompter {},
+
+    // Player 1
+    let mut p1_client = Client::new(
+        (p1_channel_2.0, p1_channel_1.1),
+        DefaultEventHandler::new(),
+        RandomPrompter::new(),
     );
     thread::spawn(move || {
-        client.receive_requests();
+        p1_client.receive_requests();
+    });
+
+    // Player 2
+    let mut p2_client = Client::new(
+        (p2_channel_2.0, p2_channel_1.1),
+        DefaultEventHandler::new(),
+        RandomPrompter::new(),
+    );
+    thread::spawn(move || {
+        p2_client.receive_requests();
     });
 
     // println!("{:#?}", &game);

@@ -4,18 +4,20 @@ use iter_tools::Itertools;
 use rand::{seq::IteratorRandom, thread_rng, Rng};
 
 use crate::{
-    client::{Client, IntentRequestHandler},
+    client::IntentRequestHandler,
     events::{IntentRequest, IntentResponse},
-    gameplay::{CardDisplay, GameState, MainStepActionDisplay, Rps},
+    gameplay::{CardDisplay, GameState, MainStepActionDisplay, PerformanceStepActionDisplay},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DefaultPrompter {}
 impl DefaultPrompter {
     pub fn new() -> Self {
         DefaultPrompter {}
     }
+}
 
+impl Prompter for DefaultPrompter {
     fn prompt_choice<'a, T: ToString>(&mut self, text: &str, choices: Vec<T>) -> T {
         println!("choosing first choice for: {text}");
         self.print_choices(&choices);
@@ -42,26 +44,17 @@ impl DefaultPrompter {
         println!("{}", c.iter().map(T::to_string).collect_vec().join(", "));
         c
     }
-
-    fn print_choices<T: ToString>(&mut self, choices: &[T]) {
-        println!(
-            "options:\n{}",
-            choices
-                .iter()
-                .map(|c| format!("  - {}", c.to_string()))
-                .collect_vec()
-                .join("\n")
-        );
-    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct RandomPrompter {}
 impl RandomPrompter {
     pub fn new() -> Self {
         RandomPrompter {}
     }
+}
 
+impl Prompter for RandomPrompter {
     fn prompt_choice<'a, T: ToString>(&mut self, text: &str, choices: Vec<T>) -> T {
         println!("choosing random choice for: {text}");
         self.print_choices(&choices);
@@ -92,6 +85,17 @@ impl RandomPrompter {
         println!("{}", c.iter().map(T::to_string).collect_vec().join(", "));
         c
     }
+}
+
+pub trait Prompter: Debug {
+    fn prompt_choice<T: ToString>(&mut self, text: &str, choices: Vec<T>) -> T;
+    fn prompt_multi_choices<T: ToString>(
+        &mut self,
+        text: &str,
+        choices: Vec<T>,
+        min: usize,
+        max: usize,
+    ) -> Vec<T>;
 
     fn print_choices<T: ToString>(&mut self, choices: &[T]) {
         println!(
@@ -105,7 +109,7 @@ impl RandomPrompter {
     }
 }
 
-impl IntentRequestHandler for RandomPrompter {
+impl<P: Prompter> IntentRequestHandler for P {
     fn handle_intent_request(&mut self, game: &GameState, req: IntentRequest) -> IntentResponse {
         match req {
             IntentRequest::Rps { player, select_rps } => {
@@ -181,45 +185,52 @@ impl IntentRequestHandler for RandomPrompter {
                 select_attachments,
                 min_amount,
                 max_amount,
-            } => todo!(),
+            } => {
+                let select_attachments = select_attachments
+                    .into_iter()
+                    .map(|c| CardDisplay::new(c, game))
+                    .collect_vec();
+                let selected = self
+                    .prompt_multi_choices(
+                        "choose attachments:",
+                        select_attachments,
+                        min_amount,
+                        max_amount,
+                    )
+                    .into_iter()
+                    .map(|c| c.card)
+                    .collect();
+                IntentResponse::SelectAttachments {
+                    player,
+                    select_attachments: selected,
+                }
+            }
             IntentRequest::PerformanceStepAction {
                 player,
                 select_actions,
-            } => todo!(),
+            } => {
+                let select_actions = select_actions
+                    .into_iter()
+                    .map(|a| PerformanceStepActionDisplay::new(a, game))
+                    .collect_vec();
+                let selected = self
+                    .prompt_choice("performance step action:", select_actions)
+                    .action;
+                IntentResponse::PerformanceStepAction {
+                    player,
+                    select_action: selected,
+                }
+            }
             IntentRequest::SelectNumber {
                 player,
                 select_numbers,
-            } => todo!(),
+            } => {
+                let number = self.prompt_choice("choose a number:", select_numbers);
+                IntentResponse::SelectNumber {
+                    player,
+                    select_number: number,
+                }
+            }
         }
     }
-}
-
-pub trait Prompter {
-    fn prompt_choice_rps<T: ToString>(&mut self, text: &str, choices: Vec<Rps>) -> Rps;
-
-    //////////////////////////
-
-    // fn prompt_choice<T: ToString>(&mut self, text: &str, choices: Vec<T>) -> T;
-    // fn prompt_multi_choices<T: ToString>(
-    //     &mut self,
-    //     text: &str,
-    //     choices: Vec<T>,
-    //     min: usize,
-    //     max: usize,
-    // ) -> Vec<T>;
-
-    // fn prompt_rps_choice();
-    // fn prompt_mulligan_choice();
-    // fn prompt_card_in_hand_choice();
-    // fn prompt_card_on_stage_choice();
-    // fn prompt_zone_choice();
-    // fn prompt_main_step_action_choice();
-    //     // place debut member on back stage
-    //     // bloom member (evolve e.g. debut -> 1st )
-    //     // use support card
-    //     // put back stage member in collab
-    //     // retreat switch (baton pass)
-    //     // use abilities (including oshi)
-    // fn prompt_ability_choice();
-    // fn prompt_attack_choice();
 }

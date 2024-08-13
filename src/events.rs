@@ -253,7 +253,7 @@ pub enum IntentResponse {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct EventSpan {
     pub event_origin_stack: Vec<CardRef>,
 }
@@ -321,13 +321,19 @@ impl Game {
         // change the event before it happens, with modifiers from triggers
         event.adjust_event(self)?;
 
-        debug!("EVENT = [{:?}] {event:?}", self.event_span.current_card());
+        debug!(
+            "EVENT = [{:?}] {event:?}",
+            self.state.event_span.current_card()
+        );
         // perform the modification to the game state
         event.evaluate_event(self)?;
 
         // TODO sanitize the event before sending it to each player
-        // TODO send event to each player
-        self.client(self.active_player)
+        self.client(self.state.active_player)
+            .0
+            .send(ClientReceive::Event(event.clone()))
+            .unwrap();
+        self.client(self.state.active_player.opponent())
             .0
             .send(ClientReceive::Event(event.clone()))
             .unwrap();
@@ -342,17 +348,17 @@ impl Game {
     fn evaluate_triggers(&mut self, trigger: TriggeredEvent) -> GameResult {
         debug!(
             "TRIGGER = [{:?}] {trigger:?}",
-            self.event_span.current_card()
+            self.state.event_span.current_card()
         );
 
-        let current_player = self.active_player;
+        let current_player = self.state.active_player;
         let current_player_cards_on_stage = self
             .board(current_player)
             .oshi()
             .into_iter()
             .chain(self.board(current_player).stage())
             .map(|c| (current_player, c));
-        let opponent = self.active_player.opponent();
+        let opponent = self.state.active_player.opponent();
         let opponent_cards_on_stage = self
             .board(opponent)
             .oshi()
@@ -374,9 +380,11 @@ impl Game {
                 Card::OshiHoloMember(o) => {
                     for (idx, skill) in o.skills.iter().enumerate() {
                         if skill.triggers.iter().any(|t| t.should_activate(&trigger))
-                            && skill
-                                .condition
-                                .evaluate_with_card_event(self, card, trigger.event())
+                            && skill.condition.evaluate_with_card_event(
+                                &self.state,
+                                card,
+                                trigger.event(),
+                            )
                         {
                             // TODO activate skill
                             debug!("ACTIVATE SKILL = {skill:?}");
@@ -388,7 +396,7 @@ impl Game {
                     for (idx, ability) in m.abilities.iter().enumerate() {
                         if ability.should_activate(card, &trigger)
                             && ability.condition.evaluate_with_card_event(
-                                self,
+                                &self.state,
                                 card,
                                 trigger.event(),
                             )
@@ -402,7 +410,7 @@ impl Game {
                 Card::Support(s) => {
                     if s.triggers.iter().any(|t| t.should_activate(&trigger))
                         && s.condition
-                            .evaluate_with_card_event(self, card, trigger.event())
+                            .evaluate_with_card_event(&self.state, card, trigger.event())
                     {
                         // TODO activate skill
                         debug!("ACTIVATE SUPPORT = {s:?}");
@@ -490,7 +498,7 @@ impl Game {
             event_origin,
             GameOver {
                 game_outcome,
-                turn_number: self.turn_number,
+                turn_number: self.state.turn_number,
             }
             .into(),
         )?;
@@ -505,7 +513,7 @@ impl Game {
                     winning_player: None,
                     reason: GameOverReason::Draw,
                 },
-                turn_number: self.turn_number,
+                turn_number: self.state.turn_number,
             }
             .into(),
         )?;
@@ -521,7 +529,7 @@ impl Game {
             event_origin,
             StartTurn {
                 active_player,
-                turn_number: self.turn_number,
+                turn_number: self.state.turn_number,
             }
             .into(),
         )?;
@@ -537,7 +545,7 @@ impl Game {
             event_origin,
             EndTurn {
                 active_player,
-                turn_number: self.turn_number,
+                turn_number: self.state.turn_number,
             }
             .into(),
         )?;
@@ -1201,7 +1209,7 @@ impl Game {
     ) -> GameResult {
         let cards = cards
             .into_iter()
-            .filter(|c| self.card_modifiers.contains_key(c))
+            .filter(|c| self.state.card_modifiers.contains_key(c))
             .collect_vec();
 
         if cards.is_empty() {
@@ -1659,7 +1667,7 @@ pub struct Setup {
 }
 impl EvaluateEvent for Setup {
     fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
-        game.active_step = Step::Setup;
+        game.state.active_step = Step::Setup;
 
         // - shuffle main deck
         game.shuffle_main_deck(event_origin, Player::One)?;
@@ -1851,7 +1859,7 @@ pub struct PlayerGoingFirst {
 }
 impl EvaluateEvent for PlayerGoingFirst {
     fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
-        game.active_player = self.first_player;
+        game.state.active_player = self.first_player;
 
         Ok(GameContinue)
     }
@@ -1899,7 +1907,7 @@ pub struct GameStart {
 impl EvaluateEvent for GameStart {
     fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         // the state changes on start turn
-        game.active_player = self.active_player;
+        game.state.active_player = self.active_player;
 
         Ok(GameContinue)
     }
@@ -1912,8 +1920,8 @@ pub struct GameOver {
 }
 impl EvaluateEvent for GameOver {
     fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
-        game.active_step = Step::GameOver;
-        game.game_outcome = Some(self.game_outcome);
+        game.state.active_step = Step::GameOver;
+        game.state.game_outcome = Some(self.game_outcome);
 
         Ok(GameContinue)
     }
@@ -1926,7 +1934,7 @@ pub struct StartTurn {
 }
 impl EvaluateEvent for StartTurn {
     fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
-        game.active_player = self.active_player;
+        game.state.active_player = self.active_player;
 
         game.start_turn_modifiers(self.active_player);
 
@@ -1941,7 +1949,7 @@ pub struct EndTurn {
 }
 impl EvaluateEvent for EndTurn {
     fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
-        assert_eq!(self.active_player, game.active_player);
+        assert_eq!(self.active_player, game.state.active_player);
 
         game.end_turn_modifiers(self.active_player);
 
@@ -1958,8 +1966,8 @@ pub struct EnterStep {
 }
 impl EvaluateEvent for EnterStep {
     fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
-        assert_eq!(self.active_player, game.active_player);
-        game.active_step = self.active_step;
+        assert_eq!(self.active_player, game.state.active_player);
+        game.state.active_step = self.active_step;
 
         Ok(GameContinue)
     }
@@ -1972,8 +1980,8 @@ pub struct ExitStep {
 }
 impl EvaluateEvent for ExitStep {
     fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
-        assert_eq!(self.active_player, game.active_player);
-        assert_eq!(self.active_step, game.active_step);
+        assert_eq!(self.active_player, game.state.active_player);
+        assert_eq!(self.active_step, game.state.active_step);
 
         game.remove_expiring_modifiers(event_origin, LifeTime::ThisStep)?;
 
@@ -1997,7 +2005,8 @@ impl EvaluateEvent for AddCardModifiers {
         verify_cards_in_zone(game, self.player, self.zone, &self.cards);
 
         for card in &self.cards {
-            game.card_modifiers
+            game.state
+                .card_modifiers
                 .entry(*card)
                 .or_default()
                 .extend(self.modifiers.iter().cloned());
@@ -2030,19 +2039,23 @@ impl EvaluateEvent for RemoveCardModifiers {
             .collect_vec();
 
         for card in &self.cards {
-            game.card_modifiers.entry(*card).or_default().retain(|m| {
-                let idx = to_remove
-                    .iter()
-                    .enumerate()
-                    .find(|(_, r)| r.0 == *card && r.1 == m.id)
-                    .map(|(i, _)| i);
-                if let Some(idx) = idx {
-                    to_remove.swap_remove(idx);
-                    false
-                } else {
-                    true
-                }
-            });
+            game.state
+                .card_modifiers
+                .entry(*card)
+                .or_default()
+                .retain(|m| {
+                    let idx = to_remove
+                        .iter()
+                        .enumerate()
+                        .find(|(_, r)| r.0 == *card && r.1 == m.id)
+                        .map(|(i, _)| i);
+                    if let Some(idx) = idx {
+                        to_remove.swap_remove(idx);
+                        false
+                    } else {
+                        true
+                    }
+                });
         }
 
         Ok(GameContinue)
@@ -2064,7 +2077,7 @@ impl EvaluateEvent for ClearCardModifiers {
         verify_cards_in_zone(game, self.player, self.zone, &self.cards);
 
         for card in &self.cards {
-            game.card_modifiers.remove_entry(card);
+            game.state.card_modifiers.remove_entry(card);
         }
 
         Ok(GameContinue)
@@ -2083,12 +2096,16 @@ impl EvaluateEvent for AddZoneModifiers {
             return Ok(GameContinue);
         }
 
-        game.zone_modifiers.entry(self.player).or_default().extend(
-            self.modifiers
-                .iter()
-                .cloned()
-                .map(|m: Modifier| (self.zone, m)),
-        );
+        game.state
+            .zone_modifiers
+            .entry(self.player)
+            .or_default()
+            .extend(
+                self.modifiers
+                    .iter()
+                    .cloned()
+                    .map(|m: Modifier| (self.zone, m)),
+            );
 
         Ok(GameContinue)
     }
@@ -2113,7 +2130,8 @@ impl EvaluateEvent for RemoveZoneModifiers {
             .map(|m| (self.player, self.zone, m))
             .collect_vec();
 
-        game.zone_modifiers
+        game.state
+            .zone_modifiers
             .entry(self.player)
             .or_default()
             .retain(|(z, m)| {
@@ -2150,7 +2168,7 @@ impl EvaluateEvent for AddDamageMarkers {
         verify_cards_in_zone(game, self.player, self.zone, &self.cards);
 
         for card in &self.cards {
-            *game.card_damage_markers.entry(*card).or_default() += self.dmg;
+            *game.state.card_damage_markers.entry(*card).or_default() += self.dmg;
         }
 
         // verify that they are still alive
@@ -2209,7 +2227,7 @@ impl EvaluateEvent for RemoveDamageMarkers {
         verify_cards_in_zone(game, self.player, self.zone, &self.cards);
 
         for card in &self.cards {
-            *game.card_damage_markers.entry(*card).or_default() -= self.dmg;
+            *game.state.card_damage_markers.entry(*card).or_default() -= self.dmg;
         }
 
         Ok(GameContinue)
@@ -2231,7 +2249,7 @@ impl EvaluateEvent for ClearDamageMarkers {
         verify_cards_in_zone(game, self.player, self.zone, &self.cards);
 
         for card in &self.cards {
-            game.card_damage_markers.remove_entry(card);
+            game.state.card_damage_markers.remove_entry(card);
         }
 
         Ok(GameContinue)
@@ -2652,7 +2670,7 @@ impl EvaluateEvent for ActivateSupportCard {
         }
 
         // send the used card to the archive
-        game.send_cards_to_archive(event_origin, game.active_player, vec![self.card.1])
+        game.send_cards_to_archive(event_origin, game.state.active_player, vec![self.card.1])
     }
 }
 
@@ -2719,14 +2737,14 @@ impl EvaluateEvent for ActivateOshiSkill {
 
         effect.evaluate_with_card_mut(game, self.card.1)?;
 
-        game.event_span.start_untracked_span();
+        game.state.event_span.start_untracked_span();
         game.add_modifier(
             event_origin,
             self.card.1,
             PreventOshiSkill(self.skill_idx),
             prevent_life_time,
         )?;
-        game.event_span.close_untracked_span();
+        game.state.event_span.close_untracked_span();
 
         Ok(GameContinue)
     }
@@ -2861,6 +2879,14 @@ impl EvaluateEvent for PerformArt {
         }
 
         game.remove_expiring_modifiers(event_origin, LifeTime::ThisArt)?;
+
+        // can only perform art once per turn
+        game.add_modifier(
+            event_origin,
+            self.card.1,
+            PreventAllArts,
+            LifeTime::ThisTurn,
+        )?;
 
         Ok(GameContinue)
     }
