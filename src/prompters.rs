@@ -180,6 +180,15 @@ impl<P: Prompter> IntentRequestHandler for P {
                     select_yes_no: mulligan,
                 }
             }
+            IntentRequest::ActivateEffect { player, .. } => {
+                let activate = self
+                    .prompt_choice("do you want to activate the effect?", vec!["Yes", "No"])
+                    == "Yes";
+                IntentResponse::ActivateEffect {
+                    player,
+                    select_yes_no: activate,
+                }
+            }
             IntentRequest::LookSelectZoneToZone {
                 player,
                 select_cards,

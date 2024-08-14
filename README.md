@@ -1,2 +1,2 @@
 # hocg-fan-sim
-Hololive OCG - Fan Simulator
+hololive OCG - Fan Simulator

@@ -2,15 +2,12 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fmt::Display;
 use std::num::NonZeroU16;
-use std::sync::atomic::AtomicU16;
 
 use crate::card_effects::evaluate::EvaluateEffect;
 use crate::card_effects::Condition;
 
 use super::cards::*;
 use super::gameplay::*;
-
-static NEXT_MODIFIER_REF: AtomicU16 = AtomicU16::new(1);
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ModifierRef(NonZeroU16);
@@ -75,8 +72,14 @@ pub struct Modifier {
 }
 
 impl Modifier {
-    pub fn for_card(_card: CardRef, kind: ModifierKind, life_time: LifeTime) -> Self {
-        let next_ref = NEXT_MODIFIER_REF.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    pub fn for_card(
+        _card: CardRef,
+        kind: ModifierKind,
+        life_time: LifeTime,
+        next_modifier_ref: &mut u16,
+    ) -> Self {
+        let next_ref = *next_modifier_ref;
+        *next_modifier_ref += 1;
         let id = ModifierRef(NonZeroU16::new(next_ref).expect("card is non zero"));
         Modifier {
             id,
@@ -84,8 +87,15 @@ impl Modifier {
             life_time,
         }
     }
-    pub fn for_zone(_player: Player, _zone: Zone, kind: ModifierKind, life_time: LifeTime) -> Self {
-        let next_ref = NEXT_MODIFIER_REF.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    pub fn for_zone(
+        _player: Player,
+        _zone: Zone,
+        kind: ModifierKind,
+        life_time: LifeTime,
+        next_modifier_ref: &mut u16,
+    ) -> Self {
+        let next_ref = *next_modifier_ref;
+        *next_modifier_ref += 1;
         let id = ModifierRef(NonZeroU16::new(next_ref).expect("zone is non zero"));
         Modifier {
             id,
@@ -134,17 +144,34 @@ impl GameState {
                 .map(|(_, b)| b),
         )
     }
-
-    /// is used with Zone::All
-    pub fn player_has_modifier(&self, player: Player, kind: ModifierKind) -> bool {
+    pub fn find_player_modifiers(&self, player: Player) -> impl Iterator<Item = &Modifier> + '_ {
         // need to look for any card, oshi is always there
         let oshi = self
             .board(player)
             .get_zone(Zone::Oshi)
             .peek_top_card()
             .expect("oshi is always there");
-        self.has_modifier(oshi, kind)
+        self.find_modifiers(oshi)
     }
+
+    /// is used with Zone::All
+    pub fn player_has_modifier(&self, player: Player, kind: ModifierKind) -> bool {
+        self.player_has_modifier_with(player, |m| *m == kind)
+    }
+    pub fn player_has_modifier_with(
+        &self,
+        player: Player,
+        filter_fn: impl FnMut(&ModifierKind) -> bool,
+    ) -> bool {
+        // need to look for any card, oshi is always there
+        let oshi = self
+            .board(player)
+            .get_zone(Zone::Oshi)
+            .peek_top_card()
+            .expect("oshi is always there");
+        self.has_modifier_with(oshi, filter_fn)
+    }
+
     pub fn has_modifier(&self, card: CardRef, kind: ModifierKind) -> bool {
         self.has_modifier_with(card, |m| *m == kind)
     }
@@ -193,10 +220,20 @@ impl Game {
     pub fn find_modifiers(&self, card: CardRef) -> impl Iterator<Item = &Modifier> + '_ {
         self.state.find_modifiers(card)
     }
+    pub fn find_player_modifiers(&self, player: Player) -> impl Iterator<Item = &Modifier> + '_ {
+        self.state.find_player_modifiers(player)
+    }
 
     /// is used with Zone::All
     pub fn player_has_modifier(&self, player: Player, kind: ModifierKind) -> bool {
         self.state.player_has_modifier(player, kind)
+    }
+    pub fn player_has_modifier_with(
+        &self,
+        player: Player,
+        filter_fn: impl FnMut(&ModifierKind) -> bool,
+    ) -> bool {
+        self.state.player_has_modifier_with(player, filter_fn)
     }
     pub fn has_modifier(&self, card: CardRef, kind: ModifierKind) -> bool {
         self.state.has_modifier(card, kind)
@@ -229,16 +266,13 @@ impl Game {
             .board(player)
             .find_card_zone(card)
             .expect("the card should be in a zone");
-        self.add_many_modifiers_to_many_cards(
-            event_origin,
-            player,
-            zone,
-            vec![card],
-            modifiers
-                .into_iter()
-                .map(move |(kind, life_time)| Modifier::for_card(card, kind, life_time))
-                .collect(),
-        )
+        let modifiers = modifiers
+            .into_iter()
+            .map(|(kind, life_time)| {
+                Modifier::for_card(card, kind, life_time, &mut self.next_modifier_ref)
+            })
+            .collect();
+        self.add_many_modifiers_to_many_cards(event_origin, player, zone, vec![card], modifiers)
     }
 
     pub fn add_zone_modifier(
@@ -260,14 +294,18 @@ impl Game {
         life_time: LifeTime,
         amount: usize,
     ) -> GameResult {
-        self.add_many_modifiers_to_zone(
-            event_origin,
-            player,
-            zone,
-            (0..amount)
-                .map(|_| Modifier::for_zone(player, zone, kind.clone(), life_time))
-                .collect(),
-        )
+        let modifiers = (0..amount)
+            .map(|_| {
+                Modifier::for_zone(
+                    player,
+                    zone,
+                    kind.clone(),
+                    life_time,
+                    &mut self.next_modifier_ref,
+                )
+            })
+            .collect();
+        self.add_many_modifiers_to_zone(event_origin, player, zone, modifiers)
     }
 
     pub fn remove_all_modifiers(
@@ -307,6 +345,36 @@ impl Game {
             vec![card],
             modifiers,
         )
+    }
+
+    pub fn remove_all_zone_modifiers(
+        &mut self,
+        event_origin: Option<CardRef>,
+        player: Player,
+        zone: Zone,
+        kind: ModifierKind,
+    ) -> GameResult {
+        self.remove_all_zone_modifiers_with(event_origin, player, zone, |(_, m)| m.kind == kind)
+    }
+    pub fn remove_all_zone_modifiers_with(
+        &mut self,
+        event_origin: Option<CardRef>,
+        player: Player,
+        zone: Zone,
+        filter_fn: impl FnMut(&&(Zone, Modifier)) -> bool,
+    ) -> GameResult {
+        let modifiers = self
+            .state
+            .zone_modifiers
+            .get(&player)
+            .into_iter()
+            .flatten()
+            .filter(move |(z, _)| z.includes(zone))
+            .filter(filter_fn)
+            .map(|(_, m)| m.id)
+            .collect();
+
+        self.remove_many_modifiers_from_zone(event_origin, player, zone, modifiers)
     }
 
     pub fn clear_all_modifiers(

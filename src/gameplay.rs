@@ -1,6 +1,5 @@
 use std::fmt::Display;
 use std::num::NonZeroU16;
-use std::sync::atomic::AtomicU8;
 use std::sync::mpsc::{Receiver, Sender};
 use std::{collections::HashMap, fmt::Debug};
 
@@ -24,8 +23,6 @@ pub const STARTING_HAND_SIZE: usize = 7;
 pub const MAX_MEMBERS_ON_STAGE: usize = 6;
 
 pub static PRIVATE_CARD: CardRef = CardRef(NonZeroU16::MAX);
-static NEXT_P1_CARD_REF: AtomicU8 = AtomicU8::new(1);
-static NEXT_P2_CARD_REF: AtomicU8 = AtomicU8::new(1);
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CardRef(pub(crate) NonZeroU16);
@@ -52,13 +49,11 @@ pub fn register_card(
     player: Player,
     card_type_id: u16,
     card_number: &CardNumber,
+    next_card_ref: &mut u8,
     card_map: &mut HashMap<CardRef, (Player, CardNumber)>,
 ) -> CardRef {
-    let next_ref = match player {
-        Player::One => NEXT_P1_CARD_REF.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-        Player::Two => NEXT_P2_CARD_REF.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-        Player::Both => todo!(),
-    } as u16;
+    let next_ref = *next_card_ref as u16;
+    *next_card_ref += 1;
     let card = CardRef(
         NonZeroU16::new((next_ref << 8) + (card_type_id << 4) + (player as u16) + 1)
             .expect("that plus one makes it non zero"),
@@ -108,6 +103,7 @@ pub enum GameOverReason {
 pub struct Game {
     pub rng: DebugIgnore<Box<dyn RngCore>>,
     pub state: GameState,
+    pub next_modifier_ref: u16,
     pub player_1_channels: (Sender<ClientReceive>, Receiver<ClientSend>),
     pub player_2_channels: (Sender<ClientReceive>, Receiver<ClientSend>),
 }
@@ -119,11 +115,13 @@ impl Game {
         player_1_client: (Sender<ClientReceive>, Receiver<ClientSend>),
         player_2_client: (Sender<ClientReceive>, Receiver<ClientSend>),
     ) -> Game {
+        let mut next_p1_card_ref = 1;
+        let mut next_p2_card_ref = 1;
         let mut card_map = HashMap::new();
         let state = GameState {
             game_outcome: None,
-            player_1: GameBoard::setup(Player::One, player_1, &mut card_map),
-            player_2: GameBoard::setup(Player::Two, player_2, &mut card_map),
+            player_1: GameBoard::setup(Player::One, player_1, &mut next_p1_card_ref, &mut card_map),
+            player_2: GameBoard::setup(Player::Two, player_2, &mut next_p2_card_ref, &mut card_map),
             card_map,
             active_player: Player::One,
             active_step: Step::Setup,
@@ -136,6 +134,7 @@ impl Game {
         Game {
             rng: DebugIgnore(Box::new(rand::thread_rng())),
             state,
+            next_modifier_ref: 1,
             player_1_channels: player_1_client,
             player_2_channels: player_2_client,
         }
@@ -149,6 +148,7 @@ impl Game {
         Game {
             rng: DebugIgnore(Box::new(rng)),
             state,
+            next_modifier_ref: 1,
             player_1_channels: player_1_client,
             player_2_channels: player_2_client,
         }
@@ -1313,9 +1313,31 @@ impl Game {
         // self.prompter
         //     .prompt_choice("do you want to activate the effect?", vec!["Yes", "No"])
         //     == "Yes"
-        // TODO use mulligan logic for now
-        debug!("prompt_for_optional_activate");
-        self.prompt_for_mulligan(player)
+        self.client(player)
+            .0
+            .send(ClientReceive::IntentRequest(
+                IntentRequest::ActivateEffect {
+                    player,
+                    select_yes_no: vec![true, false],
+                },
+            ))
+            .unwrap();
+        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+        let choice = match resp {
+            IntentResponse::ActivateEffect {
+                player: resp_player,
+                select_yes_no,
+            } => {
+                assert_eq!(player, resp_player);
+                select_yes_no
+            }
+            error => {
+                error!("unexpected response: {:?}", error);
+                panic!("unexpected response")
+            }
+        };
+        assert!([true, false].contains(&choice));
+        choice
     }
 
     pub fn prompt_for_number(&mut self, player: Player, min: usize, max: usize) -> usize {
@@ -1367,14 +1389,21 @@ impl GameBoard {
     pub fn setup(
         player: Player,
         loadout: &Loadout,
+        next_card_ref: &mut u8,
         card_map: &mut HashMap<CardRef, (Player, CardNumber)>,
     ) -> GameBoard {
         GameBoard {
-            oshi: Some(register_card(player, 0, &loadout.oshi, card_map)),
+            oshi: Some(register_card(
+                player,
+                0,
+                &loadout.oshi,
+                next_card_ref,
+                card_map,
+            )),
             main_deck: loadout
                 .main_deck
                 .iter()
-                .map(|c| register_card(player, 1, c, card_map))
+                .map(|c| register_card(player, 1, c, next_card_ref, card_map))
                 .collect(),
             center_stage: None,
             collab: None,
@@ -1383,7 +1412,7 @@ impl GameBoard {
             cheer_deck: loadout
                 .cheer_deck
                 .iter()
-                .map(|c| register_card(player, 2, c, card_map))
+                .map(|c| register_card(player, 2, c, next_card_ref, card_map))
                 .collect(),
             holo_power: Vec::new(),
             archive: Vec::new(),
@@ -1961,22 +1990,20 @@ impl CardDisplay {
                     "{} ({:?}) ({}/{}){} ({}) {}",
                     m.name,
                     m.level,
-                    // game.remaining_hp(card),
-                    -1,
+                    game.remaining_hp(card),
                     m.hp,
-                    // if game.attached_cheers(card).any(|_| true) {
-                    //     format!(
-                    //         " (cheers: {})",
-                    //         game.attached_cheers(card)
-                    //             .filter_map(|c| game.lookup_cheer(c))
-                    //             .map(|c| format!("{:?}", c.color))
-                    //             .collect_vec()
-                    //             .join(", ")
-                    //     )
-                    // } else {
-                    //     "".into()
-                    // },
-                    "",
+                    if game.attached_cheers(card).any(|_| true) {
+                        format!(
+                            " (cheers: {})",
+                            game.attached_cheers(card)
+                                .filter_map(|c| game.lookup_cheer(c))
+                                .map(|c| format!("{:?}", c.color))
+                                .collect_vec()
+                                .join(", ")
+                        )
+                    } else {
+                        "".into()
+                    },
                     m.card_number,
                     card,
                 )

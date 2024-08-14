@@ -30,7 +30,7 @@ fn main() {
         .with_thread_ids(true)
         .with_env_filter(EnvFilter::from_default_env())
         .init();
-    info!("\n\n\n\n\n\n\n-- Hololive OCG - Fan Simulator is running --");
+    info!("\n\n\n\n\n\n\n-- hololive OCG - Fan Simulator is running --");
 
     let _cond = r"
         let $center_mem = ((from_zone center_stage) where is_member)

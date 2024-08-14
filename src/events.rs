@@ -43,6 +43,12 @@ impl<'a> TriggeredEvent<'a> {
     }
 }
 
+pub type AdjustEventResult = Result<AdjustEventOutcome, GameOutcome>;
+pub enum AdjustEventOutcome {
+    ContinueEvent,
+    PreventEvent,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Event {
     pub origin: Option<CardRef>,
@@ -122,6 +128,10 @@ pub enum IntentRequest {
         select_rps: Vec<Rps>,
     },
     Mulligan {
+        player: Player,
+        select_yes_no: Vec<bool>,
+    },
+    ActivateEffect {
         player: Player,
         select_yes_no: Vec<bool>,
     },
@@ -223,6 +233,10 @@ pub enum IntentResponse {
         player: Player,
         select_yes_no: bool,
     },
+    ActivateEffect {
+        player: Player,
+        select_yes_no: bool,
+    },
     LookSelectZoneToZone {
         player: Player,
         select_cards: Vec<CardRef>,
@@ -265,7 +279,7 @@ impl EventSpan {
         }
     }
 
-    pub fn start_span(&mut self, card: CardRef) {
+    pub fn open_span(&mut self, card: CardRef) {
         self.event_origin_stack.push(card);
     }
 
@@ -273,7 +287,7 @@ impl EventSpan {
         assert_eq!(Some(card), self.event_origin_stack.pop());
     }
 
-    pub fn start_untracked_span(&mut self) {
+    pub fn open_untracked_span(&mut self) {
         self.event_origin_stack.push(PRIVATE_CARD);
     }
 
@@ -319,7 +333,9 @@ impl Game {
         self.evaluate_triggers(before)?;
 
         // change the event before it happens, with modifiers from triggers
-        event.adjust_event(self)?;
+        if let AdjustEventOutcome::PreventEvent = event.adjust_event(self)? {
+            return Ok(event);
+        }
 
         debug!(
             "EVENT = [{:?}] {event:?}",
@@ -386,8 +402,7 @@ impl Game {
                                 trigger.event(),
                             )
                         {
-                            // TODO activate skill
-                            debug!("ACTIVATE SKILL = {skill:?}");
+                            debug!("ACTIVATE SKILL? = {skill:?}");
                             oshi_skill = Some(idx);
                         }
                     }
@@ -401,7 +416,6 @@ impl Game {
                                 trigger.event(),
                             )
                         {
-                            // TODO activate ability
                             debug!("ACTIVATE ABILITY = {ability:?}");
                             member_ability = Some(idx);
                         }
@@ -412,7 +426,6 @@ impl Game {
                         && s.condition
                             .evaluate_with_card_event(&self.state, card, trigger.event())
                     {
-                        // TODO activate skill
                         debug!("ACTIVATE SUPPORT = {s:?}");
                         support_ability = true;
                     }
@@ -422,8 +435,11 @@ impl Game {
 
             // activate skill or ability
             if let Some(idx) = oshi_skill {
-                // TODO prompt for yes / no (optional)
-                self.activate_oshi_skill(Some(card), card, idx)?;
+                // prompt for yes / no, optional activation
+                let activate = self.prompt_for_optional_activate(self.player_for_card(card));
+                if activate {
+                    self.activate_oshi_skill(Some(card), card, idx)?;
+                }
             }
             if let Some(idx) = member_ability {
                 self.activate_holo_member_ability(Some(card), card, idx)?;
@@ -1620,15 +1636,19 @@ impl Game {
 
 #[enum_dispatch]
 trait EvaluateEvent {
-    fn adjust_event(&mut self, _event_origin: Option<CardRef>, _game: &mut Game) -> GameResult {
-        Ok(GameContinue)
+    fn adjust_event(
+        &mut self,
+        _event_origin: Option<CardRef>,
+        _game: &mut Game,
+    ) -> AdjustEventResult {
+        Ok(AdjustEventOutcome::ContinueEvent)
     }
 
     fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult;
 }
 
 impl Event {
-    fn adjust_event(&mut self, game: &mut Game) -> GameResult {
+    fn adjust_event(&mut self, game: &mut Game) -> AdjustEventResult {
         self.kind.adjust_event(self.origin, game)
     }
 
@@ -1958,7 +1978,9 @@ impl EvaluateEvent for EndTurn {
 
         game.end_turn_modifiers(self.active_player);
 
+        game.state.event_span.open_untracked_span();
         game.remove_expiring_modifiers(event_origin, LifeTime::ThisTurn)?;
+        game.state.event_span.close_untracked_span();
 
         Ok(GameContinue)
     }
@@ -1988,7 +2010,9 @@ impl EvaluateEvent for ExitStep {
         assert_eq!(self.active_player, game.state.active_player);
         assert_eq!(self.active_step, game.state.active_step);
 
+        game.state.event_span.open_untracked_span();
         game.remove_expiring_modifiers(event_origin, LifeTime::ThisStep)?;
+        game.state.event_span.close_untracked_span();
 
         Ok(GameContinue)
     }
@@ -2210,6 +2234,7 @@ impl EvaluateEvent for AddDamageMarkers {
             )?;
         }
 
+        // TODO do we need a untracked span here?
         game.lose_lives(event_origin, self.player, life_loss)?;
 
         Ok(GameContinue)
@@ -2314,6 +2339,7 @@ impl EvaluateEvent for ZoneToZone {
             self.to_zone_location,
         );
 
+        game.state.event_span.open_untracked_span();
         // lose attachments and buffs when leaving stage
         if !Zone::Stage.includes(self.to_zone) {
             game.clear_all_damage_markers_from_many_cards(
@@ -2333,6 +2359,7 @@ impl EvaluateEvent for ZoneToZone {
 
         // check if a player lost when cards are moving
         game.check_loss_conditions()?;
+        game.state.event_span.close_untracked_span();
 
         Ok(GameContinue)
     }
@@ -2480,6 +2507,7 @@ impl EvaluateEvent for Collab {
             .into(),
         )?;
 
+        game.state.event_span.open_untracked_span();
         //   - draw down card from deck into power zone
         game.send_cards_to_holo_power(event_origin, self.player, self.holo_power_amount)?;
 
@@ -2491,6 +2519,7 @@ impl EvaluateEvent for Collab {
             PreventCollab,
             LifeTime::ThisTurn,
         )?;
+        game.state.event_span.close_untracked_span();
 
         Ok(GameContinue)
     }
@@ -2553,6 +2582,8 @@ impl EvaluateEvent for Bloom {
             unreachable!("bloom should not be an option, if it's not allowed")
         }
 
+        game.state.event_span.open_untracked_span();
+
         // attach the bloom card to the bloom target
         game.board_mut(self.player)
             .attach_to_card(self.from_card.1, self.to_card.1);
@@ -2570,6 +2601,8 @@ impl EvaluateEvent for Bloom {
             PreventBloom,
             LifeTime::ThisTurn,
         )?;
+
+        game.state.event_span.close_untracked_span();
 
         Ok(GameContinue)
     }
@@ -2612,6 +2645,7 @@ impl EvaluateEvent for BatonPass {
         game.send_from_back_stage_to_center_stage(event_origin, self.player, self.to_card.1)?;
 
         // can only baton pass once per turn
+        game.state.event_span.open_untracked_span();
         game.add_zone_modifier(
             event_origin,
             self.player,
@@ -2619,6 +2653,7 @@ impl EvaluateEvent for BatonPass {
             PreventBatonPass,
             LifeTime::ThisTurn,
         )?;
+        game.state.event_span.close_untracked_span();
 
         Ok(GameContinue)
     }
@@ -2648,6 +2683,7 @@ impl EvaluateEvent for ActivateSupportCard {
         }
 
         // send the support card out of the game, so it doesn't affect itself
+        game.state.event_span.open_untracked_span();
         game.send_event(
             event_origin,
             ZoneToZone {
@@ -2659,9 +2695,12 @@ impl EvaluateEvent for ActivateSupportCard {
             }
             .into(),
         )?;
+        game.state.event_span.close_untracked_span();
 
         // activate the support card
         effect.evaluate_with_card_mut(game, self.card.1)?;
+
+        game.state.event_span.open_untracked_span();
 
         // limited support can only be used once per turn
         if limited_use {
@@ -2675,7 +2714,10 @@ impl EvaluateEvent for ActivateSupportCard {
         }
 
         // send the used card to the archive
-        game.send_cards_to_archive(event_origin, game.state.active_player, vec![self.card.1])
+        game.send_cards_to_archive(event_origin, game.state.active_player, vec![self.card.1])?;
+        game.state.event_span.close_untracked_span();
+
+        Ok(GameContinue)
     }
 }
 
@@ -2730,6 +2772,7 @@ impl EvaluateEvent for ActivateOshiSkill {
         //   - oshi power uses card in power zone
         //   - once per turn / once per game
         let skill = &oshi.skills[self.skill_idx];
+        let cost = skill.cost as usize;
         let effect = skill.effect.clone();
         let prevent_life_time = match skill.kind {
             OshiSkillKind::Normal => LifeTime::ThisTurn,
@@ -2738,11 +2781,14 @@ impl EvaluateEvent for ActivateOshiSkill {
 
         // pay the cost of the oshi skill
         // TODO could have a buff that could pay for the skill
-        game.send_holo_power_to_archive(event_origin, self.player, skill.cost as usize)?;
+        game.state.event_span.open_untracked_span();
+        game.send_holo_power_to_archive(event_origin, self.player, cost)?;
+        game.state.event_span.close_untracked_span();
 
         effect.evaluate_with_card_mut(game, self.card.1)?;
 
-        game.state.event_span.start_untracked_span();
+        //   - once per turn / once per game
+        game.state.event_span.open_untracked_span();
         game.add_modifier(
             event_origin,
             self.card.1,
@@ -2820,12 +2866,14 @@ impl EvaluateEvent for ActivateHoloMemberArtEffect {
 
         effect.evaluate_with_card_mut(game, self.card.1)?;
 
+        game.state.event_span.open_untracked_span();
         game.add_modifier(
             event_origin,
             self.card.1,
             PreventOshiSkill(self.skill_idx),
             prevent_life_time,
         )?;
+        game.state.event_span.close_untracked_span();
 
         Ok(GameContinue)
     }
@@ -2871,18 +2919,25 @@ impl EvaluateEvent for PerformArt {
         effect.evaluate_with_card_mut(game, self.card.1)?;
 
         // FIXME evaluate damage number
-        let dmg = match dmg {
+        let mut dmg = match dmg {
             HoloMemberArtDamage::Basic(dmg) => DamageMarkers::from_hp(dmg),
             HoloMemberArtDamage::Plus(dmg) => DamageMarkers::from_hp(dmg), // TODO
             HoloMemberArtDamage::Minus(dmg) => DamageMarkers::from_hp(dmg), // TODO
             HoloMemberArtDamage::Uncertain => unimplemented!(),
         };
+        // apply damage modifiers
+        for m in game.find_modifiers(self.card.1) {
+            if let ModifierKind::MoreDamage(more_dmg_hp) = m.kind {
+                dmg += DamageMarkers::from_hp(more_dmg_hp as u16);
+            }
+        }
 
         // deal damage if there is a target. if any other damage is done, it will be in the effect
         if let Some(target) = self.target {
             game.deal_damage(event_origin, self.card.1, target.1, dmg)?;
         }
 
+        game.state.event_span.open_untracked_span();
         game.remove_expiring_modifiers(event_origin, LifeTime::ThisArt)?;
 
         // can only perform art once per turn
@@ -2892,6 +2947,7 @@ impl EvaluateEvent for PerformArt {
             PreventAllArts,
             LifeTime::ThisTurn,
         )?;
+        game.state.event_span.close_untracked_span();
 
         Ok(GameContinue)
     }
@@ -2952,12 +3008,31 @@ pub struct RollDice {
     pub number: u8,
 }
 impl EvaluateEvent for RollDice {
-    fn adjust_event(&mut self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
-        // TODO look for modifiers, and consume them, if not permanent
+    fn adjust_event(
+        &mut self,
+        event_origin: Option<CardRef>,
+        game: &mut Game,
+    ) -> AdjustEventResult {
+        // look for modifiers, and consume them, if not permanent
+        let mut to_remove = None;
+        for m in game.find_player_modifiers(self.player) {
+            if let ModifierKind::NextDiceRoll(number) = m.kind {
+                self.number = number as u8;
+                if m.life_time == LifeTime::UntilRemoved {
+                    to_remove = Some(m.id);
+                }
+                break;
+            }
+        }
+        if let Some(id) = to_remove {
+            game.remove_many_modifiers_from_zone(event_origin, self.player, Zone::All, vec![id])?;
+            return Ok(AdjustEventOutcome::PreventEvent);
+        }
 
+        // not modifiers
         self.number = game.rng.gen_range(1..=6);
 
-        Ok(GameContinue)
+        Ok(AdjustEventOutcome::ContinueEvent)
     }
 
     fn evaluate_event(&self, _event_origin: Option<CardRef>, _game: &mut Game) -> GameResult {

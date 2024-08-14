@@ -7,9 +7,9 @@ use std::{
 use hocg_fan_sim::{
     cards::CardNumber,
     client::{Client, DefaultEventHandler},
-    events::EventSpan,
     gameplay::{
-        register_card, CardRef, Game, GameBoard, GameOutcome, GameState, Player, Step, Zone,
+        register_card, CardRef, Game, GameBoard, GameOutcome, GameOverReason, GameState, Player,
+        Step, Zone,
     },
     modifiers::{DamageMarkers, Modifier},
     prompters::BufferedPrompter,
@@ -38,57 +38,62 @@ struct TestGameBoard {
 }
 
 impl TestGameBoard {
-    pub fn to_game_board(&self, player: Player, state: &mut GameState) -> GameBoard {
+    pub fn to_game_board(
+        &self,
+        player: Player,
+        next_card_ref: &mut u8,
+        state: &mut GameState,
+    ) -> GameBoard {
         GameBoard {
             oshi: self
                 .oshi
                 .iter()
-                .map(|c| register_card(player, 1, c, &mut state.card_map))
+                .map(|c| register_card(player, 1, c, next_card_ref, &mut state.card_map))
                 .next(),
             main_deck: self
                 .main_deck
                 .iter()
-                .map(|c| register_card(player, 1, c, &mut state.card_map))
+                .map(|c| register_card(player, 1, c, next_card_ref, &mut state.card_map))
                 .collect(),
             center_stage: self
                 .center_stage
                 .iter()
-                .map(|c| register_card(player, 1, c, &mut state.card_map))
+                .map(|c| register_card(player, 1, c, next_card_ref, &mut state.card_map))
                 .next(),
             collab: self
                 .collab
                 .iter()
-                .map(|c| register_card(player, 1, c, &mut state.card_map))
+                .map(|c| register_card(player, 1, c, next_card_ref, &mut state.card_map))
                 .next(),
             back_stage: self
                 .back_stage
                 .iter()
-                .map(|c| register_card(player, 1, c, &mut state.card_map))
+                .map(|c| register_card(player, 1, c, next_card_ref, &mut state.card_map))
                 .collect(),
             life: self
                 .life
                 .iter()
-                .map(|c| register_card(player, 1, c, &mut state.card_map))
+                .map(|c| register_card(player, 1, c, next_card_ref, &mut state.card_map))
                 .collect(),
             cheer_deck: self
                 .cheer_deck
                 .iter()
-                .map(|c| register_card(player, 1, c, &mut state.card_map))
+                .map(|c| register_card(player, 1, c, next_card_ref, &mut state.card_map))
                 .collect(),
             holo_power: self
                 .holo_power
                 .iter()
-                .map(|c| register_card(player, 1, c, &mut state.card_map))
+                .map(|c| register_card(player, 1, c, next_card_ref, &mut state.card_map))
                 .collect(),
             archive: self
                 .archive
                 .iter()
-                .map(|c| register_card(player, 1, c, &mut state.card_map))
+                .map(|c| register_card(player, 1, c, next_card_ref, &mut state.card_map))
                 .collect(),
             hand: self
                 .hand
                 .iter()
-                .map(|c| register_card(player, 1, c, &mut state.card_map))
+                .map(|c| register_card(player, 1, c, next_card_ref, &mut state.card_map))
                 .collect(),
             ..Default::default()
         }
@@ -97,11 +102,17 @@ impl TestGameBoard {
 
 #[derive(Default)]
 struct GameStateBuilder {
+    next_p1_card_ref: u8,
+    next_p2_card_ref: u8,
     state: GameState,
 }
 impl GameStateBuilder {
     pub fn new() -> Self {
-        Default::default()
+        Self {
+            next_p1_card_ref: 1,
+            next_p2_card_ref: 1,
+            ..Default::default()
+        }
     }
 
     pub fn build(self) -> GameState {
@@ -109,11 +120,13 @@ impl GameStateBuilder {
     }
 
     pub fn with_player_1(mut self, player_1: TestGameBoard) -> Self {
-        self.state.player_1 = player_1.to_game_board(Player::One, &mut self.state);
+        self.state.player_1 =
+            player_1.to_game_board(Player::One, &mut self.next_p1_card_ref, &mut self.state);
         self
     }
     pub fn with_player_2(mut self, player_2: TestGameBoard) -> Self {
-        self.state.player_2 = player_2.to_game_board(Player::Two, &mut self.state);
+        self.state.player_2 =
+            player_2.to_game_board(Player::Two, &mut self.next_p2_card_ref, &mut self.state);
         self
     }
     pub fn with_attachments(
@@ -123,9 +136,16 @@ impl GameStateBuilder {
         card_idx: usize,
         attachments: Vec<CardNumber>,
     ) -> Self {
+        let next_card_ref = {
+            match player {
+                Player::One => &mut self.next_p1_card_ref,
+                Player::Two => &mut self.next_p2_card_ref,
+                Player::Both => unreachable!("both players is not valid"),
+            }
+        };
         let card = self.state.board(player).get_zone(zone).all_cards()[card_idx];
         for att in attachments {
-            let att = register_card(player, 3, &att, &mut self.state.card_map);
+            let att = register_card(player, 3, &att, next_card_ref, &mut self.state.card_map);
             self.state.board_mut(player).attachments.insert(att, card);
         }
         self
@@ -162,25 +182,6 @@ impl GameStateBuilder {
     }
 }
 
-// pub fn test_loadout<const D: usize, const C: usize>(
-//     oshi: &str,
-//     deck: [(&str, usize); D],
-//     cheers: [(&str, usize); C],
-// ) -> Loadout {
-//     let main_deck = Vec::from_iter(deck.into_iter().flat_map(|(c, a)| (0..a).map(|_| c.into())));
-//     let cheer_deck = Vec::from_iter(
-//         cheers
-//             .into_iter()
-//             .flat_map(|(c, a)| (0..a).map(|_| c.into())),
-//     );
-
-//     Loadout {
-//         oshi: oshi.into(),
-//         main_deck,
-//         cheer_deck,
-//     }
-// }
-
 // will spawn two threads to handle the client connections
 pub fn setup_test_game(
     state: GameState,
@@ -206,6 +207,11 @@ pub fn setup_test_game(
         player_1_prompt,
     );
     p1_client.game = state.clone();
+    // for the client to stop gracefully
+    p1_client.game.game_outcome = Some(GameOutcome {
+        winning_player: None,
+        reason: GameOverReason::Draw,
+    });
     thread::spawn(move || {
         p1_client.receive_requests();
     });
@@ -217,6 +223,11 @@ pub fn setup_test_game(
         player_2_prompt,
     );
     p2_client.game = state;
+    // for the client to stop gracefully
+    p2_client.game.game_outcome = Some(GameOutcome {
+        winning_player: None,
+        reason: GameOverReason::Draw,
+    });
     thread::spawn(move || {
         p2_client.receive_requests();
     });

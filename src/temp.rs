@@ -125,7 +125,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         skills: vec![OshiSkill {
                             kind: OshiSkillKind::Normal,
                             name: "In My Left Hand, a Map".into(),
-                            cost: 0,
+                            cost: 3,
                             text: "[Once per turn] You may use this skill when one of your holomem's abilities instructs you to roll a six-sided die: Declare a number from 1 to 6. You may use the declared number as the result of your die roll.".into(),
                             triggers: vec![
                                 Trigger::OnBeforeRollDice

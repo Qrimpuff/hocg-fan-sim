@@ -91,7 +91,7 @@ pub trait EvaluateEffectMut {
     where
         Self: Sized,
     {
-        game.state.event_span.start_span(card);
+        game.state.event_span.open_span(card);
         let value = self
             .evaluate_with_context_mut(&mut EvaluateContext::with_card(card, &game.state), game);
         game.state.event_span.close_span(card);
@@ -109,7 +109,7 @@ pub trait EvaluateEffectMut {
     where
         Self: Sized,
     {
-        game.state.event_span.start_span(card);
+        game.state.event_span.open_span(card);
         let mut ctx = EvaluateContext::with_card(card, &game.state);
         ctx.event = Some(event);
         let value = self.evaluate_with_context_mut(&mut ctx, game);
