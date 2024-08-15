@@ -2,7 +2,7 @@ use std::env;
 
 use hocg_fan_sim::{
     card_effects::Condition,
-    gameplay::{CardRef, Player, Step, Zone},
+    gameplay::{CardRef, GameOutcome, GameOverReason, Player, Step, Zone},
     modifiers::{DamageMarkers, LifeTime, Modifier, ModifierKind},
     prompters::BufferedPrompter,
 };
@@ -36,9 +36,9 @@ fn hsd01_001() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-001".into()),
         center_stage: Some("hSD01-003".into()),
-        back_stage: vec!["hSD01-004".into()],
-        life: vec!["hY01-001".into()],
-        holo_power: vec!["hSD01-005".into(), "hSD01-005".into(), "hSD01-005".into()],
+        back_stage: ["hSD01-004".into()].into(),
+        life: ["hY01-001".into()].into(),
+        holo_power: ["hSD01-005".into(), "hSD01-005".into(), "hSD01-005".into()].into(),
         ..Default::default()
     };
     let p2 = p1.clone();
@@ -47,7 +47,12 @@ fn hsd01_001() {
         .with_active_player(Player::One)
         .with_active_step(Step::Cheer)
         .with_player_1(p1)
-        .with_attachments(Player::One, Zone::CenterStage, 0, vec!["hY01-001".into()])
+        .with_attachments(
+            Player::One,
+            Zone::CenterStage,
+            0,
+            ["hY01-001".into()].into(),
+        )
         .with_player_2(p2)
         .build();
 
@@ -77,15 +82,15 @@ fn hsd01_001() {
     // expected_state.game_outcome
     // expected_state.card_map
     // expected_state.player_1
-    expected_state.player_1.holo_power = vec![];
-    expected_state.player_1.archive = vec!["c_0711".into(), "c_0611".into(), "c_0511".into()];
+    expected_state.player_1.holo_power = [].into();
+    expected_state.player_1.archive = ["c_0711".into(), "c_0611".into(), "c_0511".into()].into();
     expected_state
         .player_1
         .attachments
         .insert("c_0831".into(), "c_0311".into());
     // expected_state.player_2
     expected_state.player_2.center_stage = Some("c_0312".into());
-    expected_state.player_2.back_stage = vec!["c_0212".into()];
+    expected_state.player_2.back_stage = ["c_0212".into()].into();
     // expected_state.active_player
     // expected_state.active_step
     expected_state.active_step = Step::Main;
@@ -137,17 +142,18 @@ fn hsd01_002() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-002".into()),
         center_stage: Some("hSD01-003".into()),
-        back_stage: vec!["hSD01-009".into()],
-        life: vec!["hY01-001".into()],
-        holo_power: vec![
+        back_stage: ["hSD01-009".into()].into(),
+        life: ["hY01-001".into()].into(),
+        holo_power: [
             "hSD01-005".into(),
             "hSD01-005".into(),
             "hSD01-005".into(),
             "hSD01-005".into(),
             "hSD01-005".into(),
             "hSD01-005".into(),
-        ],
-        archive: vec!["hY01-001".into(), "hY01-001".into(), "hY01-001".into()],
+        ]
+        .into(),
+        archive: ["hY01-001".into(), "hY01-001".into(), "hY01-001".into()].into(),
         ..Default::default()
     };
     let p2 = p1.clone();
@@ -186,16 +192,17 @@ fn hsd01_002() {
     // expected_state.card_map
     // expected_state.player_1
     expected_state.player_1.collab = Some("c_0311".into());
-    expected_state.player_1.back_stage = vec![];
-    expected_state.player_1.holo_power = vec![];
-    expected_state.player_1.archive = vec![
+    expected_state.player_1.back_stage = [].into();
+    expected_state.player_1.holo_power = [].into();
+    expected_state.player_1.archive = [
         "c_0a11".into(),
         "c_0911".into(),
         "c_0811".into(),
         "c_0711".into(),
         "c_0611".into(),
         "c_0511".into(),
-    ];
+    ]
+    .into();
     expected_state.player_1.attachments.extend([
         (CardRef::from("c_0d11"), "c_0311".into()),
         ("c_0b11".into(), "c_0311".into()),
@@ -254,8 +261,8 @@ fn hsd01_004() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-001".into()),
         center_stage: Some("hSD01-004".into()),
-        back_stage: vec!["hSD01-004".into()],
-        life: vec!["hY01-001".into()],
+        back_stage: ["hSD01-004".into()].into(),
+        life: ["hY01-001".into()].into(),
         ..Default::default()
     };
     let p2 = p1.clone();
@@ -264,7 +271,12 @@ fn hsd01_004() {
         .with_active_player(Player::One)
         .with_active_step(Step::Cheer)
         .with_player_1(p1)
-        .with_attachments(Player::One, Zone::CenterStage, 0, vec!["hY01-001".into()])
+        .with_attachments(
+            Player::One,
+            Zone::CenterStage,
+            0,
+            ["hY01-001".into()].into(),
+        )
         .with_player_2(p2)
         .build();
 
@@ -293,8 +305,8 @@ fn hsd01_004() {
     let mut expected_state = state.clone();
     expected_state.active_step = Step::Performance;
     expected_state.player_1.collab = Some("c_0311".into());
-    expected_state.player_1.back_stage = vec![];
-    expected_state.player_1.holo_power = vec![];
+    expected_state.player_1.back_stage = [].into();
+    expected_state.player_1.holo_power = [].into();
     expected_state
         .zone_modifiers
         .entry(Player::One)
@@ -346,7 +358,7 @@ fn hsd01_006_without_azki() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-001".into()),
         center_stage: Some("hSD01-006".into()),
-        life: vec!["hY01-001".into()],
+        life: ["hY01-001".into()].into(),
         ..Default::default()
     };
     let p2 = p1.clone();
@@ -359,7 +371,7 @@ fn hsd01_006_without_azki() {
             Player::One,
             Zone::CenterStage,
             0,
-            vec!["hY02-001".into(), "hY01-001".into(), "hY01-001".into()],
+            ["hY02-001".into(), "hY01-001".into(), "hY01-001".into()].into(),
         )
         .with_player_2(p2)
         .build();
@@ -404,8 +416,8 @@ fn hsd01_006_with_azki() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-001".into()),
         center_stage: Some("hSD01-006".into()),
-        back_stage: vec!["hSD01-011".into()],
-        life: vec!["hY01-001".into()],
+        back_stage: ["hSD01-011".into()].into(),
+        life: ["hY01-001".into()].into(),
         ..Default::default()
     };
     let p2 = p1.clone();
@@ -418,7 +430,7 @@ fn hsd01_006_with_azki() {
             Player::One,
             Zone::CenterStage,
             0,
-            vec!["hY02-001".into(), "hY01-001".into(), "hY01-001".into()],
+            ["hY02-001".into(), "hY01-001".into(), "hY01-001".into()].into(),
         )
         .with_player_2(p2)
         .build();
@@ -461,7 +473,62 @@ fn hsd01_006_with_azki() {
 #[test]
 /// hSD01-007 - IRyS (Debut)
 fn hsd01_007() {
-    // TODO testing
+    let p1 = TestGameBoard {
+        oshi: Some("hSD01-001".into()),
+        center_stage: Some("hSD01-006".into()),
+        back_stage: ["hSD01-007".into()].into(),
+        life: ["hY01-001".into()].into(),
+        holo_power: ["hSD01-005".into(), "hSD01-006".into(), "hSD01-007".into()].into(),
+        hand: ["hSD01-008".into(), "hSD01-009".into(), "hSD01-010".into()].into(),
+        ..Default::default()
+    };
+    let p2 = p1.clone();
+
+    let state = GameStateBuilder::new()
+        .with_active_player(Player::One)
+        .with_active_step(Step::Cheer)
+        .with_player_1(p1)
+        .with_player_2(p2)
+        .build();
+
+    let p1_p = BufferedPrompter::new(&[
+        // HOPE
+        &[2],
+        &[1],
+        &[2],
+        // done
+        &[4],
+    ]);
+    let p2_p = BufferedPrompter::new(&[]);
+
+    let mut game = setup_test_game(state.clone(), p1_p, p2_p);
+
+    // performance step
+    game.next_step().unwrap();
+
+    // to check the changes, and apply them as checks below
+    // assert_eq!(state, game.state);
+
+    let mut expected_state = state.clone();
+    expected_state.active_step = Step::Main;
+    expected_state.player_1.collab = Some("c_0311".into());
+    expected_state.player_1.back_stage = [].into();
+    expected_state.player_1.holo_power = ["c_0a11".into(), "c_0511".into(), "c_0711".into()].into();
+    expected_state.player_1.hand = ["c_0811".into(), "c_0911".into(), "c_0611".into()].into();
+    expected_state
+        .zone_modifiers
+        .entry(Player::One)
+        .or_default()
+        .extend([(
+            Zone::All,
+            Modifier {
+                id: "m_0001".into(),
+                kind: ModifierKind::PreventCollab,
+                life_time: LifeTime::ThisTurn,
+            },
+        )]);
+
+    assert_eq!(expected_state, game.state);
 }
 
 #[test]
@@ -473,7 +540,70 @@ fn hsd01_008() {
 #[test]
 /// hSD01-009 - AZKi (Debut)
 fn hsd01_009() {
-    // TODO testing
+    let p1 = TestGameBoard {
+        oshi: Some("hSD01-002".into()),
+        center_stage: Some("hSD01-006".into()),
+        back_stage: ["hSD01-009".into()].into(),
+        life: ["hY01-001".into()].into(),
+        holo_power: ["hSD01-005".into(), "hSD01-006".into(), "hSD01-007".into()].into(),
+        cheer_deck: ["hY02-001".into()].into(),
+        ..Default::default()
+    };
+    let p2 = p1.clone();
+
+    let state = GameStateBuilder::new()
+        .with_active_player(Player::One)
+        .with_active_step(Step::Cheer)
+        .with_player_1(p1)
+        .with_player_2(p2)
+        .build();
+
+    let p1_p = BufferedPrompter::new(&[
+        // Expanding Map
+        &[0],
+        &[0],
+        &[0],
+        &[0],
+        // done
+        &[0],
+    ]);
+    let p2_p = BufferedPrompter::new(&[]);
+
+    let mut game = setup_test_game(state.clone(), p1_p, p2_p);
+
+    // performance step
+    game.next_step().unwrap();
+
+    // to check the changes, and apply them as checks below
+    // assert_eq!(state, game.state);
+
+    let mut expected_state = state.clone();
+    expected_state.active_step = Step::Main;
+    expected_state.player_1.holo_power = [].into();
+    expected_state.player_1.archive = ["c_0811".into(), "c_0711".into(), "c_0611".into()].into();
+    expected_state
+        .zone_modifiers
+        .entry(Player::One)
+        .or_default()
+        .extend([(
+            Zone::All,
+            Modifier {
+                id: "m_0001".into(),
+                kind: ModifierKind::PreventCollab,
+                life_time: LifeTime::ThisTurn,
+            },
+        )]);
+    expected_state
+        .card_modifiers
+        .entry("c_0111".into())
+        .or_default()
+        .push(Modifier {
+            id: "m_0003".into(),
+            kind: ModifierKind::PreventOshiSkill(0),
+            life_time: LifeTime::ThisTurn,
+        });
+
+    assert_eq!(expected_state, game.state);
 }
 
 #[test]
@@ -484,20 +614,370 @@ fn hsd01_010() {
 
 #[test]
 /// hSD01-011 - AZKi (Second)
-fn hsd01_011() {
-    // TODO testing
+fn hsd01_011_art_1() {
+    let p1 = TestGameBoard {
+        oshi: Some("hSD01-001".into()),
+        center_stage: Some("hSD01-011".into()),
+        back_stage: ["hSD01-006".into()].into(),
+        life: ["hY01-001".into()].into(),
+        cheer_deck: ["hY02-001".into()].into(),
+        ..Default::default()
+    };
+    let p2 = p1.clone();
+
+    let state = GameStateBuilder::new()
+        .with_active_player(Player::One)
+        .with_active_step(Step::Main)
+        .with_player_1(p1)
+        .with_attachments(
+            Player::One,
+            Zone::CenterStage,
+            0,
+            ["hY02-001".into(), "hY01-001".into(), "hY01-001".into()].into(),
+        )
+        .with_player_2(p2)
+        .build();
+
+    let p1_p = BufferedPrompter::new(&[
+        // SorAZ Gravity
+        &[0],
+        &[1],
+        // done
+        &[0],
+    ]);
+    let p2_p = BufferedPrompter::new(&[]);
+
+    let mut game = setup_test_game(state.clone(), p1_p, p2_p);
+
+    // performance step
+    game.next_step().unwrap();
+
+    // to check the changes, and apply them as checks below
+    // assert_eq!(state, game.state);
+
+    let mut expected_state = state.clone();
+    expected_state.active_step = Step::Performance;
+    expected_state.player_1.cheer_deck = [].into();
+    expected_state
+        .player_1
+        .attachments
+        .extend([(CardRef::from("c_0511"), "c_0311".into())]);
+    expected_state
+        .card_modifiers
+        .entry("c_0211".into())
+        .or_default()
+        .extend([Modifier {
+            id: "m_0001".into(),
+            kind: ModifierKind::PreventAllArts,
+            life_time: LifeTime::ThisTurn,
+        }]);
+    expected_state
+        .card_damage_markers
+        .insert("c_0212".into(), DamageMarkers::from_hp(60));
+    // expected_state.card_damage_markers
+
+    assert_eq!(expected_state, game.state);
+}
+
+#[test]
+/// hSD01-011 - AZKi (Second)
+fn hsd01_011_art_2() {
+    let p1 = TestGameBoard {
+        oshi: Some("hSD01-002".into()),
+        center_stage: Some("hSD01-011".into()),
+        back_stage: ["hSD01-006".into()].into(),
+        holo_power: ["hY02-001".into(), "hY02-001".into(), "hY02-001".into()].into(),
+        life: ["hY01-001".into()].into(),
+        ..Default::default()
+    };
+    let mut p2 = p1.clone();
+    p2.center_stage = Some("hSD01-006".into());
+
+    let state = GameStateBuilder::new()
+        .with_active_player(Player::One)
+        .with_active_step(Step::Main)
+        .with_player_1(p1)
+        .with_attachments(
+            Player::One,
+            Zone::CenterStage,
+            0,
+            ["hY02-001".into(), "hY02-001".into(), "hY02-001".into()].into(),
+        )
+        .with_zone_modifiers([(Player::One, vec![])].into())
+        .with_player_2(p2)
+        .build();
+
+    let p1_p = BufferedPrompter::new(&[
+        // Destiny Song
+        &[1],
+        &[0],
+        &[0],
+        // done
+        &[0],
+    ]);
+    let p2_p = BufferedPrompter::new(&[]);
+
+    let mut game = setup_test_game(state.clone(), p1_p, p2_p);
+
+    // performance step
+    let _ = game.next_step();
+
+    // to check the changes, and apply them as checks below
+    // assert_eq!(state, game.state);
+
+    let mut expected_state = state.clone();
+    expected_state.active_step = Step::Performance;
+    expected_state.player_1.holo_power = [].into();
+    expected_state.player_1.archive = ["c_0711".into(), "c_0611".into(), "c_0511".into()].into();
+    expected_state
+        .card_modifiers
+        .entry("c_0111".into())
+        .or_default()
+        .extend([Modifier {
+            id: "m_0002".into(),
+            kind: ModifierKind::PreventOshiSkill(0),
+            life_time: LifeTime::ThisTurn,
+        }]);
+    expected_state
+        .card_modifiers
+        .entry("c_0211".into())
+        .or_default()
+        .extend([Modifier {
+            id: "m_0005".into(),
+            kind: ModifierKind::PreventAllArts,
+            life_time: LifeTime::ThisTurn,
+        }]);
+    expected_state
+        .card_damage_markers
+        .insert("c_0212".into(), DamageMarkers::from_hp(200));
+    // expected_state.card_damage_markers
+
+    assert_eq!(expected_state, game.state);
 }
 
 #[test]
 /// hSD01-012 - Airani Iofifteen (Debut)
 fn hsd01_012() {
-    // TODO testing
+    let p1 = TestGameBoard {
+        oshi: Some("hSD01-001".into()),
+        center_stage: Some("hSD01-006".into()),
+        back_stage: ["hSD01-012".into()].into(),
+        life: ["hY01-001".into()].into(),
+        archive: ["hY01-001".into()].into(),
+        ..Default::default()
+    };
+    let p2 = p1.clone();
+
+    let state = GameStateBuilder::new()
+        .with_active_player(Player::One)
+        .with_active_step(Step::Cheer)
+        .with_player_1(p1)
+        .with_player_2(p2)
+        .build();
+
+    let p1_p = BufferedPrompter::new(&[
+        // Let's Draw Together!
+        &[0],
+        &[0],
+        // done
+        &[0],
+    ]);
+    let p2_p = BufferedPrompter::new(&[]);
+
+    let mut game = setup_test_game(state.clone(), p1_p, p2_p);
+
+    // performance step
+    game.next_step().unwrap();
+
+    // to check the changes, and apply them as checks below
+    // assert_eq!(state, game.state);
+
+    let mut expected_state = state.clone();
+    expected_state.active_step = Step::Main;
+    expected_state.player_1.collab = Some("c_0311".into());
+    expected_state.player_1.back_stage = [].into();
+    expected_state.player_1.archive = [].into();
+    expected_state
+        .player_1
+        .attachments
+        .extend([(CardRef::from("c_0511"), "c_0211".into())]);
+    expected_state
+        .zone_modifiers
+        .entry(Player::One)
+        .or_default()
+        .extend([(
+            Zone::All,
+            Modifier {
+                id: "m_0001".into(),
+                kind: ModifierKind::PreventCollab,
+                life_time: LifeTime::ThisTurn,
+            },
+        )]);
+
+    assert_eq!(expected_state, game.state);
 }
 
 #[test]
 /// hSD01-013 - SorAZ (First)
-fn hsd01_013() {
-    // TODO testing
+fn hsd01_013_odd() {
+    let p1 = TestGameBoard {
+        oshi: Some("hSD01-002".into()),
+        center_stage: Some("hSD01-013".into()),
+        back_stage: ["hSD01-006".into()].into(),
+        holo_power: ["hY02-001".into(), "hY02-001".into(), "hY02-001".into()].into(),
+        life: ["hY01-001".into()].into(),
+        main_deck: ["hSD01-006".into()].into(),
+        cheer_deck: ["hY01-001".into()].into(),
+        ..Default::default()
+    };
+    let mut p2 = p1.clone();
+    p2.center_stage = Some("hSD01-006".into());
+
+    let state = GameStateBuilder::new()
+        .with_active_player(Player::One)
+        .with_active_step(Step::Main)
+        .with_player_1(p1)
+        .with_attachments(
+            Player::One,
+            Zone::CenterStage,
+            0,
+            ["hY02-001".into(), "hY02-001".into(), "hY02-001".into()].into(),
+        )
+        .with_zone_modifiers([(Player::One, vec![])].into())
+        .with_player_2(p2)
+        .build();
+
+    let p1_p = BufferedPrompter::new(&[
+        // The Future We Want to Overcome
+        &[0],
+        &[0],
+        &[0],
+        // done
+        &[0],
+    ]);
+    let p2_p = BufferedPrompter::new(&[]);
+
+    let mut game = setup_test_game(state.clone(), p1_p, p2_p);
+
+    // performance step
+    let _ = game.next_step();
+
+    // to check the changes, and apply them as checks below
+    // assert_eq!(state, game.state);
+
+    let mut expected_state = state.clone();
+    expected_state.active_step = Step::Performance;
+    expected_state.player_1.cheer_deck = [].into();
+    expected_state.player_1.holo_power = [].into();
+    expected_state.player_1.archive = ["c_0911".into(), "c_0811".into(), "c_0711".into()].into();
+    expected_state
+        .player_1
+        .attachments
+        .extend([(CardRef::from("c_0611"), "c_0311".into())]);
+    expected_state
+        .card_modifiers
+        .entry("c_0111".into())
+        .or_default()
+        .extend([Modifier {
+            id: "m_0002".into(),
+            kind: ModifierKind::PreventOshiSkill(0),
+            life_time: LifeTime::ThisTurn,
+        }]);
+    expected_state
+        .card_modifiers
+        .entry("c_0311".into())
+        .or_default()
+        .extend([Modifier {
+            id: "m_0003".into(),
+            kind: ModifierKind::PreventAllArts,
+            life_time: LifeTime::ThisTurn,
+        }]);
+    expected_state
+        .card_damage_markers
+        .insert("c_0312".into(), DamageMarkers::from_hp(50));
+    // expected_state.card_damage_markers
+
+    assert_eq!(expected_state, game.state);
+}
+
+#[test]
+/// hSD01-013 - SorAZ (First)
+fn hsd01_013_even() {
+    let p1 = TestGameBoard {
+        oshi: Some("hSD01-002".into()),
+        center_stage: Some("hSD01-013".into()),
+        back_stage: ["hSD01-006".into()].into(),
+        holo_power: ["hY02-001".into(), "hY02-001".into(), "hY02-001".into()].into(),
+        life: ["hY01-001".into()].into(),
+        main_deck: ["hSD01-006".into()].into(),
+        cheer_deck: ["hY01-001".into()].into(),
+        ..Default::default()
+    };
+    let mut p2 = p1.clone();
+    p2.center_stage = Some("hSD01-006".into());
+
+    let state = GameStateBuilder::new()
+        .with_active_player(Player::One)
+        .with_active_step(Step::Main)
+        .with_player_1(p1)
+        .with_attachments(
+            Player::One,
+            Zone::CenterStage,
+            0,
+            ["hY02-001".into(), "hY02-001".into(), "hY02-001".into()].into(),
+        )
+        .with_zone_modifiers([(Player::One, vec![])].into())
+        .with_player_2(p2)
+        .build();
+
+    let p1_p = BufferedPrompter::new(&[
+        // The Future We Want to Overcome
+        &[0],
+        &[0],
+        &[1],
+        // done
+        &[0],
+    ]);
+    let p2_p = BufferedPrompter::new(&[]);
+
+    let mut game = setup_test_game(state.clone(), p1_p, p2_p);
+
+    // performance step
+    let _ = game.next_step();
+
+    // to check the changes, and apply them as checks below
+    // assert_eq!(state, game.state);
+
+    let mut expected_state = state.clone();
+    expected_state.active_step = Step::Performance;
+    expected_state.player_1.main_deck = [].into();
+    expected_state.player_1.holo_power = [].into();
+    expected_state.player_1.archive = ["c_0911".into(), "c_0811".into(), "c_0711".into()].into();
+    expected_state.player_1.hand = ["c_0211".into()].into();
+    expected_state
+        .card_modifiers
+        .entry("c_0111".into())
+        .or_default()
+        .extend([Modifier {
+            id: "m_0002".into(),
+            kind: ModifierKind::PreventOshiSkill(0),
+            life_time: LifeTime::ThisTurn,
+        }]);
+    expected_state
+        .card_modifiers
+        .entry("c_0311".into())
+        .or_default()
+        .extend([Modifier {
+            id: "m_0003".into(),
+            kind: ModifierKind::PreventAllArts,
+            life_time: LifeTime::ThisTurn,
+        }]);
+    expected_state
+        .card_damage_markers
+        .insert("c_0312".into(), DamageMarkers::from_hp(50));
+    // expected_state.card_damage_markers
+
+    assert_eq!(expected_state, game.state);
 }
 
 #[test]
@@ -508,8 +988,190 @@ fn hsd01_014() {
 
 #[test]
 /// hSD01-015 - Hakui Koyori (Spot)
-fn hsd01_015() {
-    // TODO testing
+fn hsd01_015_sora() {
+    let p1 = TestGameBoard {
+        oshi: Some("hSD01-001".into()),
+        center_stage: Some("hSD01-006".into()),
+        back_stage: ["hSD01-015".into()].into(),
+        life: ["hY01-001".into()].into(),
+        main_deck: ["hSD01-015".into(), "hSD01-015".into()].into(),
+        cheer_deck: ["hY01-001".into()].into(),
+        ..Default::default()
+    };
+    let p2 = p1.clone();
+
+    let state = GameStateBuilder::new()
+        .with_active_player(Player::One)
+        .with_active_step(Step::Cheer)
+        .with_player_1(p1)
+        .with_player_2(p2)
+        .build();
+
+    let p1_p = BufferedPrompter::new(&[
+        // SoAzKo
+        &[0],
+        // done
+        &[1],
+    ]);
+    let p2_p = BufferedPrompter::new(&[]);
+
+    let mut game = setup_test_game(state.clone(), p1_p, p2_p);
+
+    // performance step
+    game.next_step().unwrap();
+
+    // to check the changes, and apply them as checks below
+    // assert_eq!(state, game.state);
+
+    let mut expected_state = state.clone();
+    expected_state.active_step = Step::Main;
+    expected_state.player_1.collab = Some("c_0511".into());
+    expected_state.player_1.back_stage = [].into();
+    expected_state.player_1.holo_power = ["c_0211".into()].into();
+    expected_state.player_1.main_deck = [].into();
+    expected_state.player_1.hand = ["c_0311".into()].into();
+    expected_state
+        .zone_modifiers
+        .entry(Player::One)
+        .or_default()
+        .extend([(
+            Zone::All,
+            Modifier {
+                id: "m_0001".into(),
+                kind: ModifierKind::PreventCollab,
+                life_time: LifeTime::ThisTurn,
+            },
+        )]);
+
+    assert_eq!(expected_state, game.state);
+}
+
+#[test]
+/// hSD01-015 - Hakui Koyori (Spot)
+fn hsd01_015_azki() {
+    let p1 = TestGameBoard {
+        oshi: Some("hSD01-001".into()),
+        center_stage: Some("hSD01-009".into()),
+        back_stage: ["hSD01-015".into()].into(),
+        life: ["hY01-001".into()].into(),
+        main_deck: ["hSD01-015".into(), "hSD01-015".into()].into(),
+        cheer_deck: ["hY01-001".into()].into(),
+        ..Default::default()
+    };
+    let p2 = p1.clone();
+
+    let state = GameStateBuilder::new()
+        .with_active_player(Player::One)
+        .with_active_step(Step::Cheer)
+        .with_player_1(p1)
+        .with_player_2(p2)
+        .build();
+
+    let p1_p = BufferedPrompter::new(&[
+        // SoAzKo
+        &[0],
+        // done
+        &[1],
+    ]);
+    let p2_p = BufferedPrompter::new(&[]);
+
+    let mut game = setup_test_game(state.clone(), p1_p, p2_p);
+
+    // performance step
+    game.next_step().unwrap();
+
+    // to check the changes, and apply them as checks below
+    // assert_eq!(state, game.state);
+
+    let mut expected_state = state.clone();
+    expected_state.active_step = Step::Main;
+    expected_state.player_1.collab = Some("c_0511".into());
+    expected_state.player_1.cheer_deck = [].into();
+    expected_state.player_1.back_stage = [].into();
+    expected_state.player_1.holo_power = ["c_0211".into()].into();
+    expected_state.player_1.main_deck = ["c_0311".into()].into();
+    expected_state
+        .player_1
+        .attachments
+        .extend([(CardRef::from("c_0711"), "c_0411".into())]);
+    expected_state
+        .zone_modifiers
+        .entry(Player::One)
+        .or_default()
+        .extend([(
+            Zone::All,
+            Modifier {
+                id: "m_0001".into(),
+                kind: ModifierKind::PreventCollab,
+                life_time: LifeTime::ThisTurn,
+            },
+        )]);
+
+    assert_eq!(expected_state, game.state);
+}
+#[test]
+/// hSD01-015 - Hakui Koyori (Spot)
+fn hsd01_015_soraz() {
+    let p1 = TestGameBoard {
+        oshi: Some("hSD01-001".into()),
+        center_stage: Some("hSD01-013".into()),
+        back_stage: ["hSD01-015".into()].into(),
+        life: ["hY01-001".into()].into(),
+        main_deck: ["hSD01-015".into(), "hSD01-015".into()].into(),
+        cheer_deck: ["hY01-001".into()].into(),
+        ..Default::default()
+    };
+    let p2 = p1.clone();
+
+    let state = GameStateBuilder::new()
+        .with_active_player(Player::One)
+        .with_active_step(Step::Cheer)
+        .with_player_1(p1)
+        .with_player_2(p2)
+        .build();
+
+    let p1_p = BufferedPrompter::new(&[
+        // SoAzKo
+        &[0],
+        // done
+        &[2],
+    ]);
+    let p2_p = BufferedPrompter::new(&[]);
+
+    let mut game = setup_test_game(state.clone(), p1_p, p2_p);
+
+    // performance step
+    game.next_step().unwrap();
+
+    // to check the changes, and apply them as checks below
+    // assert_eq!(state, game.state);
+
+    let mut expected_state = state.clone();
+    expected_state.active_step = Step::Main;
+    expected_state.player_1.collab = Some("c_0511".into());
+    expected_state.player_1.cheer_deck = [].into();
+    expected_state.player_1.back_stage = [].into();
+    expected_state.player_1.holo_power = ["c_0211".into()].into();
+    expected_state.player_1.main_deck = [].into();
+    expected_state.player_1.hand = ["c_0311".into()].into();
+    expected_state
+        .player_1
+        .attachments
+        .extend([(CardRef::from("c_0711"), "c_0411".into())]);
+    expected_state
+        .zone_modifiers
+        .entry(Player::One)
+        .or_default()
+        .extend([(
+            Zone::All,
+            Modifier {
+                id: "m_0001".into(),
+                kind: ModifierKind::PreventCollab,
+                life_time: LifeTime::ThisTurn,
+            },
+        )]);
+
+    assert_eq!(expected_state, game.state);
 }
 
 #[test]

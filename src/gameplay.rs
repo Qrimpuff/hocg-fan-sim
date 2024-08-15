@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::fmt::Display;
 use std::num::NonZeroU16;
 use std::sync::mpsc::{Receiver, Sender};
@@ -15,6 +16,7 @@ use super::cards::*;
 use super::modifiers::*;
 use debug_ignore::DebugIgnore;
 use iter_tools::Itertools;
+use rand::seq::SliceRandom;
 use rand::RngCore;
 use tracing::{debug, error};
 use ModifierKind::*;
@@ -1372,16 +1374,16 @@ impl Game {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GameBoard {
     pub oshi: Option<CardRef>,
-    pub main_deck: Vec<CardRef>,
+    pub main_deck: VecDeque<CardRef>,
     pub center_stage: Option<CardRef>,
     pub collab: Option<CardRef>,
-    pub back_stage: Vec<CardRef>,
-    pub life: Vec<CardRef>,
-    pub cheer_deck: Vec<CardRef>,
-    pub holo_power: Vec<CardRef>,
-    pub archive: Vec<CardRef>,
-    pub hand: Vec<CardRef>,
-    pub activate_support: Vec<CardRef>,
+    pub back_stage: VecDeque<CardRef>,
+    pub life: VecDeque<CardRef>,
+    pub cheer_deck: VecDeque<CardRef>,
+    pub holo_power: VecDeque<CardRef>,
+    pub archive: VecDeque<CardRef>,
+    pub hand: VecDeque<CardRef>,
+    pub activate_support: VecDeque<CardRef>,
     pub attachments: HashMap<CardRef, CardRef>,
 }
 
@@ -1407,17 +1409,17 @@ impl GameBoard {
                 .collect(),
             center_stage: None,
             collab: None,
-            back_stage: Vec::new(),
-            life: Vec::new(),
+            back_stage: VecDeque::new(),
+            life: VecDeque::new(),
             cheer_deck: loadout
                 .cheer_deck
                 .iter()
                 .map(|c| register_card(player, 2, c, next_card_ref, card_map))
                 .collect(),
-            holo_power: Vec::new(),
-            archive: Vec::new(),
-            hand: Vec::new(),
-            activate_support: Vec::new(),
+            holo_power: VecDeque::new(),
+            archive: VecDeque::new(),
+            hand: VecDeque::new(),
+            activate_support: VecDeque::new(),
             attachments: HashMap::new(),
         }
     }
@@ -1740,13 +1742,13 @@ impl ZoneControl for Option<CardRef> {
     }
 }
 
-impl ZoneControl for Vec<CardRef> {
+impl ZoneControl for VecDeque<CardRef> {
     fn count(&self) -> usize {
         self.len()
     }
 
     fn peek_top_card(&self) -> Option<CardRef> {
-        self.first().copied()
+        self.front().copied()
     }
 
     fn peek_top_cards(&self, amount: usize) -> Vec<CardRef> {
@@ -1754,7 +1756,7 @@ impl ZoneControl for Vec<CardRef> {
     }
 
     fn all_cards(&self) -> Vec<CardRef> {
-        self.to_vec()
+        self.iter().copied().collect_vec()
     }
 
     fn remove_card(&mut self, card: CardRef) {
@@ -1765,7 +1767,7 @@ impl ZoneControl for Vec<CardRef> {
 
     fn add_top_card(&mut self, card: CardRef) {
         if !self.is_in_zone(card) {
-            self.insert(0, card);
+            self.push_front(card);
         } else {
             panic!("there is already a card in this zone");
         }
@@ -1773,7 +1775,7 @@ impl ZoneControl for Vec<CardRef> {
 
     fn add_bottom_card(&mut self, card: CardRef) {
         if !self.is_in_zone(card) {
-            self.push(card);
+            self.push_back(card);
         } else {
             panic!("there is already a card in this zone");
         }
@@ -1792,7 +1794,7 @@ impl ZoneControl for Vec<CardRef> {
     }
 
     fn shuffle(&mut self, rng: &mut Box<dyn RngCore>) {
-        rand::seq::SliceRandom::shuffle(&mut self[..], rng);
+        self.make_contiguous().shuffle(rng)
     }
 }
 
