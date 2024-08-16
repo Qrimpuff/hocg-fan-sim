@@ -220,6 +220,9 @@ pub enum CardReferences {
     // from_top <value> <zone> -> <[card_ref]>
     #[hocg_fan_sim(token = "from_top")]
     FromTop(Box<Number>, Zone),
+    // leftovers -> <[card_ref]>
+    #[hocg_fan_sim(token = "leftovers")]
+    Leftovers,
     // this_card -> <[card_ref]>
     #[hocg_fan_sim(token = "this_card")]
     ThisCard,

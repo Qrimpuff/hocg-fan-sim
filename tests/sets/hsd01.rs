@@ -5,6 +5,7 @@ use hocg_fan_sim::{
     gameplay::{CardRef, GameOutcome, GameOverReason, Player, Step, Zone},
     modifiers::{DamageMarkers, LifeTime, Modifier, ModifierKind},
     prompters::BufferedPrompter,
+    temp::test_library,
 };
 use pretty_assertions::assert_eq;
 use time::macros::format_description;
@@ -1177,35 +1178,427 @@ fn hsd01_015_soraz() {
 #[test]
 /// hSD01-016 - Harusaki Nodoka (Staff)
 fn hsd01_016() {
-    // TODO testing
+    let p1 = TestGameBoard {
+        oshi: Some("hSD01-001".into()),
+        center_stage: Some("hSD01-013".into()),
+        hand: ["hSD01-016".into()].into(),
+        life: ["hY01-001".into()].into(),
+        main_deck: [
+            "hSD01-015".into(),
+            "hSD01-015".into(),
+            "hSD01-015".into(),
+            "hSD01-015".into(),
+        ]
+        .into(),
+        ..Default::default()
+    };
+    let p2 = p1.clone();
+
+    let state = GameStateBuilder::new()
+        .with_active_player(Player::One)
+        .with_active_step(Step::Cheer)
+        .with_player_1(p1)
+        .with_player_2(p2)
+        .build();
+
+    let p1_p = BufferedPrompter::new(&[
+        // Harusaki Nodoka
+        &[0],
+        // done
+        &[3],
+    ]);
+    let p2_p = BufferedPrompter::new(&[]);
+
+    let mut game = setup_test_game(state.clone(), p1_p, p2_p);
+
+    // performance step
+    game.next_step().unwrap();
+
+    // to check the changes, and apply them as checks below
+    // assert_eq!(state, game.state);
+
+    let mut expected_state = state.clone();
+    expected_state.active_step = Step::Main;
+    expected_state.player_1.main_deck = ["c_0511".into()].into();
+    expected_state.player_1.hand = ["c_0211".into(), "c_0311".into(), "c_0411".into()].into();
+    expected_state.player_1.archive = ["c_0811".into()].into();
+    expected_state
+        .zone_modifiers
+        .entry(Player::One)
+        .or_default()
+        .extend([(
+            Zone::All,
+            Modifier {
+                id: "m_0001".into(),
+                kind: ModifierKind::PreventLimitedSupport,
+                life_time: LifeTime::ThisTurn,
+            },
+        )]);
+
+    assert_eq!(expected_state, game.state);
 }
 
 #[test]
 /// hSD01-017 - Mane-chan (Staff)
 fn hsd01_017() {
-    // TODO testing
+    let p1 = TestGameBoard {
+        oshi: Some("hSD01-001".into()),
+        center_stage: Some("hSD01-013".into()),
+        hand: [
+            "hSD01-017".into(),
+            "hSD01-018".into(),
+            "hSD01-019".into(),
+            "hSD01-020".into(),
+        ]
+        .into(),
+        life: ["hY01-001".into()].into(),
+        main_deck: [
+            "hSD01-010".into(),
+            "hSD01-011".into(),
+            "hSD01-012".into(),
+            "hSD01-013".into(),
+        ]
+        .into(),
+        ..Default::default()
+    };
+    let p2 = p1.clone();
+
+    let state = GameStateBuilder::new()
+        .with_active_player(Player::One)
+        .with_active_step(Step::Cheer)
+        .with_player_1(p1)
+        .with_player_2(p2)
+        .build();
+
+    let p1_p = BufferedPrompter::new(&[
+        // Mane-chan
+        &[0],
+        // done
+        &[5],
+    ]);
+    let p2_p = BufferedPrompter::new(&[]);
+
+    let mut game = setup_test_game(state.clone(), p1_p, p2_p);
+
+    // performance step
+    game.next_step().unwrap();
+
+    // to check the changes, and apply them as checks below
+    // assert_eq!(state, game.state);
+
+    let mut expected_state = state.clone();
+    expected_state.active_step = Step::Main;
+    expected_state.player_1.main_deck = ["c_0b11".into(), "c_0a11".into()].into();
+    expected_state.player_1.hand = [
+        "c_0911".into(),
+        "c_0511".into(),
+        "c_0311".into(),
+        "c_0211".into(),
+        "c_0411".into(),
+    ]
+    .into();
+    expected_state.player_1.archive = ["c_0811".into()].into();
+    expected_state
+        .zone_modifiers
+        .entry(Player::One)
+        .or_default()
+        .extend([(
+            Zone::All,
+            Modifier {
+                id: "m_0001".into(),
+                kind: ModifierKind::PreventLimitedSupport,
+                life_time: LifeTime::ThisTurn,
+            },
+        )]);
+
+    assert_eq!(expected_state, game.state);
 }
 
 #[test]
 /// hSD01-018 - Second PC (Item)
 fn hsd01_018() {
-    // TODO testing
+    let p1 = TestGameBoard {
+        oshi: Some("hSD01-001".into()),
+        center_stage: Some("hSD01-013".into()),
+        hand: ["hSD01-018".into()].into(),
+        life: ["hY01-001".into()].into(),
+        main_deck: [
+            "hSD01-017".into(),
+            "hSD01-019".into(),
+            "hSD01-020".into(),
+            "hSD01-010".into(),
+            "hSD01-011".into(),
+            "hSD01-017".into(),
+            "hSD01-019".into(),
+            "hSD01-020".into(),
+            "hSD01-010".into(),
+            "hSD01-011".into(),
+            "hSD01-012".into(),
+            "hSD01-013".into(),
+        ]
+        .into(),
+        ..Default::default()
+    };
+    let p2 = p1.clone();
+
+    let state = GameStateBuilder::new()
+        .with_active_player(Player::One)
+        .with_active_step(Step::Cheer)
+        .with_player_1(p1)
+        .with_player_2(p2)
+        .build();
+
+    let p1_p = BufferedPrompter::new(&[
+        // Second PC
+        &[0],
+        &[0],
+        // done
+        &[0],
+    ]);
+    let p2_p = BufferedPrompter::new(&[]);
+
+    let mut game = setup_test_game(state.clone(), p1_p, p2_p);
+
+    // performance step
+    game.next_step().unwrap();
+
+    // to check the changes, and apply them as checks below
+    // assert_eq!(state, game.state);
+
+    let mut expected_state = state.clone();
+    expected_state.active_step = Step::Main;
+    expected_state.player_1.main_deck = [
+        "c_0711".into(),
+        "c_0811".into(),
+        "c_0911".into(),
+        "c_0a11".into(),
+        "c_0b11".into(),
+        "c_0c11".into(),
+        "c_0d11".into(),
+        "c_0311".into(),
+        "c_0411".into(),
+        "c_0511".into(),
+        "c_0611".into(),
+    ]
+    .into();
+    expected_state.player_1.hand = ["c_0211".into()].into();
+    expected_state.player_1.archive = ["c_1011".into()].into();
+
+    assert_eq!(expected_state, game.state);
 }
 
 #[test]
 /// hSD01-019 - Amazing PC (Item)
 fn hsd01_019() {
-    // TODO testing
+    let p1 = TestGameBoard {
+        oshi: Some("hSD01-001".into()),
+        center_stage: Some("hSD01-013".into()),
+        hand: ["hSD01-019".into()].into(),
+        life: ["hY01-001".into()].into(),
+        main_deck: [
+            "hSD01-010".into(),
+            "hSD01-011".into(),
+            "hSD01-012".into(),
+            "hSD01-013".into(),
+            "hSD01-014".into(),
+        ]
+        .into(),
+        ..Default::default()
+    };
+    let p2 = p1.clone();
+
+    let state = GameStateBuilder::new()
+        .with_active_player(Player::One)
+        .with_active_step(Step::Cheer)
+        .with_player_1(p1)
+        .with_attachments(
+            Player::One,
+            Zone::CenterStage,
+            0,
+            ["hY01-001".into()].into(),
+        )
+        .with_player_2(p2)
+        .build();
+
+    let p1_p = BufferedPrompter::new(&[
+        // Amazing PC
+        &[0],
+        &[0],
+        &[0],
+        &[0],
+        // done
+        &[1],
+    ]);
+    let p2_p = BufferedPrompter::new(&[]);
+
+    let mut game = setup_test_game(state.clone(), p1_p, p2_p);
+
+    // performance step
+    game.next_step().unwrap();
+
+    // to check the changes, and apply them as checks below
+    // assert_eq!(state, game.state);
+
+    let mut expected_state = state.clone();
+    expected_state.active_step = Step::Main;
+    expected_state.player_1.main_deck = [
+        "c_0511".into(),
+        "c_0311".into(),
+        "c_0411".into(),
+        "c_0611".into(),
+    ]
+    .into();
+    expected_state.player_1.hand = ["c_0211".into()].into();
+    expected_state.player_1.archive = ["c_0911".into(), "c_0a31".into()].into();
+    expected_state.player_1.attachments = [].into();
+    expected_state
+        .zone_modifiers
+        .entry(Player::One)
+        .or_default()
+        .extend([(
+            Zone::All,
+            Modifier {
+                id: "m_0001".into(),
+                kind: ModifierKind::PreventLimitedSupport,
+                life_time: LifeTime::ThisTurn,
+            },
+        )]);
+
+    assert_eq!(expected_state, game.state);
 }
 
 #[test]
 /// hSD01-020 - hololive Fan Circle (Event)
 fn hsd01_020() {
-    // TODO testing
+    let p1 = TestGameBoard {
+        oshi: Some("hSD01-002".into()),
+        center_stage: Some("hSD01-013".into()),
+        hand: ["hSD01-020".into()].into(),
+        holo_power: ["hY02-001".into(), "hY02-001".into(), "hY02-001".into()].into(),
+        life: ["hY01-001".into()].into(),
+        archive: ["hY01-001".into()].into(),
+        ..Default::default()
+    };
+    let p2 = p1.clone();
+
+    let state = GameStateBuilder::new()
+        .with_active_player(Player::One)
+        .with_active_step(Step::Cheer)
+        .with_player_1(p1)
+        .with_player_2(p2)
+        .build();
+
+    let p1_p = BufferedPrompter::new(&[
+        // hololive Fan Circle
+        &[0],
+        // rolled a 5
+        &[0],
+        &[0],
+        // done
+        &[1],
+    ]);
+    let p2_p = BufferedPrompter::new(&[]);
+
+    let mut game = setup_test_game(state.clone(), p1_p, p2_p);
+
+    // performance step
+    game.next_step().unwrap();
+
+    // to check the changes, and apply them as checks below
+    // assert_eq!(state, game.state);
+
+    let mut expected_state = state.clone();
+    expected_state.active_step = Step::Main;
+    expected_state.player_1.hand = [].into();
+    expected_state.player_1.archive = ["c_0811".into()].into();
+    expected_state
+        .player_1
+        .attachments
+        .extend([(CardRef::from("c_0711"), "c_0211".into())]);
+
+    assert_eq!(expected_state, game.state);
 }
 
 #[test]
 /// hSD01-021 - First Gravity (Event)
 fn hsd01_021() {
-    // TODO testing
+    let p1 = TestGameBoard {
+        oshi: Some("hSD01-001".into()),
+        center_stage: Some("hSD01-013".into()),
+        hand: ["hSD01-021".into()].into(),
+        life: ["hY01-001".into()].into(),
+        main_deck: [
+            "hSD01-003".into(),
+            "hSD01-004".into(),
+            "hSD01-005".into(),
+            "hSD01-006".into(),
+            "hSD01-007".into(),
+            "hSD01-008".into(),
+            "hSD01-009".into(),
+            "hSD01-10".into(),
+            "hSD01-11".into(),
+            "hSD01-12".into(),
+            "hSD01-13".into(),
+            "hSD01-14".into(),
+        ]
+        .into(),
+        ..Default::default()
+    };
+    let p2 = p1.clone();
+
+    let state = GameStateBuilder::new()
+        .with_active_player(Player::One)
+        .with_active_step(Step::Cheer)
+        .with_player_1(p1)
+        .with_player_2(p2)
+        .build();
+
+    let p1_p = BufferedPrompter::new(&[
+        // First Gravity
+        &[0],
+        &[0, 1],
+        // done
+        &[2],
+    ]);
+    let p2_p = BufferedPrompter::new(&[]);
+
+    let mut game = setup_test_game(state.clone(), p1_p, p2_p);
+
+    // performance step
+    game.next_step().unwrap();
+
+    // to check the changes, and apply them as checks below
+    // assert_eq!(state, game.state);
+
+    let mut expected_state = state.clone();
+    expected_state.active_step = Step::Main;
+    expected_state.player_1.main_deck = [
+        "c_0611".into(),
+        "c_0711".into(),
+        "c_0811".into(),
+        "c_0911".into(),
+        "c_0a11".into(),
+        "c_0b11".into(),
+        "c_0c11".into(),
+        "c_0d11".into(),
+        "c_0411".into(),
+        "c_0511".into(),
+    ]
+    .into();
+    expected_state.player_1.hand = ["c_0211".into(), "c_0311".into()].into();
+    expected_state.player_1.archive = ["c_1011".into()].into();
+    expected_state
+        .zone_modifiers
+        .entry(Player::One)
+        .or_default()
+        .extend([(
+            Zone::All,
+            Modifier {
+                id: "m_0001".into(),
+                kind: ModifierKind::PreventLimitedSupport,
+                life_time: LifeTime::ThisTurn,
+            },
+        )]);
+
+    assert_eq!(expected_state, game.state);
 }

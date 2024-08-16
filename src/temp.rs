@@ -699,7 +699,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                                 let $limited = select_up_to 1 $top_5 is_support_limited
                                 reveal $limited
                                 send_to hand $limited
-                                send_to_bottom main_deck $_leftovers
+                                send_to_bottom main_deck leftovers
                             ").parse_effect().expect("hSD01-018"),
                         rarity: Rarity::Common,
                         illustration: "".into(),
@@ -778,7 +778,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                                 let $mems = select_any $top_4 is_named_tokino_sora or is_named_azki
                                 reveal $mems
                                 send_to hand $mems
-                                send_to_bottom main_deck $_leftovers
+                                send_to_bottom main_deck leftovers
                             ").parse_effect().expect("hSD01-021"),
                         rarity: Rarity::Common,
                         illustration: "".into(),

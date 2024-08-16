@@ -2183,7 +2183,7 @@ impl GameState {
         let card_number = self.lookup_card_number(card);
         test_library()
             .lookup_card(card_number)
-            .expect("should be in the library")
+            .unwrap_or_else(|| panic!("should be in the library: {card_number}"))
     }
     pub fn lookup_oshi(&self, card: CardRef) -> Option<&OshiHoloMemberCard> {
         if let Card::OshiHoloMember(o) = self.lookup_card(card) {

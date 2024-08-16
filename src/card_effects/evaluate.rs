@@ -16,6 +16,9 @@ use crate::{
     modifiers::{self},
 };
 
+static VAR_THIS_CARD: &str = "&_this_card";
+static VAR_LEFTOVERS: &str = "&_leftovers";
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct EvaluateContext<'a> {
     pub active_card: Option<CardRef>,
@@ -39,12 +42,17 @@ impl<'a> EvaluateContext<'a> {
     }
     pub fn with_card(card: CardRef, game: &GameState) -> Self {
         let player = game.player_for_card(card);
+        let mut variables = HashMap::new();
+        variables.insert(
+            VAR_THIS_CARD.into(),
+            LetValue::CardReferences([card].into()),
+        );
         EvaluateContext {
             active_card: Some(card),
             active_player: Some(player),
             // card_target: Some(card),
             // player_target: Some(player),
-            variables: HashMap::new(),
+            variables,
             event: None,
         }
     }
@@ -346,7 +354,9 @@ impl EvaluateEffect for CardReference {
                 .event_span
                 .current_card_for_evaluate(ctx)
                 .expect("there should be an event origin card"),
-            CardReference::ThisCard => ctx.active_card.expect("there should be an active card"),
+            CardReference::ThisCard => {
+                CardReference::Var(Var(VAR_THIS_CARD.into())).evaluate_with_context(ctx, game)
+            }
             CardReference::Var(var) => {
                 match ctx.variables.get(&var.0).unwrap_or_else(|| {
                     panic!("the variable should exist: {:?} - ctx: {:?}", var, ctx)
@@ -391,8 +401,11 @@ impl EvaluateEffect for CardReferences {
                 let (player, zone) = zone.evaluate_with_context(ctx, game);
                 game.board(player).get_zone(zone).peek_top_cards(amount)
             }
+            CardReferences::Leftovers => {
+                CardReferences::Var(Var(VAR_LEFTOVERS.into())).evaluate_with_context(ctx, game)
+            }
             CardReferences::ThisCard => {
-                vec![ctx.active_card.expect("there should be an active card")]
+                CardReferences::Var(Var(VAR_THIS_CARD.into())).evaluate_with_context(ctx, game)
             }
             CardReferences::Var(var) => {
                 match ctx.variables.get(&var.0).unwrap_or_else(|| {
@@ -577,7 +590,7 @@ impl EvaluateEffectMut for super::LetValue {
                     .filter(|c| !choice.contains(c))
                     .collect_vec();
                 ctx.variables
-                    .insert("$_leftovers".into(), LetValue::CardReferences(leftovers));
+                    .insert(VAR_LEFTOVERS.into(), LetValue::CardReferences(leftovers));
                 Ok(LetValue::CardReferences(choice))
             }
             super::LetValue::SelectOne(cards, condition) => {
@@ -596,7 +609,7 @@ impl EvaluateEffectMut for super::LetValue {
                     .filter(|c| !choice.contains(c))
                     .collect_vec();
                 ctx.variables
-                    .insert("$_leftovers".into(), LetValue::CardReferences(leftovers));
+                    .insert(VAR_LEFTOVERS.into(), LetValue::CardReferences(leftovers));
                 Ok(LetValue::CardReferences(choice))
             }
             super::LetValue::SelectNumberBetween(min, max) => {
@@ -622,7 +635,7 @@ impl EvaluateEffectMut for super::LetValue {
                     .filter(|c| !choice.contains(c))
                     .collect_vec();
                 ctx.variables
-                    .insert("$_leftovers".into(), LetValue::CardReferences(leftovers));
+                    .insert(VAR_LEFTOVERS.into(), LetValue::CardReferences(leftovers));
                 Ok(LetValue::CardReferences(choice))
             }
         }
