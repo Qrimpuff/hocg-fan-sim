@@ -9,8 +9,8 @@ use proc_macro::TokenStream;
 use proc_macro_roids::namespace_parameters;
 use quote::{format_ident, quote};
 use syn::{
-    parse_quote, Data, DataEnum, DeriveInput, Fields, FieldsUnnamed, Lit, Meta, NestedMeta, Path,
-    Variant,
+    parse_quote, Data, DataEnum, DeriveInput, Expr, ExprLit, Fields, FieldsUnnamed, Lit, Meta,
+    Path, Variant,
 };
 
 // TODO cleanup this file
@@ -386,20 +386,30 @@ fn attributes(variant: &Variant, ns: &Path) -> (Option<String>, Option<String>, 
     let mut transparent = false;
     for meta in evt_meta_lists {
         match meta {
-            NestedMeta::Meta(Meta::NameValue(name_value)) => {
-                if let (true, Lit::Str(lit_str)) =
-                    (name_value.path.is_ident("token"), &name_value.lit)
+            Meta::NameValue(name_value) => {
+                if let (
+                    true,
+                    Expr::Lit(ExprLit {
+                        lit: Lit::Str(lit_str),
+                        ..
+                    }),
+                ) = (name_value.path.is_ident("token"), &name_value.value)
                 {
                     token = Some(lit_str.value());
-                } else if let (true, Lit::Str(lit_str)) =
-                    (name_value.path.is_ident("infix"), &name_value.lit)
+                } else if let (
+                    true,
+                    Expr::Lit(ExprLit {
+                        lit: Lit::Str(lit_str),
+                        ..
+                    }),
+                ) = (name_value.path.is_ident("infix"), &name_value.value)
                 {
                     infix = Some(lit_str.value());
                 } else {
                     panic!("Expected `hocg_fan_sim` attribute argument in the form: `#[hocg_fan_sim(token = \"some_token\")]`");
                 }
             }
-            NestedMeta::Meta(Meta::Path(path)) => {
+            Meta::Path(path) => {
                 if path.is_ident("transparent") {
                     transparent = true;
                 } else {
@@ -531,6 +541,15 @@ mod tests {
                     if tokens.is_empty() {
                         return Err(crate::card_effects::error::Error::ExpectedToken);
                     }
+                    if let Ok((s, t)) = tokens[1..].take_string() {
+                        if s == "+" {
+                            let t = &tokens[..1];
+                            let (_0, t) = t.take_param()?;
+                            let t = &tokens[2..];
+                            let (_1, t) = t.take_param()?;
+                            return Ok((MyEnum::TupleInfix(_0, _1,), t));
+                        }
+                    }
                     if let Ok((s, t)) = tokens.take_string() {
                         if s == "unit" {
                             return Ok((MyEnum::Unit, t));
@@ -551,14 +570,6 @@ mod tests {
                                     "=".into(),
                                     s.clone()
                                 ));
-                            }
-                        }
-                    }
-                    if let Ok((_0, t)) = tokens[..tokens.len()-1].take_param() {
-                        if let Ok((s, t)) = tokens[tokens.len()-1-t.len()..].take_string() {
-                            if s == "+" {
-                                let (_1, t) = t.take_param()?;
-                                return Ok((MyEnum::TupleInfix(_0, _1,), t));
                             }
                         }
                     }
