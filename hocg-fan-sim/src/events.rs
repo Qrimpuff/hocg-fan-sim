@@ -395,6 +395,7 @@ impl Game {
             match self.lookup_card(card) {
                 Card::OshiHoloMember(o) => {
                     for (idx, skill) in o.skills.iter().enumerate() {
+                        // FIXME need to use the usual check, but with event?
                         if skill.triggers.iter().any(|t| t.should_activate(&trigger))
                             && skill.condition.evaluate_with_card_event(
                                 &self.state,
@@ -409,6 +410,7 @@ impl Game {
                 }
                 Card::HoloMember(m) => {
                     for (idx, ability) in m.abilities.iter().enumerate() {
+                        // FIXME need to use the usual check, but with event?
                         if ability.should_activate(card, &trigger)
                             && ability.condition.evaluate_with_card_event(
                                 &self.state,
@@ -422,6 +424,7 @@ impl Game {
                     }
                 }
                 Card::Support(s) => {
+                    // FIXME need to use the usual check, but with event?
                     if s.triggers.iter().any(|t| t.should_activate(&trigger))
                         && s.condition
                             .evaluate_with_card_event(&self.state, card, trigger.event())
@@ -2838,44 +2841,10 @@ pub struct ActivateHoloMemberArtEffect {
     pub skill_idx: usize,
 }
 impl EvaluateEvent for ActivateHoloMemberArtEffect {
-    fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
-        let oshi = game
-            .lookup_oshi(self.card.1)
-            .expect("only oshi should be using skills");
-
-        //  check condition for skill
-        if !oshi.can_use_skill(self.card.1, self.skill_idx, game) {
-            panic!("cannot use this skill");
-        }
-
-        // - use oshi skill
-        //   - oshi power uses card in power zone
-        //   - once per turn / once per game
-        let skill = &oshi.skills[self.skill_idx];
-        let effect = skill.effect.clone();
-        let prevent_life_time = match skill.kind {
-            OshiSkillKind::Normal => LifeTime::ThisTurn,
-            OshiSkillKind::Special => LifeTime::ThisGame,
-        };
-
-        // pay the cost of the oshi skill
-        // TODO could have a buff that could pay for the skill
-        game.send_holo_power_to_archive(event_origin, self.player, skill.cost as usize)?;
-
-        effect.evaluate_with_card_mut(game, self.card.1)?;
-
-        game.state.event_span.open_untracked_span();
-        game.add_modifier(
-            event_origin,
-            self.card.1,
-            PreventOshiSkill(self.skill_idx),
-            prevent_life_time,
-        )?;
-        game.state.event_span.close_untracked_span();
-
-        Ok(GameContinue)
+        unimplemented!()
     }
 }
 
