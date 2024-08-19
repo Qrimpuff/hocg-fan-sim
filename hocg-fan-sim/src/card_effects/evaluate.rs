@@ -20,16 +20,17 @@ static VAR_THIS_CARD: &str = "&_this_card";
 static VAR_LEFTOVERS: &str = "&_leftovers";
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct EvaluateContext<'a> {
+pub struct EvaluateContext {
     pub active_card: Option<CardRef>,
     pub active_player: Option<gameplay::Player>,
     // pub card_target: Option<CardRef>,
     // pub player_target: Option<gameplay::Player>,
     pub variables: HashMap<String, LetValue>,
-    pub event: Option<&'a Event>,
+    // pub event: Option<&'a Event>,
+    pub is_triggered: bool,
 }
 
-impl<'a> EvaluateContext<'a> {
+impl EvaluateContext {
     pub fn new() -> Self {
         EvaluateContext {
             active_card: None,
@@ -37,10 +38,11 @@ impl<'a> EvaluateContext<'a> {
             // card_target: None,
             // player_target: None,
             variables: HashMap::new(),
-            event: None,
+            // event: None,
+            is_triggered: false,
         }
     }
-    pub fn with_card(card: CardRef, game: &GameState) -> Self {
+    pub fn with_card(card: CardRef, game: &GameState, is_trigger: bool) -> Self {
         let player = game.player_for_card(card);
         let mut variables = HashMap::new();
         variables.insert(
@@ -53,7 +55,8 @@ impl<'a> EvaluateContext<'a> {
             // card_target: Some(card),
             // player_target: Some(player),
             variables,
-            event: None,
+            // event: None,
+            is_triggered: is_trigger,
         }
     }
 
@@ -95,63 +98,68 @@ pub trait EvaluateEffectMut {
         game: &mut Game,
     ) -> EvaluateResult<Self::Value>;
 
-    fn evaluate_with_card_mut(&self, game: &mut Game, card: CardRef) -> EvaluateResult<Self::Value>
-    where
-        Self: Sized,
-    {
-        game.state.event_span.open_span(card);
-        let value = self
-            .evaluate_with_context_mut(&mut EvaluateContext::with_card(card, &game.state), game);
-        game.state.event_span.close_span(card);
-
-        game.remove_expiring_modifiers(None, modifiers::LifeTime::ThisEffect)?;
-
-        value
-    }
-    fn evaluate_with_card_event_mut(
+    fn evaluate_with_card_mut(
         &self,
         game: &mut Game,
         card: CardRef,
-        event: &Event,
+        is_triggered: bool,
     ) -> EvaluateResult<Self::Value>
     where
         Self: Sized,
     {
-        game.state.event_span.open_span(card);
-        let mut ctx = EvaluateContext::with_card(card, &game.state);
-        ctx.event = Some(event);
-        let value = self.evaluate_with_context_mut(&mut ctx, game);
-        game.state.event_span.close_span(card);
+        game.state.event_span.open_card_span(card);
+        let value = self
+            .evaluate_with_context_mut(&mut EvaluateContext::with_card(card, &game.state, is_triggered), game);
+        game.state.event_span.close_card_span(card);
 
         game.remove_expiring_modifiers(None, modifiers::LifeTime::ThisEffect)?;
 
         value
     }
+    // fn evaluate_with_card_event_mut(
+    //     &self,
+    //     game: &mut Game,
+    //     card: CardRef,
+    //     event: &Event,
+    // ) -> EvaluateResult<Self::Value>
+    // where
+    //     Self: Sized,
+    // {
+    //     game.state.event_span.open_card_span(card);
+    //     let mut ctx = EvaluateContext::with_card(card, &game.state);
+    //     ctx.event = Some(event);
+    //     let value = self.evaluate_with_context_mut(&mut ctx, game);
+    //     game.state.event_span.close_card_span(card);
+
+    //     game.remove_expiring_modifiers(None, modifiers::LifeTime::ThisEffect)?;
+
+    //     value
+    // }
 }
 pub trait EvaluateEffect {
     type Value;
 
     fn evaluate_with_context(&self, ctx: &EvaluateContext, game: &GameState) -> Self::Value;
 
-    fn evaluate_with_card(&self, game: &GameState, card: CardRef) -> Self::Value
+    fn evaluate_with_card(&self, game: &GameState, card: CardRef, is_triggered: bool) -> Self::Value
     where
         Self: Sized,
     {
-        self.evaluate_with_context(&EvaluateContext::with_card(card, game), game)
+        self.evaluate_with_context(&EvaluateContext::with_card(card, game, is_triggered), game)
     }
-    fn evaluate_with_card_event(
-        &self,
-        game: &GameState,
-        card: CardRef,
-        event: &Event,
-    ) -> Self::Value
-    where
-        Self: Sized,
-    {
-        let mut ctx = EvaluateContext::with_card(card, game);
-        ctx.event = Some(event);
-        self.evaluate_with_context(&ctx, game)
-    }
+    // fn evaluate_with_card_event(
+    //     &self,
+    //     game: &GameState,
+    //     card: CardRef,
+    //     event: &Event,
+    // ) -> Self::Value
+    // where
+    //     Self: Sized,
+    // {
+    //     let mut ctx = EvaluateContext::with_card(card, game);
+    //     ctx.event = Some(event);
+    //     self.evaluate_with_context(&ctx, game)
+    // }
 }
 
 impl<I, E, V> EvaluateEffectMut for I
@@ -352,7 +360,7 @@ impl EvaluateEffect for CardReference {
         match self {
             CardReference::EventOrigin => game
                 .event_span
-                .current_card_for_evaluate(ctx)
+                .event_origin_for_evaluate(ctx)
                 .expect("there should be an event origin card"),
             CardReference::ThisCard => {
                 CardReference::Var(Var(VAR_THIS_CARD.into())).evaluate_with_context(ctx, game)
@@ -389,7 +397,7 @@ impl EvaluateEffect for CardReferences {
             CardReferences::EventOrigin => {
                 vec![game
                     .event_span
-                    .current_card_for_evaluate(ctx)
+                    .event_origin_for_evaluate(ctx)
                     .expect("there should be an event origin card")]
             }
             CardReferences::From(zone) => {

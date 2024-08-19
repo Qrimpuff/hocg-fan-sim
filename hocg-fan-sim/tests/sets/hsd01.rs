@@ -2,10 +2,9 @@ use std::env;
 
 use hocg_fan_sim::{
     card_effects::Condition,
-    gameplay::{CardRef, GameOutcome, GameOverReason, Player, Step, Zone},
+    gameplay::{CardRef, Player, Step, Zone},
     modifiers::{DamageMarkers, LifeTime, Modifier, ModifierKind},
     prompters::BufferedPrompter,
-    temp::test_library,
 };
 use pretty_assertions::assert_eq;
 use time::macros::format_description;
@@ -244,6 +243,75 @@ fn hsd01_002() {
                 life_time: LifeTime::ThisGame,
             },
         ]);
+    // expected_state.card_damage_markers
+    // expected_state.event_span
+
+    assert_eq!(expected_state, game.state);
+}
+
+#[test]
+/// hSD01-002 - AZKi (Oshi)
+fn hsd01_002_not_enough_holo_power() {
+    let p1 = TestGameBoard {
+        oshi: Some("hSD01-002".into()),
+        center_stage: Some("hSD01-003".into()),
+        back_stage: ["hSD01-009".into()].into(),
+        life: ["hY01-001".into()].into(),
+        holo_power: [].into(),
+        archive: ["hY01-001".into(), "hY01-001".into(), "hY01-001".into()].into(),
+        ..Default::default()
+    };
+    let p2 = p1.clone();
+
+    let state = GameStateBuilder::new()
+        .with_active_player(Player::One)
+        .with_active_step(Step::Cheer)
+        .with_player_1(p1)
+        .with_player_2(p2)
+        .build();
+
+    let p1_p = BufferedPrompter::new(&[
+        // Can't use, In My Left Hand, a Map
+        &[0],
+        // done
+        &[0],
+    ]);
+    let p2_p = BufferedPrompter::new(&[]);
+
+    let mut game = setup_test_game(state.clone(), p1_p, p2_p);
+
+    // main step
+    game.next_step().unwrap();
+
+    // to check the changes, and apply them as checks below
+    // assert_eq!(state, game.state);
+
+    let mut expected_state = state.clone();
+    // expected_state.game_outcome
+    // expected_state.card_map
+    // expected_state.player_1
+    expected_state.player_1.collab = Some("c_0311".into());
+    expected_state.player_1.back_stage = [].into();
+    expected_state.player_1.holo_power = [].into();
+    // expected_state.player_2
+    // expected_state.active_player
+    // expected_state.active_step
+    expected_state.active_step = Step::Main;
+    // expected_state.turn_number
+    // expected_state.zone_modifiers
+    expected_state
+        .zone_modifiers
+        .entry(Player::One)
+        .or_default()
+        .extend([(
+            Zone::All,
+            Modifier {
+                id: "m_0001".into(),
+                kind: ModifierKind::PreventCollab,
+                life_time: LifeTime::ThisTurn,
+            },
+        )]);
+    // expected_state.card_modifiers
     // expected_state.card_damage_markers
     // expected_state.event_span
 

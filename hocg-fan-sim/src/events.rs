@@ -269,49 +269,75 @@ pub enum IntentResponse {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct EventSpan {
-    pub event_origin_stack: Vec<CardRef>,
+    pub origin_stack: Vec<Option<CardRef>>,
+    pub event_stack: Vec<Event>,
 }
 
 impl EventSpan {
     pub fn new() -> Self {
         Self {
-            event_origin_stack: Vec::new(),
+            origin_stack: Vec::new(),
+            event_stack: Vec::new(),
         }
     }
 
-    pub fn open_span(&mut self, card: CardRef) {
-        self.event_origin_stack.push(card);
+    pub fn open_card_span(&mut self, card: CardRef) {
+        self.origin_stack.push(Some(card));
     }
-
-    pub fn close_span(&mut self, card: CardRef) {
-        assert_eq!(Some(card), self.event_origin_stack.pop());
+    pub fn open_event_span(&mut self, event: Event) {
+        self.event_stack.push(event);
     }
-
+    pub fn open_card_event_span(&mut self, card: CardRef, event: Event) {
+        self.open_card_span(card);
+        self.open_event_span(event);
+    }
     pub fn open_untracked_span(&mut self) {
-        self.event_origin_stack.push(PRIVATE_CARD);
+        self.origin_stack.push(None);
     }
 
+    pub fn close_card_span(&mut self, card: CardRef) {
+        assert_eq!(self.current_card(), Some(card));
+        self.origin_stack.pop();
+    }
+    pub fn close_event_span(&mut self, event: &Event) {
+        assert_eq!(self.current_event(), Some(event));
+        self.event_stack.pop();
+    }
+    pub fn close_event_span_unchecked(&mut self) {
+        self.event_stack.pop();
+    }
+    pub fn close_card_event_span(&mut self, card: CardRef, event: &Event) {
+        self.close_card_span(card);
+        self.close_event_span(event);
+    }
     pub fn close_untracked_span(&mut self) {
-        assert_eq!(Some(PRIVATE_CARD), self.event_origin_stack.pop());
+        assert_eq!(self.current_card(), None);
+        self.origin_stack.pop();
     }
 
     pub fn current_card(&self) -> Option<CardRef> {
-        let card = self.event_origin_stack.last().copied();
-
-        if card == Some(PRIVATE_CARD) {
-            return None;
-        }
-
-        card
+        self.origin_stack.last().copied().flatten()
     }
-    pub fn current_card_for_evaluate(&self, ctx: &EvaluateContext) -> Option<CardRef> {
-        if self.current_card() == ctx.active_card {
-            // in an effect, the last card is the current card
-            self.event_origin_stack
-                .get(self.event_origin_stack.len() - 2)
-                .copied()
+    pub fn current_event(&self) -> Option<&Event> {
+        self.event_stack.last()
+    }
+
+    pub fn trigger_card(&self) -> Option<CardRef> {
+        self.origin_stack
+            .get(self.origin_stack.len() - 2)
+            .copied()
+            .flatten()
+    }
+    pub fn trigger_event(&self) -> Option<&Event> {
+        self.event_stack.get(self.event_stack.len() - 2)
+    }
+
+    pub fn event_origin_for_evaluate(&self, ctx: &EvaluateContext) -> Option<CardRef> {
+        if ctx.is_triggered {
+            // effect was activated because of a trigger
+            self.trigger_card()
         } else {
-            // in a condition, the last card is the event card
+            // no trigger are active
             self.current_card()
         }
     }
@@ -328,12 +354,19 @@ impl Game {
             kind: event_type,
         };
 
+        // keep track of current event
+        self.state.event_span.open_event_span(event.clone());
+        debug!("SPAN = {:#?}", self.state.event_span);
+
         // trigger before effects
         let before = TriggeredEvent::Before(&event);
         self.evaluate_triggers(before)?;
 
         // change the event before it happens, with modifiers from triggers
         if let AdjustEventOutcome::PreventEvent = event.adjust_event(self)? {
+            // done with the current event
+            // unchecked should be fine, can't check because the event changed in adjust
+            self.state.event_span.close_event_span_unchecked();
             return Ok(event);
         }
 
@@ -357,6 +390,10 @@ impl Game {
         // trigger after effects
         let after = TriggeredEvent::After(&event);
         self.evaluate_triggers(after)?;
+
+        // done with the current event
+        // unchecked should be fine, can't check because the event could have been changed in adjust
+        self.state.event_span.close_event_span_unchecked();
 
         Ok(event)
     }
@@ -397,11 +434,7 @@ impl Game {
                     for (idx, skill) in o.skills.iter().enumerate() {
                         // FIXME need to use the usual check, but with event?
                         if skill.triggers.iter().any(|t| t.should_activate(&trigger))
-                            && skill.condition.evaluate_with_card_event(
-                                &self.state,
-                                card,
-                                trigger.event(),
-                            )
+                            && o.can_use_skill(card, idx, self, false)
                         {
                             debug!("ACTIVATE SKILL? = {skill:?}");
                             oshi_skill = Some(idx);
@@ -412,11 +445,7 @@ impl Game {
                     for (idx, ability) in m.abilities.iter().enumerate() {
                         // FIXME need to use the usual check, but with event?
                         if ability.should_activate(card, &trigger)
-                            && ability.condition.evaluate_with_card_event(
-                                &self.state,
-                                card,
-                                trigger.event(),
-                            )
+                            && m.can_use_ability(card, idx, self, false)
                         {
                             debug!("ACTIVATE ABILITY = {ability:?}");
                             member_ability = Some(idx);
@@ -426,8 +455,7 @@ impl Game {
                 Card::Support(s) => {
                     // FIXME need to use the usual check, but with event?
                     if s.triggers.iter().any(|t| t.should_activate(&trigger))
-                        && s.condition
-                            .evaluate_with_card_event(&self.state, card, trigger.event())
+                        && s.can_use_ability(card, self, false)
                     {
                         debug!("ACTIVATE SUPPORT = {s:?}");
                         support_ability = true;
@@ -437,19 +465,21 @@ impl Game {
             }
 
             // activate skill or ability
+            self.state.event_span.open_untracked_span();
             if let Some(idx) = oshi_skill {
                 // prompt for yes / no, optional activation
                 let activate = self.prompt_for_optional_activate(self.player_for_card(card));
                 if activate {
-                    self.activate_oshi_skill(Some(card), card, idx)?;
+                    self.activate_oshi_skill(Some(card), card, idx, true)?;
                 }
             }
             if let Some(idx) = member_ability {
-                self.activate_holo_member_ability(Some(card), card, idx)?;
+                self.activate_holo_member_ability(Some(card), card, idx, true)?;
             }
             if support_ability {
-                self.activate_support_ability(Some(card), card)?;
+                self.activate_support_ability(Some(card), card, true)?;
             }
+            self.state.event_span.close_untracked_span();
         }
 
         Ok(GameContinue)
@@ -1504,6 +1534,7 @@ impl Game {
                 // can only use skill from oshi
                 card: (Zone::Oshi, card),
                 skill_idx,
+                is_triggered: false,
             }
             .into(),
         )?;
@@ -1516,6 +1547,7 @@ impl Game {
         event_origin: Option<CardRef>,
         card: CardRef,
         skill_idx: usize,
+        is_triggered: bool,
     ) -> GameResult {
         let player = self.player_for_card(card);
         self.send_event(
@@ -1525,6 +1557,7 @@ impl Game {
                 // can only use skill from oshi
                 card: (Zone::Oshi, card),
                 skill_idx,
+                is_triggered,
             }
             .into(),
         )?;
@@ -1537,6 +1570,7 @@ impl Game {
         event_origin: Option<CardRef>,
         card: CardRef,
         ability_idx: usize,
+        is_triggered: bool,
     ) -> GameResult {
         let player = self.player_for_card(card);
         let zone = self
@@ -1549,6 +1583,7 @@ impl Game {
                 player,
                 card: (zone, card),
                 ability_idx,
+                is_triggered,
             }
             .into(),
         )?;
@@ -1560,6 +1595,7 @@ impl Game {
         &mut self,
         event_origin: Option<CardRef>,
         card: CardRef,
+        is_triggered: bool,
     ) -> GameResult {
         let player = self.player_for_card(card);
         let zone = self
@@ -1571,6 +1607,7 @@ impl Game {
             ActivateSupportAbility {
                 player,
                 card: (zone, card),
+                is_triggered,
             }
             .into(),
         )?;
@@ -2701,9 +2738,8 @@ impl EvaluateEvent for ActivateSupportCard {
         game.state.event_span.close_untracked_span();
 
         // activate the support card
-        effect.evaluate_with_card_mut(game, self.card.1)?;
-
         game.state.event_span.open_untracked_span();
+        effect.evaluate_with_card_mut(game, self.card.1, false)?;
 
         // limited support can only be used once per turn
         if limited_use {
@@ -2729,6 +2765,7 @@ impl EvaluateEvent for ActivateSupportCard {
 pub struct ActivateSupportAbility {
     pub player: Player,
     pub card: (Zone, CardRef),
+    pub is_triggered: bool,
 }
 impl EvaluateEvent for ActivateSupportAbility {
     fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
@@ -2739,13 +2776,13 @@ impl EvaluateEvent for ActivateSupportAbility {
             .expect("only support should be using skills");
 
         //  check condition for skill
-        if !support.can_use_ability(self.card.1, game) {
+        if !support.can_use_ability(self.card.1, game, self.is_triggered) {
             panic!("cannot use this skill");
         }
 
         let effect = support.effect.clone();
 
-        effect.evaluate_with_card_mut(game, self.card.1)?;
+        effect.evaluate_with_card_mut(game, self.card.1, self.is_triggered)?;
 
         Ok(GameContinue)
     }
@@ -2757,6 +2794,7 @@ pub struct ActivateOshiSkill {
     pub player: Player,
     pub card: (Zone, CardRef),
     pub skill_idx: usize,
+    pub is_triggered: bool,
 }
 impl EvaluateEvent for ActivateOshiSkill {
     fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
@@ -2767,7 +2805,7 @@ impl EvaluateEvent for ActivateOshiSkill {
             .expect("only oshi should be using skills");
 
         //  check condition for skill
-        if !oshi.can_use_skill(self.card.1, self.skill_idx, game) {
+        if !oshi.can_use_skill(self.card.1, self.skill_idx, game, self.is_triggered) {
             panic!("cannot use this skill");
         }
 
@@ -2788,7 +2826,7 @@ impl EvaluateEvent for ActivateOshiSkill {
         game.send_holo_power_to_archive(event_origin, self.player, cost)?;
         game.state.event_span.close_untracked_span();
 
-        effect.evaluate_with_card_mut(game, self.card.1)?;
+        effect.evaluate_with_card_mut(game, self.card.1, self.is_triggered)?;
 
         //   - once per turn / once per game
         game.state.event_span.open_untracked_span();
@@ -2810,6 +2848,7 @@ pub struct ActivateHoloMemberAbility {
     pub player: Player,
     pub card: (Zone, CardRef),
     pub ability_idx: usize,
+    pub is_triggered: bool,
 }
 impl EvaluateEvent for ActivateHoloMemberAbility {
     fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
@@ -2820,14 +2859,14 @@ impl EvaluateEvent for ActivateHoloMemberAbility {
             .expect("only member should be using skills");
 
         //  check condition for skill
-        if !mem.can_use_ability(self.card.1, self.ability_idx, game) {
+        if !mem.can_use_ability(self.card.1, self.ability_idx, game, self.is_triggered) {
             panic!("cannot use this skill");
         }
 
         let ability = &mem.abilities[self.ability_idx];
         let effect = ability.effect.clone();
 
-        effect.evaluate_with_card_mut(game, self.card.1)?;
+        effect.evaluate_with_card_mut(game, self.card.1, self.is_triggered)?;
 
         Ok(GameContinue)
     }
@@ -2885,7 +2924,7 @@ impl EvaluateEvent for PerformArt {
         let effect = art.effect.clone();
 
         // evaluate the effect of art, could change damage calculation
-        effect.evaluate_with_card_mut(game, self.card.1)?;
+        effect.evaluate_with_card_mut(game, self.card.1, false)?;
 
         // FIXME evaluate damage number
         let mut dmg = match dmg {
@@ -2994,7 +3033,9 @@ impl EvaluateEvent for RollDice {
             }
         }
         if let Some(id) = to_remove {
+            game.state.event_span.open_untracked_span();
             game.remove_many_modifiers_from_zone(event_origin, self.player, Zone::All, vec![id])?;
+            game.state.event_span.close_untracked_span();
             return Ok(AdjustEventOutcome::PreventEvent);
         }
 

@@ -1004,7 +1004,7 @@ impl Game {
                         .filter(|(_, s)| {
                             s.triggers.iter().any(|t| *t == Trigger::ActivateInMainStep)
                         })
-                        .filter(|(i, _)| o.can_use_skill(*c, *i, self))
+                        .filter(|(i, _)| o.can_use_skill(*c, *i, self, false))
                         .map(|(i, _)| MainStepAction::UseOshiSkill(*c, i))
                         .collect_vec(),
                     Card::HoloMember(_) => todo!("members are not in oshi position"),

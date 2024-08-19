@@ -183,9 +183,9 @@ impl GameState {
         self.find_modifiers(card)
             .filter(|m| m.is_active())
             .filter_map(|m| match &m.kind {
-                ModifierKind::Conditional(c, k) => {
-                    c.evaluate_with_card(self, card).then_some(k.as_ref())
-                }
+                ModifierKind::Conditional(c, k) => c
+                    .evaluate_with_card(self, card, false)
+                    .then_some(k.as_ref()),
                 _ => Some(&m.kind),
             })
             .any(filter_fn)

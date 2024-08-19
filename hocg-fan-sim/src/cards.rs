@@ -341,7 +341,13 @@ pub struct OshiHoloMemberCard {
 }
 
 impl OshiHoloMemberCard {
-    pub fn can_use_skill(&self, card: CardRef, skill_idx: usize, game: &Game) -> bool {
+    pub fn can_use_skill(
+        &self,
+        card: CardRef,
+        skill_idx: usize,
+        game: &Game,
+        is_triggered: bool,
+    ) -> bool {
         let player = game.player_for_card(card);
 
         //  need the required holo power cost
@@ -358,7 +364,7 @@ impl OshiHoloMemberCard {
 
         self.skills[skill_idx]
             .condition
-            .evaluate_with_card(&game.state, card)
+            .evaluate_with_card(&game.state, card, is_triggered)
     }
 }
 
@@ -489,7 +495,13 @@ impl HoloMemberCard {
             .any(|ns| ns.into_iter().all_equal())
     }
 
-    pub fn can_use_ability(&self, card: CardRef, ability_idx: usize, game: &Game) -> bool {
+    pub fn can_use_ability(
+        &self,
+        card: CardRef,
+        ability_idx: usize,
+        game: &Game,
+        is_triggered: bool,
+    ) -> bool {
         //  could prevent art by effect
         if game.has_modifier(card, PreventAbility(ability_idx)) {
             return false;
@@ -500,7 +512,7 @@ impl HoloMemberCard {
 
         self.abilities[ability_idx]
             .condition
-            .evaluate_with_card(&game.state, card)
+            .evaluate_with_card(&game.state, card, is_triggered)
     }
 
     pub fn can_use_art(&self, card: CardRef, art_idx: usize, game: &Game) -> bool {
@@ -520,7 +532,9 @@ impl HoloMemberCard {
             return false;
         }
 
-        self.arts[art_idx].condition.evaluate_with_card(&game.state, card)
+        self.arts[art_idx]
+            .condition
+            .evaluate_with_card(&game.state, card, false)
     }
 }
 
@@ -648,7 +662,7 @@ impl SupportCard {
             return false;
         }
 
-        self.condition.evaluate_with_card(&game.state, card)
+        self.condition.evaluate_with_card(&game.state, card, false)
     }
 
     pub fn can_attach_target(
@@ -661,13 +675,14 @@ impl SupportCard {
         unimplemented!()
     }
 
-    pub fn can_use_ability(&self, card: CardRef, game: &Game) -> bool {
+    pub fn can_use_ability(&self, card: CardRef, game: &Game, is_triggered: bool) -> bool {
         //  could prevent art by effect
         if game.has_modifier(card, PreventAbilities) {
             return false;
         }
 
-        self.condition.evaluate_with_card(&game.state, card)
+        self.condition
+            .evaluate_with_card(&game.state, card, is_triggered)
     }
 }
 
