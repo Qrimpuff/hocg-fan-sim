@@ -1,6 +1,6 @@
 use std::sync::{Arc, OnceLock};
 
-use crate::{card_effects::{ParseEffect, SerializeEffect, Trigger}, cards::*};
+use crate::{card_effects::{ParseEffect, ParseTokens, SerializeEffect, Trigger}, cards::*};
 use HoloMemberHashTag::*;
 use pretty_assertions::assert_eq;
 
@@ -238,8 +238,8 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                             damage: HoloMemberArtDamage::Basic(30),
                             special_damage: None,
                             text: "".into(),
-                            condition: vec![],
-                            effect: vec![],
+                            condition: test_effect(r"").parse_effect().expect("hSD01-005"),
+                            effect: test_effect(r"").parse_effect().expect("hSD01-005"),
                         },
                         HoloMemberArt {
                             name: "Your Heart... Will Go from Cloudy to Sunny!".into(),
@@ -247,8 +247,8 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                             damage: HoloMemberArtDamage::Basic(50),
                             special_damage: None,
                             text: "".into(),
-                            condition: vec![],
-                            effect: vec![],
+                            condition: test_effect(r"").parse_effect().expect("hSD01-005"),
+                            effect: test_effect(r"").parse_effect().expect("hSD01-005"),
                         }],
                         extra: None,
                         attributes: vec![],
@@ -797,18 +797,24 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
         for string in effects {
             let effect = string.parse_effect::<CardEffect>().expect("should already be parsed above");
             let de_string = effect.serialize_effect();
+            let default_string = CardEffect::default_effect().map(|e| e.serialize_effect());
 
             let string = string.replace(['(', ')', ' ', '\n','\r'], "");
             let de_string = de_string.replace(['(', ')', ' ', '\n','\r'], "");
-            assert_eq!(string, de_string);
+            if Some(de_string.clone()) != default_string {
+                assert_eq!(string, de_string);
+            }
         }
         for string in conditions {
             let condition = string.parse_effect::<CardEffectCondition>().expect("should already be parsed above");
             let de_string = condition.serialize_effect();
+            let default_string = CardEffectCondition::default_effect().map(|e| e.serialize_effect());
 
             let string = string.replace(['(', ')', ' ', '\n','\r'], "");
             let de_string = de_string.replace(['(', ')', ' ', '\n','\r'], "");
-            assert_eq!(string, de_string);
+            if Some(de_string.clone()) != default_string {
+                assert_eq!(string, de_string);
+            }
         }
 
         Arc::new(lib)

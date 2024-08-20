@@ -18,6 +18,7 @@ use debug_ignore::DebugIgnore;
 use iter_tools::Itertools;
 use rand::seq::SliceRandom;
 use rand::RngCore;
+use serde::{Deserialize, Serialize};
 use tracing::{debug, error};
 use ModifierKind::*;
 
@@ -1859,7 +1860,7 @@ pub enum ZoneAddLocation {
     Bottom,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+#[derive(Serialize, Deserialize,Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum Step {
     #[default]
     Setup,

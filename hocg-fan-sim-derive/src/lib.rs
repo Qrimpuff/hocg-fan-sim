@@ -45,7 +45,7 @@ fn ser_de_token_for_enum_impl(ast: DeriveInput) -> proc_macro2::TokenStream {
     let ser_variants_arms = variants.iter().map(|variant| {
         let variant_name = &variant.ident;
 
-        let (token, infix, transparent) = attributes(variant, &ns);
+        let (token, infix, transparent, _default) = attributes(variant, &ns);
         let variant_fields = &variant.fields;
 
         let variant_capture = match variant_fields {
@@ -91,6 +91,16 @@ fn ser_de_token_for_enum_impl(ast: DeriveInput) -> proc_macro2::TokenStream {
                 }
             }
         }
+
+        impl serde::Serialize for #enum_name {
+            fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                let s = self.clone().serialize_effect();
+                String::serialize(&s, serializer)
+            }
+        }
     };
 
     // deserialize effect tokens
@@ -98,7 +108,7 @@ fn ser_de_token_for_enum_impl(ast: DeriveInput) -> proc_macro2::TokenStream {
     let de_variants_tokens2 = variants.iter().map(|variant| {
         let variant_name = &variant.ident;
 
-        let (token, infix, transparent) = attributes(variant, &ns);
+        let (token, infix, transparent, _default) = attributes(variant, &ns);
         let variant_fields = &variant.fields;
 
         if transparent || token.is_none() {
@@ -185,7 +195,7 @@ fn ser_de_token_for_enum_impl(ast: DeriveInput) -> proc_macro2::TokenStream {
     let de_variants_infix2 = variants.iter().map(|variant| {
         let variant_name = &variant.ident;
 
-        let (token, infix, transparent) = attributes(variant, &ns);
+        let (token, infix, transparent, _default) = attributes(variant, &ns);
         let variant_fields = &variant.fields;
 
         if transparent || token.is_some() || infix.is_none() {
@@ -253,7 +263,7 @@ fn ser_de_token_for_enum_impl(ast: DeriveInput) -> proc_macro2::TokenStream {
     let de_variants_transparent2 = variants.iter().map(|variant| {
         let variant_name = &variant.ident;
 
-        let (token, infix, transparent) = attributes(variant, &ns);
+        let (token, infix, transparent, _default) = attributes(variant, &ns);
         let variant_fields = &variant.fields;
 
         if !transparent || token.is_some() || infix.is_some() {
@@ -291,6 +301,38 @@ fn ser_de_token_for_enum_impl(ast: DeriveInput) -> proc_macro2::TokenStream {
             a => panic!("{:?}", a),
         }
     });
+
+    let de_variants_default2 = variants.iter().map(|variant| {
+        let variant_name = &variant.ident;
+
+        let (_token, _infix, _transparent, default) = attributes(variant, &ns);
+        let variant_fields = &variant.fields;
+
+        if !default {
+            return quote! {};
+        }
+
+        match variant_fields {
+            Fields::Unit => quote! {
+                fn default_effect() -> Option<Self> {
+                    Some(#enum_name::#variant_name)
+                }
+            },
+            a => panic!("only unit variant can be default: {:?}", a),
+        }
+    });
+    let has_default = variants.iter().any(|v| attributes(v, &ns).3);
+    let de_variants_default2 = if has_default {
+        quote! {
+            #(#de_variants_default2)*
+        }
+    } else {
+        quote! {
+            fn default_effect() -> Option<Self> {
+                None
+            }
+        }
+    };
 
     // // - infix -
     // if let Ok((s, t)) = tokens[1..].take_string() {
@@ -348,6 +390,8 @@ fn ser_de_token_for_enum_impl(ast: DeriveInput) -> proc_macro2::TokenStream {
     let impl_de_for_enum = quote! {
         impl crate::card_effects::parse::ParseTokens for #enum_name {
 
+            #de_variants_default2
+
             fn parse_tokens(tokens: &[crate::card_effects::parse::Tokens]) -> std::result::Result<(Self, &[crate::card_effects::parse::Tokens]), crate::card_effects::error::Error> {
                 if tokens.is_empty() {
                     return Err(crate::card_effects::error::Error::ExpectedToken);
@@ -360,6 +404,16 @@ fn ser_de_token_for_enum_impl(ast: DeriveInput) -> proc_macro2::TokenStream {
                 #(#de_variants_transparent2)*
 
                 return Err(crate::card_effects::error::Error::UnexpectedToken(#str_enum_name.into(), tokens.take_string()?.0.clone()));
+            }
+        }
+
+        impl<'de> serde::Deserialize<'de> for #enum_name {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                let s = String::deserialize(deserializer)?;
+                crate::card_effects::parse::ParseTokens::from_str(&s).map_err(serde::de::Error::custom)
             }
         }
     };
@@ -379,11 +433,12 @@ fn data_enum(ast: &DeriveInput) -> &DataEnum {
     }
 }
 
-fn attributes(variant: &Variant, ns: &Path) -> (Option<String>, Option<String>, bool) {
+fn attributes(variant: &Variant, ns: &Path) -> (Option<String>, Option<String>, bool, bool) {
     let evt_meta_lists = namespace_parameters(&variant.attrs, ns);
     let mut token = None;
     let mut infix = None;
     let mut transparent = false;
+    let mut default = false;
     for meta in evt_meta_lists {
         match meta {
             Meta::NameValue(name_value) => {
@@ -412,6 +467,8 @@ fn attributes(variant: &Variant, ns: &Path) -> (Option<String>, Option<String>, 
             Meta::Path(path) => {
                 if path.is_ident("transparent") {
                     transparent = true;
+                } else if path.is_ident("default") {
+                    default = true;
                 } else {
                     panic!("Expected `hocg_fan_sim` attribute argument in the form: `#[hocg_fan_sim(transparent)]`");
                 }
@@ -423,7 +480,7 @@ fn attributes(variant: &Variant, ns: &Path) -> (Option<String>, Option<String>, 
         token.is_some() || infix.is_some() || transparent,
         "Expected to have at least one of (token, infix, transparent)"
     );
-    (token, infix, transparent)
+    (token, infix, transparent, default)
 }
 
 #[cfg(test)]
@@ -443,7 +500,7 @@ mod tests {
             pub enum MyEnum {
                 /// Unit variant.
                 #[evt(derive(Clone, Copy, Debug, PartialEq, Eq))]
-                #[hocg_fan_sim(token = "unit", infix = "=")]
+                #[hocg_fan_sim(default, token = "unit", infix = "=")]
                 Unit,
                 /// Tuple variant.
                 #[evt(derive(Debug))]
@@ -531,7 +588,19 @@ mod tests {
                     }
                 }
             }
+            impl serde::Serialize for MyEnum {
+                fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+                where
+                    S: serde::Serializer,
+                {
+                    let s = self.clone().serialize_effect();
+                    String::serialize(&s, serializer)
+                }
+            }
             impl crate::card_effects::parse::ParseTokens for MyEnum {
+                fn default_effect() -> Option<Self> {
+                    Some(MyEnum::Unit)
+                }
                 fn parse_tokens(
                     tokens: &[crate::card_effects::parse::Tokens]
                 ) -> std::result::Result<
@@ -583,6 +652,15 @@ mod tests {
                         "MyEnum".into(),
                         tokens.take_string()?.0.clone()
                     ));
+                }
+            }
+            impl<'de> serde::Deserialize<'de> for MyEnum {
+                fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+                where
+                    D: serde::Deserializer<'de>,
+                {
+                    let s = String::deserialize(deserializer)?;
+                    crate::card_effects::parse::ParseTokens::from_str(&s).map_err(serde::de::Error::custom)
                 }
             }
         };

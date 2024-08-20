@@ -31,6 +31,7 @@ use std::fmt::Debug;
 
 use hocg_fan_sim_derive::HocgFanSimCardEffect;
 use iter_tools::Itertools;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     events::{EnterStep, Event, EventKind, ExitStep, TriggeredEvent},
@@ -51,6 +52,10 @@ impl From<Var> for Tokens {
 }
 
 impl ParseTokens for Var {
+    fn default_effect() -> Option<Self> {
+        None
+    }
+
     fn parse_tokens(tokens: &[Tokens]) -> Result<(Self, &[Tokens])> {
         if let Ok((s, t)) = tokens.take_string() {
             if s.starts_with('$') {
@@ -74,6 +79,10 @@ impl From<NumberLiteral> for Tokens {
 }
 
 impl ParseTokens for NumberLiteral {
+    fn default_effect() -> Option<Self> {
+        None
+    }
+
     fn parse_tokens(tokens: &[Tokens]) -> Result<(Self, &[Tokens])> {
         if let Ok((s, t)) = tokens.take_string() {
             if let Ok(n) = s.parse() {
@@ -101,6 +110,10 @@ where
 }
 
 impl<T: ParseTokens + Debug> ParseTokens for Let<T> {
+    fn default_effect() -> Option<Self> {
+        None
+    }
+
     fn parse_tokens(tokens: &[Tokens]) -> Result<(Self, &[Tokens])> {
         if let Ok((s, t)) = tokens.take_string() {
             if s == "let" {
@@ -159,7 +172,7 @@ pub enum Action {
     #[hocg_fan_sim(transparent)]
     LetNumber(Let<Number>),
     // no_action -> <action>
-    #[hocg_fan_sim(token = "no_action")]
+    #[hocg_fan_sim(default, token = "no_action")]
     Noop,
     // reveal <[card_ref]> -> <action>
     #[hocg_fan_sim(token = "reveal")]
@@ -176,20 +189,6 @@ pub enum Action {
     // shuffle <zone> -> <action>
     #[hocg_fan_sim(token = "shuffle")]
     Shuffle(Zone),
-}
-
-pub fn serialize_actions(actions: Vec<Action>) -> String {
-    actions
-        .into_iter()
-        .map(|a| {
-            let s = Tokens::from(a).to_string();
-            let mut chars = s.chars();
-            chars.next();
-            chars.next_back();
-            chars.as_str().to_owned()
-        })
-        .collect_vec()
-        .join("\n")
 }
 
 #[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq)]
@@ -321,7 +320,7 @@ pub enum Condition {
     #[hocg_fan_sim(infix = "or")]
     Or(Box<Condition>, Box<Condition>),
     // true -> <condition>
-    #[hocg_fan_sim(token = "true")]
+    #[hocg_fan_sim(default, token = "true")]
     True,
     // <$var> -> <condition>
     #[hocg_fan_sim(transparent)]
@@ -453,7 +452,8 @@ pub enum Zone {
 
 //////////////////////////////////////
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum Trigger {
     ActivateInMainStep,
     OnStartTurn,
@@ -548,4 +548,78 @@ impl Trigger {
             }
         }
     }
+}
+
+/////////////////////////////////////////////////
+
+pub fn serialize_actions<S>(
+    actions: &[Action],
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let mut s = actions
+        .iter()
+        .map(|a| {
+            let s = a.clone().serialize_effect();
+            // remove leading parentheses
+            let mut chars = s.chars();
+            if s.starts_with('(') && s.ends_with(')') {
+                chars.next();
+                chars.next_back();
+            }
+            chars.as_str().to_owned()
+        })
+        .collect_vec()
+        .join("\n");
+    // add a new line at the end. to have a cleaner multiline block
+    if s.contains('\n') {
+        s.push('\n');
+    }
+    String::serialize(&s, serializer)
+}
+pub fn deserialize_actions<'de, D>(deserializer: D) -> std::result::Result<Vec<Action>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    crate::card_effects::parse::ParseTokens::from_str(&s).map_err(serde::de::Error::custom)
+}
+
+pub fn serialize_conditions<S>(
+    conditions: &[Condition],
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let mut s = conditions
+        .iter()
+        .map(|c| {
+            let s = c.clone().serialize_effect();
+            // remove leading parentheses
+            let mut chars = s.chars();
+            if s.starts_with('(') && s.ends_with(')') {
+                chars.next();
+                chars.next_back();
+            }
+            chars.as_str().to_owned()
+        })
+        .collect_vec()
+        .join("\n");
+    // add a new line at the end. to have a cleaner multiline block
+    if s.contains('\n') {
+        s.push('\n');
+    }
+    String::serialize(&s, serializer)
+}
+pub fn deserialize_conditions<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Vec<Condition>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    crate::card_effects::parse::ParseTokens::from_str(&s).map_err(serde::de::Error::custom)
 }

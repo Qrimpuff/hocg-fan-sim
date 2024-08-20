@@ -1,4 +1,5 @@
 use iter_tools::Itertools;
+use serde::{Serialize, Serializer};
 use tracing::error;
 
 use super::error::*;
@@ -95,8 +96,16 @@ pub trait ParseTokens: Debug + Sized {
         }
     }
 
+    fn default_effect() -> Option<Self>;
+
     fn from_str(s: &str) -> Result<Self> {
-        Self::from_tokens(s.parse()?)
+        let tokens = s.parse();
+        let default = Self::default_effect();
+        match (tokens, default) {
+            (Ok(tokens), _) => Self::from_tokens(tokens),
+            (Err(Error::NoTokens), Some(default)) => Ok(default),
+            (Err(err), _) => Err(err),
+        }
     }
 
     fn from_tokens(tokens: Tokens) -> Result<Self> {
@@ -121,6 +130,10 @@ impl<T> ParseTokens for Vec<T>
 where
     T: ParseTokens + Debug,
 {
+    fn default_effect() -> Option<Self> {
+        T::default_effect().map(|t| vec![t])
+    }
+
     fn parse_tokens(mut tokens: &[Tokens]) -> Result<(Self, &[Tokens])> {
         let mut v = Vec::new();
         while !tokens.is_empty() {
@@ -140,6 +153,10 @@ impl<T> ParseTokens for Box<T>
 where
     T: ParseTokens + Debug,
 {
+    fn default_effect() -> Option<Self> {
+        T::default_effect().map(|t| Box::new(t))
+    }
+
     fn parse_tokens(tokens: &[Tokens]) -> Result<(Self, &[Tokens])> {
         let (param, t) = T::parse_tokens(tokens)?;
         Ok((Box::new(param), t))

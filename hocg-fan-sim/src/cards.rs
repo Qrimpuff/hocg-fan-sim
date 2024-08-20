@@ -2,9 +2,15 @@ use std::collections::HashMap;
 
 use evaluate::EvaluateEffect;
 use iter_tools::Itertools;
+use serde::{Deserialize, Serialize};
 use tracing::error;
 
-use crate::card_effects::*;
+use crate::card_effects::{
+    effects::{
+        deserialize_actions, deserialize_conditions, serialize_actions, serialize_conditions,
+    },
+    *,
+};
 use crate::events::{Bloom, Collab, Event, EventKind, TriggeredEvent};
 use crate::gameplay::Zone;
 use crate::gameplay::{CardRef, Game};
@@ -74,6 +80,14 @@ use crate::modifiers::ModifierKind::*;
   - text
  */
 
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "snake_case")]
+pub struct Set {
+    number: String,
+    name: String,
+    // maybe preset decks
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Loadout {
     pub oshi: CardNumber,
@@ -91,71 +105,13 @@ pub struct GlobalLibrary {
 impl GlobalLibrary {
     /// Any pre-processing of cards that could make my life easier later
     pub fn pre_process(&mut self) {
+        // not sure if these are good ideas. might be better to be explicit
         // TODO oshi skill once turn
-
         // TODO special oshi skill once per game
-
         // TODO enough holo power to pay the cost for oshi skill
-
         // TODO enough cheers to perform art for members
-
         // TODO limited support
-
         // TODO if you can't select something, it should check that it's there first in condition
-
-        // default condition to always
-        let default_trigger = Trigger::ActivateInMainStep;
-        let default_condition = Condition::True;
-        let default_action = Action::Noop;
-        // let default_damage_mod = DamageModifier::None;
-        for card in self.cards.values_mut() {
-            match card {
-                Card::OshiHoloMember(o) => o.skills.iter_mut().for_each(|s| {
-                    if s.triggers.is_empty() {
-                        s.triggers.push(default_trigger)
-                    }
-                    if s.condition.is_empty() {
-                        s.condition.push(default_condition.clone())
-                    }
-                    if s.effect.is_empty() {
-                        s.effect.push(default_action.clone())
-                    }
-                }),
-                Card::HoloMember(m) => {
-                    m.abilities.iter_mut().for_each(|a| {
-                        if a.condition.is_empty() {
-                            a.condition.push(default_condition.clone())
-                        }
-                        if a.effect.is_empty() {
-                            a.effect.push(default_action.clone())
-                        }
-                    });
-                    m.arts.iter_mut().for_each(|a| {
-                        if a.condition.is_empty() {
-                            a.condition.push(default_condition.clone())
-                        }
-                        if a.effect.is_empty() {
-                            a.effect.push(default_action.clone())
-                        }
-                    })
-                }
-                Card::Support(s) => {
-                    if s.attachment_condition.is_empty() {
-                        s.attachment_condition.push(default_condition.clone())
-                    }
-                    if s.triggers.is_empty() {
-                        s.triggers.push(default_trigger)
-                    }
-                    if s.condition.is_empty() {
-                        s.condition.push(default_condition.clone())
-                    }
-                    if s.effect.is_empty() {
-                        s.effect.push(default_action.clone())
-                    }
-                }
-                Card::Cheer(_) => {} // cheers do not have conditions
-            }
-        }
 
         // verify effect serialization consistency (de -> ser -> de)
         fn serialization_round_trip<T>(effect: T) -> crate::card_effects::Result<()>
@@ -165,7 +121,7 @@ impl GlobalLibrary {
             let string = effect.clone().serialize_effect();
             let de_effect = string.parse_effect::<T>()?;
 
-            if effect != de_effect {
+            if effect != de_effect && Some(de_effect) != T::default_effect() {
                 Err(Error::Message(
                     "effect could not do serialization round trip".into(),
                 ))
@@ -238,7 +194,8 @@ impl GlobalLibrary {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
 pub enum Card {
     OshiHoloMember(OshiHoloMemberCard),
     HoloMember(HoloMemberCard),
@@ -293,7 +250,8 @@ impl Card {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum Rarity {
     OshiSuperRare, // OSR
     DoubleRare,    // RR
@@ -305,7 +263,8 @@ pub enum Rarity {
     UltraRare,     // UR
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::enum_variant_names)]
 pub enum Color {
     White,
@@ -328,7 +287,8 @@ pub type CardEffectCondition = Vec<Condition>;
 pub type CardEffect = Vec<Action>;
 pub type HoloMemberBatonPassCost = u8;
 
-#[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
 pub struct OshiHoloMemberCard {
     pub card_number: CardNumber,
     pub name: String,
@@ -368,24 +328,31 @@ impl OshiHoloMemberCard {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
 pub struct OshiSkill {
     pub kind: OshiSkillKind,
     pub name: String,
     pub cost: OshiSkillCost,
     pub text: String,
     pub triggers: CardEffectTrigger,
+    #[serde(serialize_with = "serialize_conditions")]
+    #[serde(deserialize_with = "deserialize_conditions")]
     pub condition: CardEffectCondition,
+    #[serde(serialize_with = "serialize_actions")]
+    #[serde(deserialize_with = "deserialize_actions")]
     pub effect: CardEffect,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum OshiSkillKind {
     Normal,
     Special,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
 pub struct HoloMemberCard {
     pub card_number: CardNumber,
     pub name: String,
@@ -538,7 +505,8 @@ impl HoloMemberCard {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
 pub enum HoloMemberLevel {
     Spot,
     Debut,
@@ -546,7 +514,8 @@ pub enum HoloMemberLevel {
     Second,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum HoloMemberHashTag {
     JP,
     ID,
@@ -561,19 +530,25 @@ pub enum HoloMemberHashTag {
     AnimalEars,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum HoloMemberExtraAttribute {
     Buzz,
     Name(String),
     Unknown,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
 pub struct HoloMemberAbility {
     pub kind: MemberAbilityKind,
     pub name: String,
     pub text: String,
+    #[serde(serialize_with = "serialize_conditions")]
+    #[serde(deserialize_with = "deserialize_conditions")]
     pub condition: CardEffectCondition,
+    #[serde(serialize_with = "serialize_actions")]
+    #[serde(deserialize_with = "deserialize_actions")]
     pub effect: CardEffect,
 }
 
@@ -614,25 +589,32 @@ impl HoloMemberAbility {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum MemberAbilityKind {
     CollabEffect,
     BloomEffect,
     Gift(CardEffectTrigger), // TODO verify if gift is correct. what kind of effect they have?
 }
 
-#[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
 pub struct HoloMemberArt {
     pub name: String,
     pub cost: HoloMemberArtCost,
     pub damage: HoloMemberArtDamage,
     pub special_damage: Option<(Color, HoloMemberHp)>,
     pub text: String,
+    #[serde(serialize_with = "serialize_conditions")]
+    #[serde(deserialize_with = "deserialize_conditions")]
     pub condition: CardEffectCondition,
+    #[serde(serialize_with = "serialize_actions")]
+    #[serde(deserialize_with = "deserialize_actions")]
     pub effect: CardEffect,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum HoloMemberArtDamage {
     Basic(HoloMemberHp),
     Plus(HoloMemberHp),
@@ -640,16 +622,23 @@ pub enum HoloMemberArtDamage {
     Uncertain,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
 pub struct SupportCard {
     pub card_number: CardNumber,
     pub name: String,
     pub kind: SupportKind,
     pub limited: bool, // TODO limited is needed, but not sure how
     pub text: String,
+    #[serde(serialize_with = "serialize_conditions")]
+    #[serde(deserialize_with = "deserialize_conditions")]
     pub attachment_condition: CardEffectCondition, // used by Fan
     pub triggers: CardEffectTrigger,
+    #[serde(serialize_with = "serialize_conditions")]
+    #[serde(deserialize_with = "deserialize_conditions")]
     pub condition: CardEffectCondition,
+    #[serde(serialize_with = "serialize_actions")]
+    #[serde(deserialize_with = "deserialize_actions")]
     pub effect: CardEffect,
     pub rarity: Rarity,
     pub illustration: IllustrationPath,
@@ -686,7 +675,8 @@ impl SupportCard {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum SupportKind {
     Staff,
     Item,
@@ -694,7 +684,8 @@ pub enum SupportKind {
     Fan,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
 pub struct CheerCard {
     pub card_number: CardNumber,
     pub name: String,

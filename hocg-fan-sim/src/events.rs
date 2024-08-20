@@ -356,7 +356,6 @@ impl Game {
 
         // keep track of current event
         self.state.event_span.open_event_span(event.clone());
-        debug!("SPAN = {:#?}", self.state.event_span);
 
         // trigger before effects
         let before = TriggeredEvent::Before(&event);

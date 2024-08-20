@@ -3,9 +3,11 @@
 use std::thread;
 use std::{env, iter, sync::mpsc};
 
+use hocg_fan_sim::card_effects::{Action, ParseEffect};
 use hocg_fan_sim::client::DefaultEventHandler;
 use hocg_fan_sim::gameplay::Game;
 use hocg_fan_sim::prompters::RandomPrompter;
+use hocg_fan_sim::temp::test_library;
 use hocg_fan_sim::{cards::*, client::Client};
 use time::macros::format_description;
 use tracing::info;
@@ -33,18 +35,20 @@ fn main() {
     info!("\n\n\n\n\n\n\n-- hololive OCG - Fan Simulator is running --");
 
     let _cond = r"
-        let $center_mem = ((from_zone center_stage) where is_member)
-        if $center_mem any is_named_tokino_sora (
-            draw 1
-        )
-        if $center_mem any is_named_azki (
-            let $cheer = from_zone_top 1 cheer_deck
-            reveal $cheer
-            attach_cards $cheer $center_mem
-        )
+        let $mem = select_one from stage is_member and has_cheers
+        let $cheer = select_one attached $mem is_cheer
+        send_to archive $cheer
+        let $cond = ((is_level_first or is_level_second) and not is_attribute_buzz) 
+        let $choice = select_one from main_deck $cond
+        reveal $choice
+        send_to hand $choice
+        shuffle main_deck
     ";
 
-    // dbg!(_cond.parse_effect::<Vec<Action>>().expect("IN MAIN"));
+
+    // let c = dbg!(_cond.parse_effect::<Vec<Action>>().expect("IN MAIN"));
+    let toml = toml::to_string(&test_library().lookup_card(&"hSD01-002".to_string()).unwrap()).unwrap();
+    println!("{toml}");
 
     let main_deck_hsd01 = Vec::from_iter(
         None.into_iter()
