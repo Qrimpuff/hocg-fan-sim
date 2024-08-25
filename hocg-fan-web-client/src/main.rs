@@ -37,6 +37,7 @@ fn Blog(id: i32) -> Element {
 #[derive(Clone, Debug, PartialEq)]
 struct Mat {
     mat_size: (i32, i32),
+    /// is separate from the mat dimensions
     card_size: (i32, i32),
     oshi_pos: (i32, i32),
     center_pos: (i32, i32),
@@ -94,13 +95,13 @@ fn Home() -> Element {
     let mat = use_context_provider(|| {
         Signal::new(Mat {
             mat_size: (2040, 1044),
-            card_size: (236, 323),
+            card_size: (236, 323), // easier to center the zones
             oshi_pos: (1334 + 236 / 2, 109 + 323 / 2),
             center_pos: (927 + 236 / 2, 109 + 323 / 2),
             collab_pos: (539 + 236 / 2, 109 + 323 / 2),
             back_line: (
-                (927 + (236 / 2) - 20 * 3 - 236 * 2, 675 + 323 / 2),
-                (927 + (236 / 2) + 20 * 3 + 236 * 2, 675 + 323 / 2),
+                (927 + (236 / 2) - 20 * 3 - 236 * 2 - 22, 675 + 323 / 2),
+                (927 + (236 / 2) + 20 * 3 + 236 * 2 - 22, 675 + 323 / 2),
             ),
             life_line: ((49 + 323 / 2, 40 + 236 / 2), (49 + 323 / 2, 305 + 236 / 2)),
             cheer_deck_pos: (49 + 236 / 2, 675 + 323 / 2),
@@ -111,7 +112,7 @@ fn Home() -> Element {
     });
     let rel_mat = use_signal(|| {
         let mat = mat.read();
-        mat.relative_to((800, 409), (95, 130))
+        mat.relative_to((800, 409), (95, 132))
     });
 
     // relative size
@@ -138,6 +139,38 @@ fn Home() -> Element {
                     transform: "rotateX(20deg) translateY(-48px)",
                     transform_style: "preserve-3d",
                     div {
+                        transform: "rotateZ(180deg)",
+                        transform_style: "preserve-3d",
+                        background_image: "url(https://hololive-official-cardgame.com/wp-content/uploads/2024/07/img_sec4_04.jpg)",
+                        height: "{rel_mat_size.1}px",
+                        class: "relative bg-cover bg-center",
+                        // main stage
+                        Card { mat: rel_mat(), zone: Zone::Oshi }
+                        Card { mat: rel_mat(), zone: Zone::CenterStage }
+                        Card { mat: rel_mat(), zone: Zone::Collab }
+                        // cheer deck
+                        Deck { mat: rel_mat(), zone: Zone::CheerDeck, size: 20 }
+                        // archive
+                        Deck { mat: rel_mat(), zone: Zone::Archive, size: 0 }
+                        // -- main deck --
+                        Deck { mat: rel_mat(), zone: Zone::MainDeck, size: 50 }
+                        // holo power
+                        Deck { mat: rel_mat(), zone: Zone::HoloPower, size: 5 }
+                        // life
+                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (1, 6) }
+                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (2, 6) }
+                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (3, 6) }
+                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (4, 6) }
+                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (5, 6) }
+                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (6, 6) }
+                        // back stage
+                        Card { key: "{1}", mat: rel_mat(), zone: Zone::BackStage, num: (1, 5), rested: false }
+                        Card { key: "{2}", mat: rel_mat(), zone: Zone::BackStage, num: (2, 5) }
+                        Card { key: "{3}", mat: rel_mat(), zone: Zone::BackStage, num: (3, 5), rested: false }
+                        Card { key: "{4}", mat: rel_mat(), zone: Zone::BackStage, num: (4, 5) }
+                        Card { key: "{5}", mat: rel_mat(), zone: Zone::BackStage, num: (5, 5), rested: false }
+                    }
+                    div {
                         // transform: "rotateZ(180deg)",
                         transform_style: "preserve-3d",
                         background_image: "url(https://hololive-official-cardgame.com/wp-content/uploads/2024/07/img_sec4_04.jpg)",
@@ -150,114 +183,24 @@ fn Home() -> Element {
                         // cheer deck
                         Deck { mat: rel_mat(), zone: Zone::CheerDeck, size: 20 }
                         // archive
-                        Deck { mat: rel_mat(), zone: Zone::Archive, size: 1 }
+                        Deck { mat: rel_mat(), zone: Zone::Archive, size: 0 }
                         // -- main deck --
                         Deck { mat: rel_mat(), zone: Zone::MainDeck, size: 50 }
                         // holo power
                         Deck { mat: rel_mat(), zone: Zone::HoloPower, size: 5 }
                         // life
-                        Card { mat: rel_mat(), zone: Zone::Life, num: (1, 6) }
-                        Card { mat: rel_mat(), zone: Zone::Life, num: (2, 6) }
-                        Card { mat: rel_mat(), zone: Zone::Life, num: (3, 6) }
-                        Card { mat: rel_mat(), zone: Zone::Life, num: (4, 6) }
-                        Card { mat: rel_mat(), zone: Zone::Life, num: (5, 6) }
-                        Card { mat: rel_mat(), zone: Zone::Life, num: (6, 6) }
+                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (1, 6) }
+                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (2, 6) }
+                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (3, 6) }
+                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (4, 6) }
+                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (5, 6) }
+                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (6, 6) }
                         // back stage
-                        Card { mat: rel_mat(), zone: Zone::BackStage, num: (1, 5) }
-                        Card { mat: rel_mat(), zone: Zone::BackStage, num: (2, 5) }
-                        Card { mat: rel_mat(), zone: Zone::BackStage, num: (3, 5) }
-                        Card { mat: rel_mat(), zone: Zone::BackStage, num: (4, 5) }
-                        Card { mat: rel_mat(), zone: Zone::BackStage, num: (5, 5) }
-                    }
-                    div {
-                        // transform: "rotateZ(180deg)",
-                        transform_style: "preserve-3d",
-                        background_image: "url(https://hololive-official-cardgame.com/wp-content/uploads/2024/07/img_sec4_04.jpg)",
-                        class: "relative lg:h-[409px] bg-cover bg-center ",
-                        // main stage
-                        div { class: "absolute z-10 w-[92.8px] h-[128px] translate-y-[38.4px] translate-x-[211.2px] bg-gradient-to-tr from-cyan-500 to-blue-500" }
-                        div { class: "absolute z-10 w-[92.8px] h-[128px] translate-y-[38.4px] translate-x-[364px] bg-gradient-to-tr from-cyan-500 to-blue-500" }
-                        div { class: "absolute z-10 w-[92.8px] h-[128px] translate-y-[38.4px] translate-x-[523.2px] bg-gradient-to-tr from-cyan-500 to-blue-500" }
-                        // cheer deck
-                        div { class: "absolute z-10 w-[92.8px] h-[128px] translate-y-[260px] translate-x-[19.2px] bg-gradient-to-tr from-cyan-500 to-blue-500" }
-                        // top
-                        div {
-                            transform: "translate3d(19.2px, 260px, 20px)",
-                            class: "absolute z-10 w-[92.8px] h-[128px] bg-gradient-to-tr from-red-500 to-purple-500"
-                        }
-                        // front
-                        div {
-                            transform: "translate3d(19.2px, 260px, 0px) rotateX(90deg)",
-                            transform_origin: "top",
-                            class: "absolute z-10 w-[92.8px] h-[20px] bg-gradient-to-tr from-green-500 to-yellow-500"
-                        }
-                        // back
-                        div {
-                            transform: "translate3d(19.2px, 388px, 0px) rotateX(90deg)",
-                            transform_origin: "top",
-                            class: "absolute z-10 w-[92.8px] h-[20px] bg-gradient-to-tr from-green-500 to-yellow-500"
-                        }
-                        // right side
-                        div {
-                            transform: "translate3d(92px, 260px, 0px) rotateY(90deg)",
-                            transform_origin: "right",
-                            class: "absolute z-10 w-[20px] h-[128px] bg-gradient-to-tr from-green-500 to-yellow-500"
-                        }
-                        // left side
-                        div {
-                            transform: "translate3d(19.2px, 260px, 0px) rotateY(-90deg)",
-                            transform_origin: "left",
-                            class: "absolute z-10 w-[20px] h-[128px] bg-gradient-to-tr from-green-500 to-yellow-500"
-                        }
-                        // archive
-                        div { class: "absolute z-10 w-[92.8px] h-[128px] translate-y-[260px] translate-x-[688px] bg-gradient-to-tr from-cyan-500 to-blue-500" }
-                        // -- main deck --
-                        div { class: "absolute z-10 w-[92.8px] h-[128px] translate-y-[122.4px] translate-x-[688px] bg-gradient-to-tr from-cyan-500 to-blue-500" }
-                        // top
-                        div {
-                            transform: "translate3d(688px, 122.4px, 50px)",
-                            class: "absolute z-10 w-[92.8px] h-[128px] bg-gradient-to-tr from-red-500 to-purple-500"
-                        }
-                        // front
-                        div {
-                            transform: "translate3d(688px, 122.4px, 0px) rotateX(90deg)",
-                            transform_origin: "top",
-                            class: "absolute z-10 w-[92.8px] h-[50px] bg-gradient-to-tr from-green-500 to-yellow-500"
-                        }
-                        // back
-                        div {
-                            transform: "translate3d(688px, 250.4px, 0px) rotateX(90deg)",
-                            transform_origin: "top",
-                            class: "absolute z-10 w-[92.8px] h-[50px] bg-gradient-to-tr from-green-500 to-yellow-500"
-                        }
-                        // right side
-                        div {
-                            transform: "translate3d(730.8px, 122.4px, 0px) rotateY(90deg)",
-                            transform_origin: "right",
-                            class: "absolute z-10 w-[50px] h-[128px] bg-gradient-to-tr from-green-500 to-yellow-500"
-                        }
-                        // left side
-                        div {
-                            transform: "translate3d(688px, 122.4px, 0px) rotateY(-90deg)",
-                            transform_origin: "left",
-                            class: "absolute z-10 w-[50px] h-[128px] bg-gradient-to-tr from-green-500 to-yellow-500"
-                        }
-                        // --end of deck --
-                        // holo power
-                        div { class: "absolute z-10 w-[92.8px] h-[128px] -translate-y-[6.4px] translate-x-[670.4px] -rotate-90 bg-gradient-to-tr from-cyan-500 to-blue-500" }
-                        // life
-                        div { class: "absolute z-10 w-[92.8px] h-[128px] -translate-y-[6.4px] translate-x-[36.8px] -rotate-90 bg-gradient-to-tr from-cyan-500 to-blue-500" }
-                        div { class: "absolute z-10 w-[92.8px] h-[128px] translate-y-[14.4px] translate-x-[36.8px] -rotate-90 bg-gradient-to-tr from-cyan-500 to-blue-500" }
-                        div { class: "absolute z-10 w-[92.8px] h-[128px] translate-y-[35.2px] translate-x-[36.8px] -rotate-90 bg-gradient-to-tr from-cyan-500 to-blue-500" }
-                        div { class: "absolute z-10 w-[92.8px] h-[128px] translate-y-[56px] translate-x-[36.8px] -rotate-90 bg-gradient-to-tr from-cyan-500 to-blue-500" }
-                        div { class: "absolute z-10 w-[92.8px] h-[128px] translate-y-[76.8px] translate-x-[36.8px] -rotate-90 bg-gradient-to-tr from-cyan-500 to-blue-500" }
-                        div { class: "absolute z-10 w-[92.8px] h-[128px] translate-y-[97.6px] translate-x-[36.8px] -rotate-90 bg-gradient-to-tr from-cyan-500 to-blue-500" }
-                        // back stage
-                        div { class: "absolute z-10 w-[92.8px] h-[128px] translate-y-[260px] translate-x-[162.4px] bg-gradient-to-tr from-cyan-500 to-blue-500" }
-                        div { class: "absolute z-10 w-[92.8px] h-[128px] translate-y-[260px] translate-x-[263.2px] bg-gradient-to-tr from-cyan-500 to-blue-500" }
-                        div { class: "absolute z-10 w-[92.8px] h-[128px] translate-y-[260px] translate-x-[364px] bg-gradient-to-tr from-cyan-500 to-blue-500" }
-                        div { class: "absolute z-10 w-[92.8px] h-[128px] translate-y-[260px] translate-x-[464.8px] bg-gradient-to-tr from-cyan-500 to-blue-500" }
-                        div { class: "absolute z-10 w-[92.8px] h-[128px] translate-y-[260px] translate-x-[565.6px] bg-gradient-to-tr from-cyan-500 to-blue-500" }
+                        Card { key: "{1}", mat: rel_mat(), zone: Zone::BackStage, num: (1, 5), rested: false }
+                        Card { key: "{2}", mat: rel_mat(), zone: Zone::BackStage, num: (2, 5) }
+                        Card { key: "{3}", mat: rel_mat(), zone: Zone::BackStage, num: (3, 5), rested: false }
+                        Card { key: "{4}", mat: rel_mat(), zone: Zone::BackStage, num: (4, 5) }
+                        Card { key: "{5}", mat: rel_mat(), zone: Zone::BackStage, num: (5, 5), rested: false }
                     }
                 }
             }
@@ -266,9 +209,15 @@ fn Home() -> Element {
 }
 
 #[component]
-fn Card(mat: Mat, zone: Zone, num: Option<(u32, u32)>) -> Element {
+fn Card(mat: Mat, zone: Zone, flipped: Option<bool>, rested: Option<bool>, num: Option<(u32, u32)>) -> Element {
+    let zone = use_signal(|| zone);
+    let mut moving = use_signal(|| false);
+    let rested = use_signal(|| rested.unwrap_or_default());
+    let mut flipped = use_signal(|| flipped.unwrap_or_default());
+    let mut flipping = use_signal(|| false);
+
     let card_size = mat.card_size;
-    let pos = match zone {
+    let pos = match zone() {
         Zone::MainDeck => mat.main_deck_pos,
         Zone::Oshi => mat.oshi_pos,
         Zone::CenterStage => mat.center_pos,
@@ -294,26 +243,91 @@ fn Card(mat: Mat, zone: Zone, num: Option<(u32, u32)>) -> Element {
     };
     let pos = (pos.0 - card_size.0 / 2, pos.1 - card_size.1 / 2);
 
-    let rotate = match zone {
-        Zone::Life | Zone::HoloPower => " rotateZ(-90deg)",
-        _ => "",
+    let z_index = if moving() { "2" } else { "1" };
+
+    let side_way = matches!(zone(), Zone::Life | Zone::HoloPower);
+    let side_way = if rested() { !side_way } else { side_way };
+
+    let rotate = if side_way {
+        "rotateZ(-90deg)"
+    } else {
+        "rotateZ(0)"
+    };
+
+    let flipped_class = if flipped() { "card-flipped" } else { "" };
+    let flipping_class = if flipping() { "card-flipping" } else { "" };
+
+    // TODO use our own images
+    let front_img = "https://github.com/GabeJWJ/holoDelta/blob/master/hBP01-041.png?raw=true";
+    let back_img = match zone() {
+        Zone::MainDeck | Zone::CenterStage | Zone::Collab | Zone::BackStage | Zone::HoloPower => {
+            "https://github.com/GabeJWJ/holoDelta/blob/master/fuda_holoBack.png?raw=true"
+        }
+        Zone::Oshi | Zone::Life | Zone::CheerDeck => {
+            "https://github.com/GabeJWJ/holoDelta/blob/master/cheerBack.png?raw=true"
+        }
+        Zone::Archive => "https://github.com/GabeJWJ/holoDelta/blob/master/hBP01-041.png?raw=true",
+        _ => unimplemented!(),
     };
 
     rsx! {
         div {
+            transform_style: "preserve-3d",
+            transition: "transform 0.25s ease-in-out",
+            ontransitionend: move |_event| moving.set(false),
             transform: "translate3d({pos.0}px, {pos.1}px, 0px) {rotate}",
             width: "{card_size.0}px",
             height: "{card_size.1}px",
-            class: "absolute z-10 bg-gradient-to-tr from-cyan-500 to-blue-500",
-            "{pos:?}"
+            z_index: "{z_index}",
+            position: "absolute",
+            onclick: move |_event| {
+                flipping.set(true);
+                moving.set(true);
+            },
+            div {
+                transform_style: "preserve-3d",
+                position: "absolute",
+                width: "100%",
+                height: "100%",
+                class: "{flipped_class} {flipping_class}",
+                onanimationend: move |_event| {
+                    flipped.set(!flipped());
+                    flipping.set(false);
+                    moving.set(false);
+                },
+                div {
+                    width: "100%",
+                    height: "100%",
+                    position: "absolute",
+                    backface_visibility: "hidden",
+                    class: "bg-cover bg-center",
+                    background_image: "url({front_img})",
+                    border_radius: "3.7%",
+                    "{pos:?}"
+                }
+                div {
+                    width: "100%",
+                    height: "100%",
+                    position: "absolute",
+                    backface_visibility: "hidden",
+                    transform: "rotateY(180deg)",
+                    class: "bg-cover bg-center",
+                    background_image: "url({back_img})",
+                    border_radius: "3.7%",
+                    "{pos:?}"
+                }
+            }
         }
     }
 }
 
 #[component]
 fn Deck(mat: Mat, zone: Zone, size: u32) -> Element {
+    let zone = use_signal(|| zone);
+    let mut size = use_signal(|| size);
+
     let card_size = mat.card_size;
-    let pos = match zone {
+    let pos = match zone() {
         Zone::MainDeck => mat.main_deck_pos,
         Zone::Oshi => mat.oshi_pos,
         Zone::CenterStage => mat.center_pos,
@@ -325,12 +339,40 @@ fn Deck(mat: Mat, zone: Zone, size: u32) -> Element {
         Zone::Archive => mat.archive_pos,
         _ => unimplemented!(),
     };
-    let rotate = matches!(zone, Zone::Life | Zone::HoloPower);
+    let rotate = matches!(zone(), Zone::Life | Zone::HoloPower);
 
     let pos = (pos.0 - card_size.0 / 2, pos.1 - card_size.1 / 2);
     let rotate = if rotate { " rotateZ(-90deg)" } else { "" };
 
-    let size_px = size as i32;
+    // TODO use our own images
+    let back_img = match zone() {
+        Zone::MainDeck | Zone::CenterStage | Zone::Collab | Zone::BackStage | Zone::HoloPower => {
+            "https://github.com/GabeJWJ/holoDelta/blob/master/fuda_holoBack.png?raw=true"
+        }
+        Zone::Oshi | Zone::Life | Zone::CheerDeck => {
+            "https://github.com/GabeJWJ/holoDelta/blob/master/cheerBack.png?raw=true"
+        }
+        Zone::Archive => "https://github.com/GabeJWJ/holoDelta/blob/master/hBP01-041.png?raw=true",
+        _ => unimplemented!(),
+    };
+
+    // that step by makes the deck look cleaner
+    let cards = (0..size()).step_by(3).map(|i| {
+        rsx! {
+            div {
+                transform: "translate3d(0px, 0px, {i}px)",
+                width: "{card_size.0}px",
+                height: "{card_size.1}px",
+                z_index: "2",
+                position: "absolute",
+                border_radius: "5%",
+                filter: "drop-shadow(0 1px 1px rgb(0 0 0 / 0.05))",
+                class: "bg-cover bg-center",
+                background_image: "url({back_img})",
+                "{pos:?}"
+            }
+        }
+    });
 
     rsx! {
         div {
@@ -339,54 +381,10 @@ fn Deck(mat: Mat, zone: Zone, size: u32) -> Element {
             width: "{card_size.0}px",
             height: "{card_size.1}px",
             class: "absolute",
-            // bottom
-            div {
-                transform: "translate3d(0px, 0px, 0px)",
-                width: "{card_size.0}px",
-                height: "{card_size.1}px",
-                class: "absolute z-10 bg-gradient-to-tr from-cyan-500 to-blue-500",
-                "{pos:?}"
-            }
-            // top
-            div {
-                transform: "translate3d(0px, 0px, {size_px}px)",
-                width: "{card_size.0}px",
-                height: "{card_size.1}px",
-                class: "absolute z-10 bg-gradient-to-tr from-red-500 to-purple-500",
-                "{pos:?}"
-            }
-            // front
-            div {
-                transform: "translate3d(0px, 0px, 0px) rotateX(90deg)",
-                transform_origin: "top",
-                width: "{card_size.0}px",
-                height: "{size_px}px",
-                class: "absolute z-10 bg-gradient-to-tr from-green-500 to-yellow-500"
-            }
-            // back
-            div {
-                transform: "translate3d(0px, {card_size.1}px, 0px) rotateX(90deg)",
-                transform_origin: "top",
-                width: "{card_size.0}px",
-                height: "{size_px}px",
-                class: "absolute z-10 bg-gradient-to-tr from-green-500 to-yellow-500"
-            }
-            // right side
-            div {
-                transform: "translate3d({card_size.0 - size_px}px, 0px, 0px) rotateY(90deg)",
-                transform_origin: "right",
-                width: "{size_px}px",
-                height: "{card_size.1}px",
-                class: "absolute z-10 bg-gradient-to-tr from-green-500 to-yellow-500"
-            }
-            // left side
-            div {
-                transform: "translate3d(0px, 0px, 0px) rotateY(-90deg)",
-                transform_origin: "left",
-                width: "{size_px}px",
-                height: "{card_size.1}px",
-                class: "absolute z-10 bg-gradient-to-tr from-green-500 to-yellow-500"
-            }
+            onclick: move |_event| {
+                size += 1;
+            },
+            {cards}
         }
     }
 }
