@@ -20,6 +20,7 @@ hocg-fan-web-client = { path = "hocg-fan-web-client", version = "*" }
 
 dialoguer = { version = "0.11.0", features = ["fuzzy-select"] }
 rand = "0.8.5"
+getrandom = { version = "0.2", features = ["js"] }
 enum_dispatch = "0.3.13"
 iter_tools = "0.20.0"
 pretty_assertions = "1.0.0"

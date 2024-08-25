@@ -4,6 +4,7 @@ edition = "2021"
 version.workspace = true
 
 [dependencies]
+hocg-fan-sim = { workspace = true }
 
 dioxus = { version = "0.5", features = ["web", "router"] }
 
