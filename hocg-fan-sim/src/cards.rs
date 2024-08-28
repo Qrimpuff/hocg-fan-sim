@@ -113,6 +113,62 @@ impl GlobalLibrary {
         // TODO limited support
         // TODO if you can't select something, it should check that it's there first in condition
 
+        // DON'T REMOVE YET. NOT BEFORE THE FILES ARE MADE
+        // default condition to always
+        let default_trigger = Trigger::ActivateInMainStep;
+        let default_condition = Condition::True;
+        let default_action = Action::Noop;
+        // let default_damage_mod = DamageModifier::None;
+        for card in self.cards.values_mut() {
+            match card {
+                Card::OshiHoloMember(o) => o.skills.iter_mut().for_each(|s| {
+                    if s.triggers.is_empty() {
+                        s.triggers.push(default_trigger)
+                    }
+                    if s.condition.is_empty() {
+                        s.condition.push(default_condition.clone())
+                    }
+                    if s.effect.is_empty() {
+                        s.effect.push(default_action.clone())
+                    }
+                }),
+                Card::HoloMember(m) => {
+                    m.abilities.iter_mut().for_each(|a| {
+                        if a.condition.is_empty() {
+                            a.condition.push(default_condition.clone())
+                        }
+                        if a.effect.is_empty() {
+                            a.effect.push(default_action.clone())
+                        }
+                    });
+                    m.arts.iter_mut().for_each(|a| {
+                        if a.condition.is_empty() {
+                            a.condition.push(default_condition.clone())
+                        }
+                        if a.effect.is_empty() {
+                            a.effect.push(default_action.clone())
+                        }
+                    })
+                }
+                Card::Support(s) => {
+                    if s.attachment_condition.is_empty() {
+                        s.attachment_condition.push(default_condition.clone())
+                    }
+                    if s.triggers.is_empty() {
+                        s.triggers.push(default_trigger)
+                    }
+                    if s.condition.is_empty() {
+                        s.condition.push(default_condition.clone())
+                    }
+                    if s.effect.is_empty() {
+                        s.effect.push(default_action.clone())
+                    }
+                }
+                Card::Cheer(_) => {} // cheers do not have conditions
+            }
+        }
+        // end of: DON'T REMOVE YET. NOT BEFORE THE FILES ARE MADE
+
         // verify effect serialization consistency (de -> ser -> de)
         fn serialization_round_trip<T>(effect: T) -> crate::card_effects::Result<()>
         where

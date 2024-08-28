@@ -11,7 +11,6 @@ use crate::gameplay::Zone;
 use crate::modifiers::LifeTime;
 use crate::modifiers::ModifierKind;
 use crate::{
-    events::Event,
     gameplay::{self, *},
     modifiers::{self},
 };
@@ -89,16 +88,16 @@ impl CombineEffect for bool {
 
 pub type EvaluateResult<T> = Result<T, GameOutcome>;
 
-pub trait EvaluateEffectMut {
+pub(crate) trait EvaluateEffectMut {
     type Value;
 
-    fn evaluate_with_context_mut(
+    async fn evaluate_with_context_mut(
         &self,
         ctx: &mut EvaluateContext,
         game: &mut Game,
     ) -> EvaluateResult<Self::Value>;
 
-    fn evaluate_with_card_mut(
+    async fn evaluate_with_card_mut(
         &self,
         game: &mut Game,
         card: CardRef,
@@ -109,10 +108,15 @@ pub trait EvaluateEffectMut {
     {
         game.state.event_span.open_card_span(card);
         let value = self
-            .evaluate_with_context_mut(&mut EvaluateContext::with_card(card, &game.state, is_triggered), game);
+            .evaluate_with_context_mut(
+                &mut EvaluateContext::with_card(card, &game.state, is_triggered),
+                game,
+            )
+            .await;
         game.state.event_span.close_card_span(card);
 
-        game.remove_expiring_modifiers(None, modifiers::LifeTime::ThisEffect)?;
+        game.remove_expiring_modifiers(None, modifiers::LifeTime::ThisEffect)
+            .await?;
 
         value
     }
@@ -170,7 +174,7 @@ where
 {
     type Value = V;
 
-    fn evaluate_with_context_mut(
+    async fn evaluate_with_context_mut(
         &self,
         ctx: &mut EvaluateContext,
         game: &mut Game,
@@ -178,9 +182,9 @@ where
         let mut acc: Option<Self::Value> = None;
         for eval in self.iter() {
             acc = if let Some(acc) = acc {
-                Some(acc.combine_effect(eval.evaluate_with_context_mut(ctx, game)?))
+                Some(acc.combine_effect(eval.evaluate_with_context_mut(ctx, game).await?))
             } else {
-                Some(eval.evaluate_with_context_mut(ctx, game)?)
+                Some(eval.evaluate_with_context_mut(ctx, game).await?)
             };
         }
 
@@ -214,7 +218,7 @@ where
 impl EvaluateEffectMut for Action {
     type Value = ();
 
-    fn evaluate_with_context_mut(
+    async fn evaluate_with_context_mut(
         &self,
         ctx: &mut EvaluateContext,
         game: &mut Game,
@@ -227,7 +231,8 @@ impl EvaluateEffectMut for Action {
                     Zone::All,
                     modifier.evaluate_with_context(ctx, &game.state),
                     life_time.evaluate_with_context(ctx, &game.state),
-                )?;
+                )
+                .await?;
             }
             Action::AddModifier(cards, modifier, life_time) => {
                 for card in cards.evaluate_with_context(ctx, &game.state) {
@@ -236,7 +241,8 @@ impl EvaluateEffectMut for Action {
                         card,
                         modifier.evaluate_with_context(ctx, &game.state),
                         life_time.evaluate_with_context(ctx, &game.state),
-                    )?;
+                    )
+                    .await?;
                 }
             }
             Action::AddZoneModifier(zone, modifier, life_time) => {
@@ -247,7 +253,8 @@ impl EvaluateEffectMut for Action {
                     zone,
                     modifier.evaluate_with_context(ctx, &game.state),
                     life_time.evaluate_with_context(ctx, &game.state),
-                )?;
+                )
+                .await?;
             }
             Action::AttachCards(attachments, target) => {
                 let attachments = attachments.evaluate_with_context(ctx, &game.state);
@@ -257,7 +264,8 @@ impl EvaluateEffectMut for Action {
                 }
                 let player = game
                     .player_for_card(*attachments.first().expect("should have at least one card"));
-                game.attach_cards_to_card(ctx.active_card, player, attachments, target)?;
+                game.attach_cards_to_card(ctx.active_card, player, attachments, target)
+                    .await?;
             }
             Action::Draw(amount) => {
                 game.draw_from_main_deck(
@@ -265,11 +273,12 @@ impl EvaluateEffectMut for Action {
                     ctx.active_player
                         .expect("there should be an active player to draw"),
                     amount.evaluate_with_context(ctx, &game.state),
-                )?;
+                )
+                .await?;
             }
             Action::If(condition, actions) => {
                 if condition.evaluate_with_context(ctx, &game.state) {
-                    actions.evaluate_with_context_mut(ctx, game)?;
+                    Box::pin(actions.evaluate_with_context_mut(ctx, game)).await?;
                 }
             }
             Action::LetCardReferences(let_card) => {
@@ -284,7 +293,7 @@ impl EvaluateEffectMut for Action {
                 ctx.variables.insert(let_cond.0 .0.clone(), value);
             }
             Action::LetSelect(let_select) => {
-                let value = let_select.1.evaluate_with_context_mut(ctx, game)?;
+                let value = let_select.1.evaluate_with_context_mut(ctx, game).await?;
                 // dbg!(&let_select.0, &value, &ctx);
                 ctx.variables.insert(let_select.0 .0.clone(), value);
             }
@@ -299,7 +308,8 @@ impl EvaluateEffectMut for Action {
                 let map: HashMap<(Player, Zone), Vec<CardRef>> =
                     game.group_by_player_and_zone(cards);
                 for ((player, zone), cards) in map {
-                    game.reveal_cards(ctx.active_card, player, zone, &cards)?;
+                    game.reveal_cards(ctx.active_card, player, zone, &cards)
+                        .await?;
                 }
             }
             Action::SendTo(to_zone, cards) => {
@@ -313,7 +323,8 @@ impl EvaluateEffectMut for Action {
                         cards,
                         to_zone,
                         to_zone.default_add_location(),
-                    )?;
+                    )
+                    .await?;
                 }
             }
             Action::SendToBottom(to_zone, cards) => {
@@ -327,7 +338,8 @@ impl EvaluateEffectMut for Action {
                         cards,
                         to_zone,
                         ZoneAddLocation::Bottom,
-                    )?;
+                    )
+                    .await?;
                 }
             }
             Action::SendToTop(to_zone, cards) => {
@@ -341,12 +353,14 @@ impl EvaluateEffectMut for Action {
                         cards,
                         to_zone,
                         ZoneAddLocation::Top,
-                    )?;
+                    )
+                    .await?;
                 }
             }
             Action::Shuffle(zone) => {
                 let (player, zone) = zone.evaluate_with_context(ctx, &game.state);
-                game.send_event(ctx.active_card, Shuffle { player, zone }.into())?;
+                game.send_event(ctx.active_card, Shuffle { player, zone }.into())
+                    .await?;
             }
         }
         Ok(())
@@ -565,7 +579,7 @@ impl EvaluateEffect for Condition {
 impl EvaluateEffectMut for super::LetValue {
     type Value = LetValue;
 
-    fn evaluate_with_context_mut(
+    async fn evaluate_with_context_mut(
         &self,
         ctx: &mut EvaluateContext,
         game: &mut Game,
@@ -574,25 +588,27 @@ impl EvaluateEffectMut for super::LetValue {
             super::LetValue::OptionalActivate => {
                 let player = ctx.active_player.expect("there should be an active player");
                 Ok(LetValue::Condition(
-                    game.prompt_for_optional_activate(player).into(),
+                    game.prompt_for_optional_activate(player).await.into(),
                 ))
             }
             super::LetValue::RollDice => {
                 let player = ctx.active_player.expect("there should be an active player");
-                let number = game.roll_dice(ctx.active_card, player)?;
+                let number = game.roll_dice(ctx.active_card, player).await?;
                 Ok(LetValue::Number(number as usize))
             }
             super::LetValue::SelectAny(cards, condition) => {
                 let player = ctx.active_player.expect("there should be an active player");
                 let cards = cards.evaluate_with_context(ctx, &game.state);
-                let choice = game.prompt_for_select(
-                    player,
-                    cards.clone(),
-                    condition.as_ref().clone(),
-                    ctx,
-                    0,
-                    usize::MAX,
-                );
+                let choice = game
+                    .prompt_for_select(
+                        player,
+                        cards.clone(),
+                        condition.as_ref().clone(),
+                        ctx,
+                        0,
+                        usize::MAX,
+                    )
+                    .await;
                 let leftovers = cards
                     .into_iter()
                     .filter(|c| !choice.contains(c))
@@ -604,14 +620,9 @@ impl EvaluateEffectMut for super::LetValue {
             super::LetValue::SelectOne(cards, condition) => {
                 let player = ctx.active_player.expect("there should be an active player");
                 let cards = cards.evaluate_with_context(ctx, &game.state);
-                let choice = game.prompt_for_select(
-                    player,
-                    cards.clone(),
-                    condition.as_ref().clone(),
-                    ctx,
-                    1,
-                    1,
-                );
+                let choice = game
+                    .prompt_for_select(player, cards.clone(), condition.as_ref().clone(), ctx, 1, 1)
+                    .await;
                 let leftovers = cards
                     .into_iter()
                     .filter(|c| !choice.contains(c))
@@ -624,20 +635,24 @@ impl EvaluateEffectMut for super::LetValue {
                 let player = ctx.active_player.expect("there should be an active player");
                 let min = min.evaluate_with_context(ctx, &game.state);
                 let max = max.evaluate_with_context(ctx, &game.state);
-                Ok(LetValue::Number(game.prompt_for_number(player, min, max)))
+                Ok(LetValue::Number(
+                    game.prompt_for_number(player, min, max).await,
+                ))
             }
             super::LetValue::SelectUpTo(amount, cards, condition) => {
                 let player = ctx.active_player.expect("there should be an active player");
                 let amount = amount.evaluate_with_context(ctx, &game.state);
                 let cards = cards.evaluate_with_context(ctx, &game.state);
-                let choice = game.prompt_for_select(
-                    player,
-                    cards.clone(),
-                    condition.as_ref().clone(),
-                    ctx,
-                    0,
-                    amount,
-                );
+                let choice = game
+                    .prompt_for_select(
+                        player,
+                        cards.clone(),
+                        condition.as_ref().clone(),
+                        ctx,
+                        0,
+                        amount,
+                    )
+                    .await;
                 let leftovers = cards
                     .into_iter()
                     .filter(|c| !choice.contains(c))

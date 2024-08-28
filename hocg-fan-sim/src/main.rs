@@ -1,9 +1,7 @@
 #![allow(dead_code)]
 
-use std::thread;
-use std::{env, iter, sync::mpsc};
+use std::{env, iter};
 
-use hocg_fan_sim::card_effects::{Action, ParseEffect};
 use hocg_fan_sim::client::DefaultEventHandler;
 use hocg_fan_sim::gameplay::Game;
 use hocg_fan_sim::prompters::RandomPrompter;
@@ -15,7 +13,8 @@ use tracing_subscriber::{fmt::time::LocalTime, EnvFilter};
 
 const TEST_TEXT: &str = "for active_holo buff more_def 1 next_turn";
 
-fn main() {
+#[tokio::main]
+async fn main() {
     env::set_var("RUST_BACKTRACE", "1");
     env::set_var("RUST_LOG", "DEBUG");
 
@@ -45,9 +44,13 @@ fn main() {
         shuffle main_deck
     ";
 
-
     // let c = dbg!(_cond.parse_effect::<Vec<Action>>().expect("IN MAIN"));
-    let toml = toml::to_string(&test_library().lookup_card(&"hSD01-002".to_string()).unwrap()).unwrap();
+    let toml = toml::to_string(
+        &test_library()
+            .lookup_card(&"hSD01-002".to_string())
+            .unwrap(),
+    )
+    .unwrap();
     println!("{toml}");
 
     let main_deck_hsd01 = Vec::from_iter(
@@ -89,10 +92,10 @@ fn main() {
         cheer_deck: cheer_deck_hsd01,
     };
 
-    let p1_channel_1 = mpsc::channel();
-    let p1_channel_2 = mpsc::channel();
-    let p2_channel_1 = mpsc::channel();
-    let p2_channel_2 = mpsc::channel();
+    let p1_channel_1 = async_channel::bounded(10);
+    let p1_channel_2 = async_channel::bounded(10);
+    let p2_channel_1 = async_channel::bounded(10);
+    let p2_channel_2 = async_channel::bounded(10);
 
     let mut game = Game::setup(
         &player_1,
@@ -102,29 +105,25 @@ fn main() {
     );
 
     // Player 1
-    let mut p1_client = Client::new(
+    let p1_client = Client::new(
         (p1_channel_2.0, p1_channel_1.1),
         DefaultEventHandler::new(),
         RandomPrompter::new(),
     );
-    thread::spawn(move || {
-        p1_client.receive_requests();
-    });
+    tokio::spawn(p1_client.receive_requests());
 
     // Player 2
-    let mut p2_client = Client::new(
+    let p2_client = Client::new(
         (p2_channel_2.0, p2_channel_1.1),
         DefaultEventHandler::new(),
         RandomPrompter::new(),
     );
-    thread::spawn(move || {
-        p2_client.receive_requests();
-    });
+    tokio::spawn(p2_client.receive_requests());
 
     // println!("{:#?}", &game);
-    game.start_game().unwrap();
+    game.start_game().await.unwrap();
     // println!("{:#?}", &game);
 
-    while game.next_step().is_ok() {}
+    while game.next_step().await.is_ok() {}
     println!("{:#?}", &game);
 }

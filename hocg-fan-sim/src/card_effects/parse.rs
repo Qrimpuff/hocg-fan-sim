@@ -1,5 +1,4 @@
 use iter_tools::Itertools;
-use serde::{Serialize, Serializer};
 use tracing::error;
 
 use super::error::*;

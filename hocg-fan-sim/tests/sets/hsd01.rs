@@ -12,9 +12,9 @@ use tracing_subscriber::{fmt::time::LocalTime, EnvFilter};
 
 use crate::{setup_test_game, GameStateBuilder, TestGameBoard};
 
-#[test]
+#[tokio::test]
 /// hSD01-001 - Tokino Sora (Oshi)
-fn hsd01_001() {
+async fn hsd01_001() {
     // // --------------- setup logs ---------------------
     // env::set_var("RUST_BACKTRACE", "1");
     // env::set_var("RUST_LOG", "DEBUG");
@@ -73,7 +73,7 @@ fn hsd01_001() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // main step
-    game.next_step().unwrap();
+    game.next_step().await.unwrap();
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -136,9 +136,9 @@ fn hsd01_001() {
     assert_eq!(expected_state, game.state);
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-002 - AZKi (Oshi)
-fn hsd01_002() {
+async fn hsd01_002() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-002".into()),
         center_stage: Some("hSD01-003".into()),
@@ -182,7 +182,7 @@ fn hsd01_002() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // main step
-    game.next_step().unwrap();
+    game.next_step().await.unwrap();
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -249,9 +249,9 @@ fn hsd01_002() {
     assert_eq!(expected_state, game.state);
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-002 - AZKi (Oshi)
-fn hsd01_002_not_enough_holo_power() {
+async fn hsd01_002_not_enough_holo_power() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-002".into()),
         center_stage: Some("hSD01-003".into()),
@@ -281,7 +281,7 @@ fn hsd01_002_not_enough_holo_power() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // main step
-    game.next_step().unwrap();
+    game.next_step().await.unwrap();
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -318,15 +318,15 @@ fn hsd01_002_not_enough_holo_power() {
     assert_eq!(expected_state, game.state);
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-003 - Tokino Sora (Debut)
-fn hsd01_003() {
+async fn hsd01_003() {
     // no need for testing: vanilla card
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-004 - Tokino Sora (Debut)
-fn hsd01_004() {
+async fn hsd01_004() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-001".into()),
         center_stage: Some("hSD01-004".into()),
@@ -364,9 +364,9 @@ fn hsd01_004() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // main step
-    game.next_step().unwrap();
+    game.next_step().await.unwrap();
     // performance step
-    game.next_step().unwrap();
+    game.next_step().await.unwrap();
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -415,15 +415,15 @@ fn hsd01_004() {
     assert_eq!(expected_state, game.state);
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-005 - Tokino Sora (First)
-fn hsd01_005() {
+async fn hsd01_005() {
     // no need for testing: vanilla card
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-006 - Tokino Sora (First)
-fn hsd01_006_without_azki() {
+async fn hsd01_006_without_azki() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-001".into()),
         center_stage: Some("hSD01-006".into()),
@@ -456,7 +456,7 @@ fn hsd01_006_without_azki() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // performance step
-    game.next_step().unwrap();
+    game.next_step().await.unwrap();
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -479,9 +479,9 @@ fn hsd01_006_without_azki() {
 
     assert_eq!(expected_state, game.state);
 }
-#[test]
+#[tokio::test]
 /// hSD01-006 - Tokino Sora (First)
-fn hsd01_006_with_azki() {
+async fn hsd01_006_with_azki() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-001".into()),
         center_stage: Some("hSD01-006".into()),
@@ -515,7 +515,7 @@ fn hsd01_006_with_azki() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // performance step
-    game.next_step().unwrap();
+    game.next_step().await.unwrap();
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -539,9 +539,9 @@ fn hsd01_006_with_azki() {
     assert_eq!(expected_state, game.state);
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-007 - IRyS (Debut)
-fn hsd01_007() {
+async fn hsd01_007() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-001".into()),
         center_stage: Some("hSD01-006".into()),
@@ -573,7 +573,7 @@ fn hsd01_007() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // performance step
-    game.next_step().unwrap();
+    game.next_step().await.unwrap();
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -600,15 +600,15 @@ fn hsd01_007() {
     assert_eq!(expected_state, game.state);
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-008 - AZKi (Debut)
-fn hsd01_008() {
+async fn hsd01_008() {
     // no need for testing: vanilla card
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-009 - AZKi (Debut)
-fn hsd01_009() {
+async fn hsd01_009() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-002".into()),
         center_stage: Some("hSD01-006".into()),
@@ -641,7 +641,7 @@ fn hsd01_009() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // performance step
-    game.next_step().unwrap();
+    game.next_step().await.unwrap();
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -675,15 +675,15 @@ fn hsd01_009() {
     assert_eq!(expected_state, game.state);
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-010 - AZKi (First)
-fn hsd01_010() {
+async fn hsd01_010() {
     // no need for testing: vanilla card
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-011 - AZKi (Second)
-fn hsd01_011_art_1() {
+async fn hsd01_011_art_1() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-001".into()),
         center_stage: Some("hSD01-011".into()),
@@ -719,7 +719,7 @@ fn hsd01_011_art_1() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // performance step
-    game.next_step().unwrap();
+    game.next_step().await.unwrap();
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -748,9 +748,9 @@ fn hsd01_011_art_1() {
     assert_eq!(expected_state, game.state);
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-011 - AZKi (Second)
-fn hsd01_011_art_2() {
+async fn hsd01_011_art_2() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-002".into()),
         center_stage: Some("hSD01-011".into()),
@@ -789,7 +789,7 @@ fn hsd01_011_art_2() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // performance step
-    let _ = game.next_step();
+    let _ = game.next_step().await;
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -824,9 +824,9 @@ fn hsd01_011_art_2() {
     assert_eq!(expected_state, game.state);
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-012 - Airani Iofifteen (Debut)
-fn hsd01_012() {
+async fn hsd01_012() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-001".into()),
         center_stage: Some("hSD01-006".into()),
@@ -856,7 +856,7 @@ fn hsd01_012() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // performance step
-    game.next_step().unwrap();
+    game.next_step().await.unwrap();
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -886,9 +886,9 @@ fn hsd01_012() {
     assert_eq!(expected_state, game.state);
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-013 - SorAZ (First)
-fn hsd01_013_odd() {
+async fn hsd01_013_odd() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-002".into()),
         center_stage: Some("hSD01-013".into()),
@@ -929,7 +929,7 @@ fn hsd01_013_odd() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // performance step
-    let _ = game.next_step();
+    let _ = game.next_step().await;
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -969,9 +969,9 @@ fn hsd01_013_odd() {
     assert_eq!(expected_state, game.state);
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-013 - SorAZ (First)
-fn hsd01_013_even() {
+async fn hsd01_013_even() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-002".into()),
         center_stage: Some("hSD01-013".into()),
@@ -1012,7 +1012,7 @@ fn hsd01_013_even() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // performance step
-    let _ = game.next_step();
+    let _ = game.next_step().await;
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -1049,15 +1049,15 @@ fn hsd01_013_even() {
     assert_eq!(expected_state, game.state);
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-014 - Amane Kanata (Spot)
-fn hsd01_014() {
+async fn hsd01_014() {
     // no need for testing: vanilla card
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-015 - Hakui Koyori (Spot)
-fn hsd01_015_sora() {
+async fn hsd01_015_sora() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-001".into()),
         center_stage: Some("hSD01-006".into()),
@@ -1087,7 +1087,7 @@ fn hsd01_015_sora() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // performance step
-    game.next_step().unwrap();
+    game.next_step().await.unwrap();
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -1115,9 +1115,9 @@ fn hsd01_015_sora() {
     assert_eq!(expected_state, game.state);
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-015 - Hakui Koyori (Spot)
-fn hsd01_015_azki() {
+async fn hsd01_015_azki() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-001".into()),
         center_stage: Some("hSD01-009".into()),
@@ -1147,7 +1147,7 @@ fn hsd01_015_azki() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // performance step
-    game.next_step().unwrap();
+    game.next_step().await.unwrap();
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -1178,9 +1178,9 @@ fn hsd01_015_azki() {
 
     assert_eq!(expected_state, game.state);
 }
-#[test]
+#[tokio::test]
 /// hSD01-015 - Hakui Koyori (Spot)
-fn hsd01_015_soraz() {
+async fn hsd01_015_soraz() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-001".into()),
         center_stage: Some("hSD01-013".into()),
@@ -1210,7 +1210,7 @@ fn hsd01_015_soraz() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // performance step
-    game.next_step().unwrap();
+    game.next_step().await.unwrap();
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -1243,9 +1243,9 @@ fn hsd01_015_soraz() {
     assert_eq!(expected_state, game.state);
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-016 - Harusaki Nodoka (Staff)
-fn hsd01_016() {
+async fn hsd01_016() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-001".into()),
         center_stage: Some("hSD01-013".into()),
@@ -1280,7 +1280,7 @@ fn hsd01_016() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // performance step
-    game.next_step().unwrap();
+    game.next_step().await.unwrap();
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -1306,9 +1306,9 @@ fn hsd01_016() {
     assert_eq!(expected_state, game.state);
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-017 - Mane-chan (Staff)
-fn hsd01_017() {
+async fn hsd01_017() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-001".into()),
         center_stage: Some("hSD01-013".into()),
@@ -1349,7 +1349,7 @@ fn hsd01_017() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // performance step
-    game.next_step().unwrap();
+    game.next_step().await.unwrap();
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -1382,9 +1382,9 @@ fn hsd01_017() {
     assert_eq!(expected_state, game.state);
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-018 - Second PC (Item)
-fn hsd01_018() {
+async fn hsd01_018() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-001".into()),
         center_stage: Some("hSD01-013".into()),
@@ -1428,7 +1428,7 @@ fn hsd01_018() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // performance step
-    game.next_step().unwrap();
+    game.next_step().await.unwrap();
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -1455,9 +1455,9 @@ fn hsd01_018() {
     assert_eq!(expected_state, game.state);
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-019 - Amazing PC (Item)
-fn hsd01_019() {
+async fn hsd01_019() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-001".into()),
         center_stage: Some("hSD01-013".into()),
@@ -1502,7 +1502,7 @@ fn hsd01_019() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // performance step
-    game.next_step().unwrap();
+    game.next_step().await.unwrap();
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -1535,9 +1535,9 @@ fn hsd01_019() {
     assert_eq!(expected_state, game.state);
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-020 - hololive Fan Circle (Event)
-fn hsd01_020() {
+async fn hsd01_020() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-002".into()),
         center_stage: Some("hSD01-013".into()),
@@ -1570,7 +1570,7 @@ fn hsd01_020() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // performance step
-    game.next_step().unwrap();
+    game.next_step().await.unwrap();
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);
@@ -1587,9 +1587,9 @@ fn hsd01_020() {
     assert_eq!(expected_state, game.state);
 }
 
-#[test]
+#[tokio::test]
 /// hSD01-021 - First Gravity (Event)
-fn hsd01_021() {
+async fn hsd01_021() {
     let p1 = TestGameBoard {
         oshi: Some("hSD01-001".into()),
         center_stage: Some("hSD01-013".into()),
@@ -1633,7 +1633,7 @@ fn hsd01_021() {
     let mut game = setup_test_game(state.clone(), p1_p, p2_p);
 
     // performance step
-    game.next_step().unwrap();
+    game.next_step().await.unwrap();
 
     // to check the changes, and apply them as checks below
     // assert_eq!(state, game.state);

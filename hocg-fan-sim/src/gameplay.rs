@@ -1,7 +1,6 @@
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::num::NonZeroU16;
-use std::sync::mpsc::{Receiver, Sender};
 use std::{collections::HashMap, fmt::Debug};
 
 use crate::card_effects::evaluate::{EvaluateContext, EvaluateEffect};
@@ -14,6 +13,7 @@ use crate::temp::test_library;
 
 use super::cards::*;
 use super::modifiers::*;
+use async_channel::{Receiver, Sender};
 use debug_ignore::DebugIgnore;
 use iter_tools::Itertools;
 use rand::seq::SliceRandom;
@@ -226,11 +226,11 @@ impl Game {
             .any(|m| m.level == HoloMemberLevel::Debut)
     }
 
-    pub fn handle_mulligan(&mut self, player: Player) -> GameResult {
+    pub async fn handle_mulligan(&mut self, player: Player) -> GameResult {
         // - draw 7 cards from main deck
         let mut player_draw = STARTING_HAND_SIZE;
         println!("player {player:?} draws {player_draw}");
-        self.draw_from_main_deck(None, player, player_draw)?;
+        self.draw_from_main_deck(None, player, player_draw).await?;
 
         //   - can mulligan once for 7 cards, then any forced is -1
         //     - at 0 lose the game
@@ -238,7 +238,7 @@ impl Game {
             let voluntary = player_draw == STARTING_HAND_SIZE;
             let force_mulligan = self.need_mulligan(self.board(player));
             println!("prompt mulligan: {player:?}");
-            let mulligan = force_mulligan || voluntary && self.prompt_for_mulligan(player);
+            let mulligan = force_mulligan || voluntary && self.prompt_for_mulligan(player).await;
             if !mulligan {
                 break;
             }
@@ -250,14 +250,15 @@ impl Game {
 
             if force_mulligan && !voluntary {
                 // reveal hand
-                self.reveal_all_cards_in_zone(None, player, Zone::Hand)?;
+                self.reveal_all_cards_in_zone(None, player, Zone::Hand)
+                    .await?;
             }
 
-            self.send_full_hand_to_main_deck(None, player)?;
-            self.shuffle_main_deck(None, player)?;
+            self.send_full_hand_to_main_deck(None, player).await?;
+            self.shuffle_main_deck(None, player).await?;
 
             println!("player {player:?} draws {player_draw}");
-            self.draw_from_main_deck(None, player, player_draw)?;
+            self.draw_from_main_deck(None, player, player_draw).await?;
 
             player_draw -= 1;
             if player_draw == 0 {
@@ -268,13 +269,13 @@ impl Game {
         if player_draw == 0 {
             self.state.active_player = player;
             println!("player {player:?} cannot draw anymore card");
-            self.lose_game(GameOverReason::MulliganToZeroCards)?;
+            self.lose_game(GameOverReason::MulliganToZeroCards).await?;
         }
 
         Ok(GameContinue)
     }
 
-    pub fn start_game(&mut self) -> GameResult {
+    pub async fn start_game(&mut self) -> GameResult {
         debug!("card_map: {:?}", self.state.card_map);
 
         // TODO send the mapping gradually through out the game
@@ -287,6 +288,7 @@ impl Game {
                     card_map: card_map.clone(),
                 }),
             }))
+            .await
             .unwrap();
         self.client(self.state.active_player.opponent())
             .0
@@ -294,18 +296,20 @@ impl Game {
                 origin: None,
                 kind: EventKind::CardMapping(CardMapping { card_map }),
             }))
+            .await
             .unwrap();
 
         // - game setup
-        self.setup_game(None)?;
+        self.setup_game(None).await?;
 
         // - game start
-        self.report_start_game(None, self.state.active_player)?;
+        self.report_start_game(None, self.state.active_player)
+            .await?;
 
         Ok(GameContinue)
     }
 
-    pub fn next_step(&mut self) -> GameResult {
+    pub async fn next_step(&mut self) -> GameResult {
         if let Some(game_outcome) = self.state.game_outcome {
             return Err(game_outcome);
         }
@@ -333,124 +337,136 @@ impl Game {
 
         // start turn
         if self.state.active_step == Step::Reset {
-            self.start_turn()?;
+            self.start_turn().await?;
         }
 
         // skip the current step, used to skip the first performance of the game
         if self.player_has_modifier(self.state.active_player, SkipStep(self.state.active_step)) {
             // don't skip end turn
             if self.state.active_step == Step::End {
-                return self.end_turn();
+                return self.end_turn().await;
             } else {
                 return Ok(GameContinue);
             }
         }
 
         println!("- active step: {:?}", self.state.active_step);
-        self.report_enter_step(None, self.state.active_player, self.state.active_step)?;
+        self.report_enter_step(None, self.state.active_player, self.state.active_step)
+            .await?;
 
         match self.state.active_step {
             Step::Setup => panic!("should not setup more than once"),
-            Step::Reset => self.reset_step(),
-            Step::Draw => self.draw_step(),
-            Step::Cheer => self.cheer_step(),
-            Step::Main => self.main_step(),
-            Step::Performance => self.performance_step(),
-            Step::End => self.end_step(),
+            Step::Reset => self.reset_step().await,
+            Step::Draw => self.draw_step().await,
+            Step::Cheer => self.cheer_step().await,
+            Step::Main => self.main_step().await,
+            Step::Performance => self.performance_step().await,
+            Step::End => self.end_step().await,
             Step::GameOver => {
                 // already returned above
                 return Err(self.state.game_outcome.expect("there should be an outcome"));
             }
         }?;
 
-        self.report_exit_step(None, self.state.active_player, self.state.active_step)?;
+        self.report_exit_step(None, self.state.active_player, self.state.active_step)
+            .await?;
 
         // end turn
         if self.state.active_step == Step::End {
-            self.end_turn()?;
+            self.end_turn().await?;
         }
 
         Ok(GameContinue)
     }
 
-    pub fn start_turn(&mut self) -> GameResult {
+    pub async fn start_turn(&mut self) -> GameResult {
         self.state.turn_number += 1;
 
         println!("active player: {:?}", self.state.active_player);
-        self.report_start_turn(None, self.state.active_player)?;
+        self.report_start_turn(None, self.state.active_player)
+            .await?;
 
         Ok(GameContinue)
     }
 
-    pub fn end_turn(&mut self) -> GameResult {
-        self.report_end_turn(None, self.state.active_player)?;
+    pub async fn end_turn(&mut self) -> GameResult {
+        self.report_end_turn(None, self.state.active_player).await?;
 
         Ok(GameContinue)
     }
 
-    pub fn reset_step(&mut self) -> GameResult {
+    pub async fn reset_step(&mut self) -> GameResult {
         // - all members from rest to active
         for mem in self.active_board().stage().collect_vec() {
-            self.remove_all_modifiers(None, mem, Resting)?;
+            self.remove_all_modifiers(None, mem, Resting).await?;
         }
 
         // - collab to back stage in rest
         if let Some(mem) = self.active_board().collab {
-            self.add_modifier(None, mem, Resting, LifeTime::UntilRemoved)?;
-            self.send_from_collab_to_back_stage(None, self.state.active_player, mem)?;
+            self.add_modifier(None, mem, Resting, LifeTime::UntilRemoved)
+                .await?;
+            self.send_from_collab_to_back_stage(None, self.state.active_player, mem)
+                .await?;
         }
         // - if no center, back stage to center
         if self.active_board().center_stage.is_none() && !self.active_board().back_stage.is_empty()
         {
             println!("prompt new center member");
             // TODO request (intent)
-            let back = self.prompt_for_back_stage_to_center(self.state.active_player, false);
-            self.send_from_back_stage_to_center_stage(None, self.state.active_player, back)?;
+            let back = self
+                .prompt_for_back_stage_to_center(self.state.active_player, false)
+                .await;
+            self.send_from_back_stage_to_center_stage(None, self.state.active_player, back)
+                .await?;
         }
 
         Ok(GameContinue)
     }
 
-    pub fn draw_step(&mut self) -> GameResult {
+    pub async fn draw_step(&mut self) -> GameResult {
         // - deck is 0 on draw step
         if self.active_board().main_deck.count() == 0 {
             println!(
                 "player {:?} has no card in their main deck",
                 self.state.active_player
             );
-            return self.lose_game(GameOverReason::EmptyDeckInDrawStep);
+            return self.lose_game(GameOverReason::EmptyDeckInDrawStep).await;
         }
 
         // - draw 1 card from main deck
-        self.draw_from_main_deck(None, self.state.active_player, 1)?;
+        self.draw_from_main_deck(None, self.state.active_player, 1)
+            .await?;
 
         Ok(GameContinue)
     }
 
-    pub fn cheer_step(&mut self) -> GameResult {
+    pub async fn cheer_step(&mut self) -> GameResult {
         // - draw 1 card from cheer deck, attach it
         // TODO request (intent) select member
-        self.attach_cheers_from_zone(None, self.state.active_player, Zone::CheerDeck, 1)?;
+        self.attach_cheers_from_zone(None, self.state.active_player, Zone::CheerDeck, 1)
+            .await?;
 
         Ok(GameContinue)
     }
 
-    pub fn main_step(&mut self) -> GameResult {
+    pub async fn main_step(&mut self) -> GameResult {
         loop {
             println!("prompt main step action");
             println!("{} cards in hand", self.active_board().hand().count());
 
             // TODO request (intent) main action, all possible actions
-            let action = self.prompt_for_main_action(self.state.active_player);
+            let action = self.prompt_for_main_action(self.state.active_player).await;
             debug!("ACTION = {action:?}");
             match action {
                 MainStepAction::BackStageMember(card) => {
                     println!("- action: Back stage member");
                     // - place debut member on back stage
-                    self.send_from_hand_to_back_stage(None, self.state.active_player, vec![card])?;
+                    self.send_from_hand_to_back_stage(None, self.state.active_player, vec![card])
+                        .await?;
 
                     // cannot bloom member you just played
-                    self.add_modifier(None, card, PreventBloom, LifeTime::ThisTurn)?;
+                    self.add_modifier(None, card, PreventBloom, LifeTime::ThisTurn)
+                        .await?;
 
                     // TODO maybe register for any abilities that could trigger?
                     // TODO remove the registration once they leave the board?
@@ -461,22 +477,25 @@ impl Game {
                     //   - bloom effect
                     //   - can't bloom on same turn as placed
                     // TODO request bloom target (intent)
-                    let card = self.prompt_for_bloom(self.state.active_player, bloom);
-                    self.bloom_holo_member(None, self.state.active_player, bloom, card)?;
+                    let card = self.prompt_for_bloom(self.state.active_player, bloom).await;
+                    self.bloom_holo_member(None, self.state.active_player, bloom, card)
+                        .await?;
                 }
                 MainStepAction::UseSupportCard(card) => {
                     println!("- action: Use support card");
                     // - use support card
                     //   - only one limited per turn
                     //   - otherwise unlimited
-                    self.use_support_card(None, self.state.active_player, card)?;
+                    self.use_support_card(None, self.state.active_player, card)
+                        .await?;
                 }
                 MainStepAction::CollabMember(card) => {
                     println!("- action: Collab member");
                     // - put back stage member in collab
                     //   - can be done on first turn?
                     //   - draw down card from deck into power zone
-                    self.send_from_back_stage_to_collab(None, self.state.active_player, card)?;
+                    self.send_from_back_stage_to_collab(None, self.state.active_player, card)
+                        .await?;
                 }
                 MainStepAction::BatonPass(card) => {
                     println!("- action: Baton pass");
@@ -492,21 +511,25 @@ impl Game {
                     // only center stage can baton pass
                     assert_eq!(center, card);
                     // TODO request (intent) select back stage member
-                    let back = self.prompt_for_back_stage_to_center(self.state.active_player, true);
+                    let back = self
+                        .prompt_for_back_stage_to_center(self.state.active_player, true)
+                        .await;
                     // swap members
                     self.baton_pass_center_stage_to_back_stage(
                         None,
                         self.state.active_player,
                         center,
                         back,
-                    )?;
+                    )
+                    .await?;
                 }
                 MainStepAction::UseOshiSkill(card, i) => {
                     println!("- action: Use skill");
                     // - use oshi skill
                     //   - oshi power uses card in power zone
                     //   - once per turn / once per game
-                    self.use_oshi_skill(None, self.state.active_player, card, i)?;
+                    self.use_oshi_skill(None, self.state.active_player, card, i)
+                        .await?;
                 }
                 MainStepAction::Done => {
                     println!("- action: Done");
@@ -520,7 +543,7 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub fn performance_step(&mut self) -> GameResult {
+    pub async fn performance_step(&mut self) -> GameResult {
         loop {
             // TODO request (intent) select art
             // TODO request (intent) select target, can be preloaded
@@ -551,7 +574,7 @@ impl Game {
             //     }
             // }
 
-            let action = self.prompt_for_art_action(self.state.active_player);
+            let action = self.prompt_for_art_action(self.state.active_player).await;
             debug!("ACTION = {action:?}");
             match action {
                 PerformanceStepAction::UseArt {
@@ -560,7 +583,8 @@ impl Game {
                     target,
                 } => {
                     println!("- action: Use art");
-                    self.perform_art(None, self.state.active_player, card, art_idx, Some(target))?;
+                    self.perform_art(None, self.state.active_player, card, art_idx, Some(target))
+                        .await?;
                 }
                 PerformanceStepAction::Done => {
                     println!("- action: Done");
@@ -572,7 +596,7 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub fn end_step(&mut self) -> GameResult {
+    pub async fn end_step(&mut self) -> GameResult {
         // - any end step effect
 
         // - if no center, back stage to center
@@ -580,14 +604,17 @@ impl Game {
         {
             println!("prompt new center member");
             // TODO request (intent)
-            let back = self.prompt_for_back_stage_to_center(self.state.active_player, false);
-            self.send_from_back_stage_to_center_stage(None, self.state.active_player, back)?;
+            let back = self
+                .prompt_for_back_stage_to_center(self.state.active_player, false)
+                .await;
+            self.send_from_back_stage_to_center_stage(None, self.state.active_player, back)
+                .await?;
         }
 
         Ok(GameContinue)
     }
 
-    pub fn win_game(&mut self, reason: GameOverReason) -> GameResult {
+    pub async fn win_game(&mut self, reason: GameOverReason) -> GameResult {
         match self.state.active_player {
             Player::One => println!("player 1 wins"),
             Player::Two => println!("player 2 wins"),
@@ -598,20 +625,20 @@ impl Game {
             winning_player: Some(self.state.active_player),
             reason,
         };
-        self.report_game_over(None, game_outcome)?;
+        self.report_game_over(None, game_outcome).await?;
 
         Err(game_outcome)
     }
-    pub fn lose_game(&mut self, reason: GameOverReason) -> GameResult {
+    pub async fn lose_game(&mut self, reason: GameOverReason) -> GameResult {
         self.state.active_player = match self.state.active_player {
             Player::One => Player::Two,
             Player::Two => Player::One,
             _ => unreachable!("both players cannot be active at the same time"),
         };
-        self.win_game(reason)
+        self.win_game(reason).await
     }
 
-    pub fn check_loss_conditions(&mut self) -> GameResult {
+    pub async fn check_loss_conditions(&mut self) -> GameResult {
         // cannot lose in setup, except from mulligan
         if self.state.active_step == Step::Setup {
             return Ok(GameContinue);
@@ -641,13 +668,13 @@ impl Game {
 
         if let Some(lose_player) = loss {
             self.state.active_player = lose_player.0;
-            return self.lose_game(lose_player.1);
+            return self.lose_game(lose_player.1).await;
         }
 
         Ok(GameContinue)
     }
 
-    pub fn prompt_for_rps(&mut self, player: Player) -> Rps {
+    pub async fn prompt_for_rps(&mut self, player: Player) -> Rps {
         // self.prompter.prompt_choice_rps(
         //     "choose rock, paper or scissor:",
         //     vec![Rps::Rock, Rps::Paper, Rps::Scissor],
@@ -658,8 +685,9 @@ impl Game {
                 player,
                 select_rps: vec![Rps::Rock, Rps::Paper, Rps::Scissor],
             }))
+            .await
             .unwrap();
-        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().await.unwrap();
         let choice = match resp {
             IntentResponse::Rps {
                 player: resp_player,
@@ -677,7 +705,7 @@ impl Game {
         choice
     }
 
-    pub fn prompt_for_mulligan(&mut self, player: Player) -> bool {
+    pub async fn prompt_for_mulligan(&mut self, player: Player) -> bool {
         // self.prompter
         //     .prompt_choice("do you want to mulligan?", vec!["Yes", "No"])
         //     == "Yes"
@@ -688,8 +716,9 @@ impl Game {
                 player,
                 select_yes_no: vec![true, false],
             }))
+            .await
             .unwrap();
-        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().await.unwrap();
         let choice = match resp {
             IntentResponse::Mulligan {
                 player: resp_player,
@@ -707,7 +736,7 @@ impl Game {
         choice
     }
 
-    pub fn prompt_for_first_debut(&mut self, player: Player) -> CardRef {
+    pub async fn prompt_for_first_debut(&mut self, player: Player) -> CardRef {
         // TODO extract that filtering to a reusable function
         let hand = self.board(player).hand().collect_vec();
         let debuts: Vec<_> = hand
@@ -737,8 +766,9 @@ impl Game {
                     max_amount: 1,
                 },
             ))
+            .await
             .unwrap();
-        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().await.unwrap();
         let card = match resp {
             IntentResponse::LookSelectZoneToZone {
                 player: resp_player,
@@ -756,7 +786,7 @@ impl Game {
         card
     }
 
-    pub fn prompt_for_first_back_stage(&mut self, player: Player) -> Vec<CardRef> {
+    pub async fn prompt_for_first_back_stage(&mut self, player: Player) -> Vec<CardRef> {
         // TODO extract that filtering to a reusable function
         let hand = self.board(player).hand().collect_vec();
         let debuts: Vec<_> = hand
@@ -793,8 +823,9 @@ impl Game {
                         max_amount: MAX_MEMBERS_ON_STAGE - 1,
                     },
                 ))
+                .await
                 .unwrap();
-            let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+            let ClientSend::IntentResponse(resp) = self.client(player).1.recv().await.unwrap();
             let cards = match resp {
                 IntentResponse::LookSelectZoneToZone {
                     player: resp_player,
@@ -815,7 +846,11 @@ impl Game {
         }
     }
 
-    pub fn prompt_for_back_stage_to_center(&mut self, player: Player, baton_pass: bool) -> CardRef {
+    pub async fn prompt_for_back_stage_to_center(
+        &mut self,
+        player: Player,
+        baton_pass: bool,
+    ) -> CardRef {
         // TODO extract that filtering to a reusable function
         let back = self.board(player).back_stage().collect_vec();
         let mut not_resting = back
@@ -858,8 +893,9 @@ impl Game {
                     max_amount: 1,
                 },
             ))
+            .await
             .unwrap();
-        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().await.unwrap();
         let mem = match resp {
             IntentResponse::LookSelectZoneToZone {
                 player: resp_player,
@@ -877,7 +913,7 @@ impl Game {
         mem
     }
 
-    pub fn prompt_for_cheer(&mut self, player: Player) -> Option<CardRef> {
+    pub async fn prompt_for_cheer(&mut self, player: Player) -> Option<CardRef> {
         // TODO extract that filtering to a reusable function
         let mems: Vec<_> = self
             .board(player)
@@ -896,8 +932,9 @@ impl Game {
                         select_cards: mems.clone(),
                     },
                 ))
+                .await
                 .unwrap();
-            let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+            let ClientSend::IntentResponse(resp) = self.client(player).1.recv().await.unwrap();
             let card = match resp {
                 IntentResponse::SelectToAttach {
                     player: resp_player,
@@ -923,7 +960,7 @@ impl Game {
         }
     }
 
-    pub fn prompt_for_main_action(&mut self, player: Player) -> MainStepAction {
+    pub async fn prompt_for_main_action(&mut self, player: Player) -> MainStepAction {
         // actions from hand
         let mut actions: Vec<_> = self
             .board(player)
@@ -1031,8 +1068,9 @@ impl Game {
                     select_actions: actions.clone(),
                 },
             ))
+            .await
             .unwrap();
-        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().await.unwrap();
         let select_action = match resp {
             IntentResponse::MainStepAction {
                 player: resp_player,
@@ -1050,7 +1088,7 @@ impl Game {
         select_action
     }
 
-    pub fn prompt_for_bloom(&mut self, player: Player, card: CardRef) -> CardRef {
+    pub async fn prompt_for_bloom(&mut self, player: Player, card: CardRef) -> CardRef {
         let bloom = self
             .lookup_holo_member(card)
             .expect("can only bloom from member");
@@ -1075,8 +1113,9 @@ impl Game {
                     select_cards: stage.clone(),
                 },
             ))
+            .await
             .unwrap();
-        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().await.unwrap();
         let card = match resp {
             IntentResponse::SelectToAttach {
                 player: resp_player,
@@ -1094,7 +1133,7 @@ impl Game {
         card
     }
 
-    pub fn prompt_for_baton_pass(
+    pub async fn prompt_for_baton_pass(
         &mut self,
         player: Player,
         card: CardRef,
@@ -1124,8 +1163,9 @@ impl Game {
                         max_amount: cost.into(),
                     },
                 ))
+                .await
                 .unwrap();
-            let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+            let ClientSend::IntentResponse(resp) = self.client(player).1.recv().await.unwrap();
             let attachments = match resp {
                 IntentResponse::SelectAttachments {
                     player: resp_player,
@@ -1146,7 +1186,7 @@ impl Game {
         }
     }
 
-    pub fn prompt_for_art_action(&mut self, player: Player) -> PerformanceStepAction {
+    pub async fn prompt_for_art_action(&mut self, player: Player) -> PerformanceStepAction {
         let mut actions = vec![];
         for mem in self
             .board(player)
@@ -1192,8 +1232,9 @@ impl Game {
                     select_actions: actions.clone(),
                 },
             ))
+            .await
             .unwrap();
-        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().await.unwrap();
         let select_action = match resp {
             IntentResponse::PerformanceStepAction {
                 player: resp_player,
@@ -1248,7 +1289,7 @@ impl Game {
     //         .card
     // }
 
-    pub fn prompt_for_select(
+    pub async fn prompt_for_select(
         &mut self,
         player: Player,
         cards: Vec<CardRef>,
@@ -1290,8 +1331,9 @@ impl Game {
                         max_amount: max,
                     },
                 ))
+                .await
                 .unwrap();
-            let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+            let ClientSend::IntentResponse(resp) = self.client(player).1.recv().await.unwrap();
             let cards = match resp {
                 IntentResponse::LookSelectZoneToZone {
                     player: resp_player,
@@ -1312,7 +1354,7 @@ impl Game {
         }
     }
 
-    pub fn prompt_for_optional_activate(&mut self, player: Player) -> bool {
+    pub async fn prompt_for_optional_activate(&mut self, player: Player) -> bool {
         // self.prompter
         //     .prompt_choice("do you want to activate the effect?", vec!["Yes", "No"])
         //     == "Yes"
@@ -1324,8 +1366,9 @@ impl Game {
                     select_yes_no: vec![true, false],
                 },
             ))
+            .await
             .unwrap();
-        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().await.unwrap();
         let choice = match resp {
             IntentResponse::ActivateEffect {
                 player: resp_player,
@@ -1343,7 +1386,7 @@ impl Game {
         choice
     }
 
-    pub fn prompt_for_number(&mut self, player: Player, min: usize, max: usize) -> usize {
+    pub async fn prompt_for_number(&mut self, player: Player, min: usize, max: usize) -> usize {
         // self.prompter
         //     .prompt_choice("choose a number:", (min..=max).collect_vec())
         self.client(player)
@@ -1352,8 +1395,9 @@ impl Game {
                 player,
                 select_numbers: (min..=max).collect_vec(),
             }))
+            .await
             .unwrap();
-        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().unwrap();
+        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().await.unwrap();
         let choice = match resp {
             IntentResponse::SelectNumber {
                 player: resp_player,
@@ -1860,7 +1904,7 @@ pub enum ZoneAddLocation {
     Bottom,
 }
 
-#[derive(Serialize, Deserialize,Debug, Copy, Clone, PartialEq, Eq, Default)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum Step {
     #[default]
     Setup,

@@ -1,5 +1,4 @@
-use std::sync::mpsc::{Receiver, Sender};
-
+use async_channel::{Receiver, Sender};
 use tracing::debug;
 
 use crate::{
@@ -33,10 +32,11 @@ where
         }
     }
 
-    pub fn handle_request(&mut self) -> GameResult {
+    pub async fn handle_request(&mut self) -> GameResult {
         let req = self
             .receive
             .recv()
+            .await
             .map_err(|_| self.game.game_outcome.expect("game should be over"))?;
         match req {
             ClientReceive::Event(event) => {
@@ -98,16 +98,19 @@ where
                 debug!("RECEIVED INTENT = {:?}", req);
                 let resp = self.intent_handler.handle_intent_request(&self.game, req);
                 debug!("SENT INTENT = {:?}", resp);
-                self.send.send(ClientSend::IntentResponse(resp)).unwrap();
+                self.send
+                    .send(ClientSend::IntentResponse(resp))
+                    .await
+                    .unwrap();
             }
         }
 
         Ok(GameContinue)
     }
 
-    pub fn receive_requests(&mut self) -> GameOutcome {
+    pub async fn receive_requests(mut self) -> GameOutcome {
         // loop until the end of the game
-        while self.handle_request().is_ok() {}
+        while self.handle_request().await.is_ok() {}
 
         debug!("GAME OUTCOME = {:?}", self.game.game_outcome);
         self.game.game_outcome.expect("game should be over")
