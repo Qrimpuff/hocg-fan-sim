@@ -2,6 +2,7 @@
 
 use std::{env, iter};
 
+use get_size::GetSize;
 use hocg_fan_sim::client::DefaultEventHandler;
 use hocg_fan_sim::gameplay::Game;
 use hocg_fan_sim::prompters::RandomPrompter;
@@ -51,7 +52,7 @@ async fn main() {
             .unwrap(),
     )
     .unwrap();
-    println!("{toml}");
+    info!("{toml}");
 
     let main_deck_hsd01 = Vec::from_iter(
         None.into_iter()
@@ -120,10 +121,14 @@ async fn main() {
     );
     tokio::spawn(p2_client.receive_requests());
 
-    // println!("{:#?}", &game);
+    // info!("{:#?}", &game);
     game.start_game().await.unwrap();
-    // println!("{:#?}", &game);
+    // info!("{:#?}", &game);
 
     while game.next_step().await.is_ok() {}
-    println!("{:#?}", &game);
+    info!("{:#?}", &game);
+    info!("{:#?}", game.state.get_heap_size());
+    info!("{:#?}", game.state.clone().get_heap_size());
+    info!("{:#?}", test_library().cards.get_heap_size());
+    info!("{:#?}", test_library().cards.clone().get_heap_size());
 }

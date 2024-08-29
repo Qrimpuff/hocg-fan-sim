@@ -5,8 +5,10 @@ version.workspace = true
 
 [dependencies]
 hocg-fan-sim = { workspace = true }
+async-channel = { workspace = true }
 
 dioxus = { version = "0.5", features = ["web", "router"] }
+gloo-timers = { version = "0.3.0", features = ["futures"] }
 
 # Debug
 dioxus-logger = "0.5.1"

@@ -3,13 +3,15 @@ use std::fmt::Debug;
 use std::fmt::Display;
 use std::num::NonZeroU16;
 
+use get_size::GetSize;
+
 use crate::card_effects::evaluate::EvaluateEffect;
 use crate::card_effects::Condition;
 
 use super::cards::*;
 use super::gameplay::*;
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, GetSize)]
 pub struct ModifierRef(NonZeroU16);
 
 impl Debug for ModifierRef {
@@ -30,7 +32,7 @@ impl From<&str> for ModifierRef {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
 pub enum ModifierKind {
     Conditional(Condition, Box<ModifierKind>),
     // attributes
@@ -51,7 +53,7 @@ pub enum ModifierKind {
     NextDiceRoll(usize),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, GetSize)]
 pub enum LifeTime {
     ThisGame,
     ThisTurn,
@@ -64,7 +66,7 @@ pub enum LifeTime {
     UntilRemoved,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
 pub struct Modifier {
     pub id: ModifierRef,
     pub kind: ModifierKind,
@@ -575,7 +577,7 @@ impl Game {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, GetSize)]
 pub struct DamageMarkers(pub usize);
 
 impl DamageMarkers {

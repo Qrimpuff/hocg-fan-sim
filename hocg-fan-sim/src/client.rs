@@ -43,7 +43,8 @@ where
                 debug!("RECEIVED EVENT = {:?}", event);
 
                 match &event.kind {
-                    // EventKind::Setup(_) => todo!(),
+                    EventKind::SendGameState(SendGameState { state }) => self.game = state.clone(),
+                    // EventKind::Setup(Setup {}) => todo!(),
                     // EventKind::Shuffle(_) => todo!(),
                     // EventKind::RpsOutcome(_) => todo!(),
                     // EventKind::PlayerGoingFirst(_) => todo!(),
@@ -92,7 +93,7 @@ where
                     _ => {}
                 }
 
-                self.event_handler.handle_event(&self.game, event);
+                self.event_handler.handle_event(&self.game, event).await;
             }
             ClientReceive::IntentRequest(req) => {
                 debug!("RECEIVED INTENT = {:?}", req);
@@ -118,7 +119,11 @@ where
 }
 
 pub trait EventHandler {
-    fn handle_event(&mut self, game: &GameState, event: Event);
+    fn handle_event(
+        &mut self,
+        game: &GameState,
+        event: Event,
+    ) -> impl std::future::Future<Output = ()> + Send;
 }
 pub trait IntentRequestHandler {
     fn handle_intent_request(&mut self, game: &GameState, req: IntentRequest) -> IntentResponse;
@@ -132,7 +137,7 @@ impl DefaultEventHandler {
     }
 }
 impl EventHandler for DefaultEventHandler {
-    fn handle_event(&mut self, _game: &GameState, _event: Event) {
+    async fn handle_event(&mut self, _game: &GameState, _event: Event) {
         // do nothing
     }
 }

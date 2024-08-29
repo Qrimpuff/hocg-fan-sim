@@ -1,8 +1,17 @@
 #![allow(non_snake_case)]
 
+use std::{iter, time::Duration};
+
 use dioxus::prelude::*;
 use dioxus_logger::tracing::{info, Level};
-use hocg_fan_sim::gameplay::Zone;
+use gloo_timers::future::TimeoutFuture;
+use hocg_fan_sim::{
+    cards::Loadout,
+    client::{Client, DefaultEventHandler, EventHandler},
+    events::Event,
+    gameplay::{Game, GameState, Player, Zone},
+    prompters::RandomPrompter,
+};
 
 #[derive(Clone, Routable, Debug, PartialEq)]
 enum Route {
@@ -14,7 +23,7 @@ enum Route {
 
 fn main() {
     // Init logger
-    dioxus_logger::init(Level::INFO).expect("failed to init logger");
+    dioxus_logger::init(Level::DEBUG).expect("failed to init logger");
     info!("starting app");
     launch(App);
 }
@@ -87,9 +96,113 @@ impl Mat {
     }
 }
 
+static COUNT: GlobalSignal<i32> = Signal::global(|| 0);
+static GAME: GlobalSignal<GameState> = Signal::global(GameState::new);
+
+#[derive(Default)]
+pub struct WebGameEventHandler {}
+impl WebGameEventHandler {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+impl EventHandler for WebGameEventHandler {
+    async fn handle_event(&mut self, game: &GameState, _event: Event) {
+        info!("it's in web");
+        *GAME.write() = game.clone();
+        *COUNT.write() += 1
+    }
+}
+
 #[component]
 fn Home() -> Element {
-    let mut count = use_signal(|| 0);
+    ////////////////////////////////
+
+    // channels
+    let p1_channel_1 = async_channel::unbounded();
+    let p1_channel_2 = async_channel::unbounded();
+    let p2_channel_1 = async_channel::unbounded();
+    let p2_channel_2 = async_channel::unbounded();
+
+    // Game
+    let _game_c: Coroutine<()> = use_coroutine(|_rx| async move {
+        let main_deck_hsd01 = Vec::from_iter(
+            None.into_iter()
+                .chain(iter::repeat("hSD01-003".into()).take(4))
+                .chain(iter::repeat("hSD01-004".into()).take(3))
+                .chain(iter::repeat("hSD01-005".into()).take(3))
+                .chain(iter::repeat("hSD01-006".into()).take(2))
+                .chain(iter::repeat("hSD01-007".into()).take(2))
+                .chain(iter::repeat("hSD01-008".into()).take(4))
+                .chain(iter::repeat("hSD01-009".into()).take(3))
+                .chain(iter::repeat("hSD01-010".into()).take(3))
+                .chain(iter::repeat("hSD01-011".into()).take(2))
+                .chain(iter::repeat("hSD01-012".into()).take(2))
+                .chain(iter::repeat("hSD01-013".into()).take(2))
+                .chain(iter::repeat("hSD01-014".into()).take(2))
+                .chain(iter::repeat("hSD01-015".into()).take(2))
+                .chain(iter::repeat("hSD01-016".into()).take(3))
+                .chain(iter::repeat("hSD01-017".into()).take(3))
+                .chain(iter::repeat("hSD01-018".into()).take(3))
+                .chain(iter::repeat("hSD01-019".into()).take(3))
+                .chain(iter::repeat("hSD01-020".into()).take(2))
+                .chain(iter::repeat("hSD01-021".into()).take(2)),
+        );
+        let cheer_deck_hsd01 = Vec::from_iter(
+            None.into_iter()
+                .chain(iter::repeat("hY01-001".into()).take(10))
+                .chain(iter::repeat("hY02-001".into()).take(10)),
+        );
+
+        let player_1 = Loadout {
+            oshi: "hSD01-001".into(), // Tokino Sora
+            main_deck: main_deck_hsd01.clone(),
+            cheer_deck: cheer_deck_hsd01.clone(),
+        };
+        let player_2 = Loadout {
+            oshi: "hSD01-002".into(), // AZKi
+            main_deck: main_deck_hsd01,
+            cheer_deck: cheer_deck_hsd01,
+        };
+
+        let mut game = Game::setup(
+            &player_1,
+            &player_2,
+            (p1_channel_1.0, p1_channel_2.1),
+            (p2_channel_1.0, p2_channel_2.1),
+        );
+
+        info!("{:#?}", &game);
+        game.start_game().await.unwrap();
+        info!("{:#?}", &game);
+
+        while game.next_step().await.is_ok() {
+            TimeoutFuture::new(100).await;
+        }
+        info!("{:#?}", &game);
+    });
+
+    // Player 1
+    let p1_client = Client::new(
+        (p1_channel_2.0, p1_channel_1.1),
+        WebGameEventHandler::new(),
+        RandomPrompter::new(),
+    );
+    let _p1_c: Coroutine<()> = use_coroutine(|_rx| async move {
+        p1_client.receive_requests().await;
+    });
+
+    // Player 2
+    let p2_client = Client::new(
+        (p2_channel_2.0, p2_channel_1.1),
+        DefaultEventHandler::new(),
+        RandomPrompter::new(),
+    );
+    let _p2_c: Coroutine<()> = use_coroutine(|_rx| async move {
+        p2_client.receive_requests().await;
+    });
+
+    /////////////////////////////////////////
 
     // mat size and position data
     let mat = use_context_provider(|| {
@@ -119,11 +232,11 @@ fn Home() -> Element {
     let rel_mat_size = rel_mat.read().mat_size;
 
     rsx! {
-        Link { to: Route::Blog { id: count() }, "Go to blog" }
+        Link { to: Route::Blog { id: COUNT() }, "Go to blog" }
         div {
-            h1 { "High-Five counter: {count}" }
-            button { class: "btn", onclick: move |_| count += 1, "Up high!" }
-            button { class: "btn", onclick: move |_| count -= 1, "Down low!" }
+            h1 { "High-Five counter: {COUNT}" }
+            button { class: "btn", onclick: move |_| *COUNT.write() += 1, "Up high!" }
+            button { class: "btn", onclick: move |_| *COUNT.write() -= 1, "Down low!" }
             button { class: "btn btn-lg", "Large" }
             button { class: "btn", "Normal" }
             button { class: "btn btn-sm", "Small" }
@@ -149,13 +262,13 @@ fn Home() -> Element {
                         Card { mat: rel_mat(), zone: Zone::CenterStage }
                         Card { mat: rel_mat(), zone: Zone::Collab }
                         // cheer deck
-                        Deck { mat: rel_mat(), zone: Zone::CheerDeck, size: 20 }
+                        Deck { mat: rel_mat(), player: Player::Two, zone: Zone::CheerDeck, size: 20 }
                         // archive
-                        Deck { mat: rel_mat(), zone: Zone::Archive, size: 0 }
+                        Deck { mat: rel_mat(), player: Player::Two, zone: Zone::Archive, size: 0 }
                         // -- main deck --
-                        Deck { mat: rel_mat(), zone: Zone::MainDeck, size: 50 }
+                        Deck { mat: rel_mat(), player: Player::Two, zone: Zone::MainDeck, size: 50 }
                         // holo power
-                        Deck { mat: rel_mat(), zone: Zone::HoloPower, size: 5 }
+                        Deck { mat: rel_mat(), player: Player::Two, zone: Zone::HoloPower, size: 5 }
                         // life
                         Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (1, 6) }
                         Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (2, 6) }
@@ -164,11 +277,26 @@ fn Home() -> Element {
                         Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (5, 6) }
                         Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (6, 6) }
                         // back stage
-                        Card { key: "{1}", mat: rel_mat(), zone: Zone::BackStage, num: (1, 5), rested: false }
+                        Card {key: "{1}",
+                            mat: rel_mat(),
+                            zone: Zone::BackStage,
+                            num: (1, 5),
+                            rested: false
+                        }
                         Card { key: "{2}", mat: rel_mat(), zone: Zone::BackStage, num: (2, 5) }
-                        Card { key: "{3}", mat: rel_mat(), zone: Zone::BackStage, num: (3, 5), rested: false }
+                        Card {key: "{3}",
+                            mat: rel_mat(),
+                            zone: Zone::BackStage,
+                            num: (3, 5),
+                            rested: false
+                        }
                         Card { key: "{4}", mat: rel_mat(), zone: Zone::BackStage, num: (4, 5) }
-                        Card { key: "{5}", mat: rel_mat(), zone: Zone::BackStage, num: (5, 5), rested: false }
+                        Card {key: "{5}",
+                            mat: rel_mat(),
+                            zone: Zone::BackStage,
+                            num: (5, 5),
+                            rested: false
+                        }
                     }
                     div {
                         // transform: "rotateZ(180deg)",
@@ -181,13 +309,13 @@ fn Home() -> Element {
                         Card { mat: rel_mat(), zone: Zone::CenterStage }
                         Card { mat: rel_mat(), zone: Zone::Collab }
                         // cheer deck
-                        Deck { mat: rel_mat(), zone: Zone::CheerDeck, size: 20 }
+                        Deck { mat: rel_mat(), player: Player::One, zone: Zone::CheerDeck, size: 20 }
                         // archive
-                        Deck { mat: rel_mat(), zone: Zone::Archive, size: 0 }
+                        Deck { mat: rel_mat(), player: Player::One, zone: Zone::Archive, size: 0 }
                         // -- main deck --
-                        Deck { mat: rel_mat(), zone: Zone::MainDeck, size: 50 }
+                        Deck { mat: rel_mat(), player: Player::One, zone: Zone::MainDeck, size: 50 }
                         // holo power
-                        Deck { mat: rel_mat(), zone: Zone::HoloPower, size: 5 }
+                        Deck { mat: rel_mat(), player: Player::One, zone: Zone::HoloPower, size: 5 }
                         // life
                         Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (1, 6) }
                         Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (2, 6) }
@@ -196,11 +324,26 @@ fn Home() -> Element {
                         Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (5, 6) }
                         Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (6, 6) }
                         // back stage
-                        Card { key: "{1}", mat: rel_mat(), zone: Zone::BackStage, num: (1, 5), rested: false }
+                        Card {key: "{1}",
+                            mat: rel_mat(),
+                            zone: Zone::BackStage,
+                            num: (1, 5),
+                            rested: false
+                        }
                         Card { key: "{2}", mat: rel_mat(), zone: Zone::BackStage, num: (2, 5) }
-                        Card { key: "{3}", mat: rel_mat(), zone: Zone::BackStage, num: (3, 5), rested: false }
+                        Card {key: "{3}",
+                            mat: rel_mat(),
+                            zone: Zone::BackStage,
+                            num: (3, 5),
+                            rested: false
+                        }
                         Card { key: "{4}", mat: rel_mat(), zone: Zone::BackStage, num: (4, 5) }
-                        Card { key: "{5}", mat: rel_mat(), zone: Zone::BackStage, num: (5, 5), rested: false }
+                        Card {key: "{5}",
+                            mat: rel_mat(),
+                            zone: Zone::BackStage,
+                            num: (5, 5),
+                            rested: false
+                        }
                     }
                 }
             }
@@ -209,7 +352,13 @@ fn Home() -> Element {
 }
 
 #[component]
-fn Card(mat: Mat, zone: Zone, flipped: Option<bool>, rested: Option<bool>, num: Option<(u32, u32)>) -> Element {
+fn Card(
+    mat: Mat,
+    zone: Zone,
+    flipped: Option<bool>,
+    rested: Option<bool>,
+    num: Option<(u32, u32)>,
+) -> Element {
     let zone = use_signal(|| zone);
     let mut moving = use_signal(|| false);
     let rested = use_signal(|| rested.unwrap_or_default());
@@ -258,7 +407,7 @@ fn Card(mat: Mat, zone: Zone, flipped: Option<bool>, rested: Option<bool>, num: 
     let flipping_class = if flipping() { "card-flipping" } else { "" };
 
     // TODO use our own images
-    let front_img = "https://github.com/GabeJWJ/holoDelta/blob/master/hBP01-041.png?raw=true";
+    let front_img = "https://github.com/GabeJWJ/holoDelta/blob/e2d323fffaede48e0f153fc46a2ab579ef0af0a6/hBP01-041.png?raw=true";
     let back_img = match zone() {
         Zone::MainDeck | Zone::CenterStage | Zone::Collab | Zone::BackStage | Zone::HoloPower => {
             "https://github.com/GabeJWJ/holoDelta/blob/master/fuda_holoBack.png?raw=true"
@@ -266,7 +415,7 @@ fn Card(mat: Mat, zone: Zone, flipped: Option<bool>, rested: Option<bool>, num: 
         Zone::Oshi | Zone::Life | Zone::CheerDeck => {
             "https://github.com/GabeJWJ/holoDelta/blob/master/cheerBack.png?raw=true"
         }
-        Zone::Archive => "https://github.com/GabeJWJ/holoDelta/blob/master/hBP01-041.png?raw=true",
+        Zone::Archive => "https://github.com/GabeJWJ/holoDelta/blob/e2d323fffaede48e0f153fc46a2ab579ef0af0a6/hBP01-041.png?raw=true",
         _ => unimplemented!(),
     };
 
@@ -322,12 +471,11 @@ fn Card(mat: Mat, zone: Zone, flipped: Option<bool>, rested: Option<bool>, num: 
 }
 
 #[component]
-fn Deck(mat: Mat, zone: Zone, size: u32) -> Element {
-    let zone = use_signal(|| zone);
-    let mut size = use_signal(|| size);
+fn Deck(mat: Mat, player: Player, zone: Zone, size: usize) -> Element {
+    let size = use_memo(move || GAME.read().board(player).get_zone(zone).count());
 
     let card_size = mat.card_size;
-    let pos = match zone() {
+    let pos = match zone {
         Zone::MainDeck => mat.main_deck_pos,
         Zone::Oshi => mat.oshi_pos,
         Zone::CenterStage => mat.center_pos,
@@ -339,40 +487,48 @@ fn Deck(mat: Mat, zone: Zone, size: u32) -> Element {
         Zone::Archive => mat.archive_pos,
         _ => unimplemented!(),
     };
-    let rotate = matches!(zone(), Zone::Life | Zone::HoloPower);
+    let rotate = matches!(zone, Zone::Life | Zone::HoloPower);
 
     let pos = (pos.0 - card_size.0 / 2, pos.1 - card_size.1 / 2);
     let rotate = if rotate { " rotateZ(-90deg)" } else { "" };
 
     // TODO use our own images
-    let back_img = match zone() {
+    let back_img = match zone {
         Zone::MainDeck | Zone::CenterStage | Zone::Collab | Zone::BackStage | Zone::HoloPower => {
             "https://github.com/GabeJWJ/holoDelta/blob/master/fuda_holoBack.png?raw=true"
         }
         Zone::Oshi | Zone::Life | Zone::CheerDeck => {
             "https://github.com/GabeJWJ/holoDelta/blob/master/cheerBack.png?raw=true"
         }
-        Zone::Archive => "https://github.com/GabeJWJ/holoDelta/blob/master/hBP01-041.png?raw=true",
+        Zone::Archive => "https://github.com/GabeJWJ/holoDelta/blob/e2d323fffaede48e0f153fc46a2ab579ef0af0a6/hBP01-041.png?raw=true",
         _ => unimplemented!(),
     };
 
     // that step by makes the deck look cleaner
-    let cards = (0..size()).step_by(3).map(|i| {
-        rsx! {
-            div {
-                transform: "translate3d(0px, 0px, {i}px)",
-                width: "{card_size.0}px",
-                height: "{card_size.1}px",
-                z_index: "2",
-                position: "absolute",
-                border_radius: "5%",
-                filter: "drop-shadow(0 1px 1px rgb(0 0 0 / 0.05))",
-                class: "bg-cover bg-center",
-                background_image: "url({back_img})",
-                "{pos:?}"
+    let top_cards = 1;
+    let step_cards = 3;
+    let px_per_cards = 1.0;
+    let cards = (0..size().saturating_sub(top_cards))
+        .step_by(step_cards)
+        .chain(size().saturating_sub(top_cards)..size())
+        .map(|i| {
+            rsx! {
+                div {
+                    transform: "translate3d(0px, 0px, {i as f64 * px_per_cards}px)",
+                    width: "{card_size.0}px",
+                    height: "{card_size.1}px",
+                    z_index: "2",
+                    position: "absolute",
+                    border_radius: "5%",
+                    filter: "drop-shadow(0 1px 1px rgb(0 0 0 / 0.05))",
+                    class: "bg-cover bg-center",
+                    background_image: "url({back_img})",
+                    if i + 1 == size() {
+                        "{size}"
+                    }
+                }
             }
-        }
-    });
+        });
 
     rsx! {
         div {
@@ -381,9 +537,6 @@ fn Deck(mat: Mat, zone: Zone, size: u32) -> Element {
             width: "{card_size.0}px",
             height: "{card_size.1}px",
             class: "absolute",
-            onclick: move |_event| {
-                size += 1;
-            },
             {cards}
         }
     }

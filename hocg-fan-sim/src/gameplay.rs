@@ -7,7 +7,7 @@ use crate::card_effects::evaluate::{EvaluateContext, EvaluateEffect};
 use crate::card_effects::{Condition, Trigger};
 use crate::events::{
     CardMapping, ClientReceive, ClientSend, Event, EventKind, EventSpan, IntentRequest,
-    IntentResponse,
+    IntentResponse, SendGameState,
 };
 use crate::temp::test_library;
 
@@ -15,11 +15,12 @@ use super::cards::*;
 use super::modifiers::*;
 use async_channel::{Receiver, Sender};
 use debug_ignore::DebugIgnore;
+use get_size::GetSize;
 use iter_tools::Itertools;
 use rand::seq::SliceRandom;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 use ModifierKind::*;
 
 pub const STARTING_HAND_SIZE: usize = 7;
@@ -27,7 +28,7 @@ pub const MAX_MEMBERS_ON_STAGE: usize = 6;
 
 pub static PRIVATE_CARD: CardRef = CardRef(NonZeroU16::MAX);
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, GetSize)]
 pub struct CardRef(pub(crate) NonZeroU16);
 
 impl Debug for CardRef {
@@ -65,7 +66,7 @@ pub fn register_card(
     card
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default, GetSize)]
 pub enum Player {
     #[default]
     One,
@@ -87,13 +88,13 @@ pub type GameResult = Result<GameContinue, GameOutcome>;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct GameContinue;
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, GetSize)]
 pub struct GameOutcome {
     pub winning_player: Option<Player>,
     pub reason: GameOverReason,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, GetSize)]
 pub enum GameOverReason {
     MulliganToZeroCards,
     EmptyDeckInDrawStep,
@@ -229,7 +230,7 @@ impl Game {
     pub async fn handle_mulligan(&mut self, player: Player) -> GameResult {
         // - draw 7 cards from main deck
         let mut player_draw = STARTING_HAND_SIZE;
-        println!("player {player:?} draws {player_draw}");
+        info!("player {player:?} draws {player_draw}");
         self.draw_from_main_deck(None, player, player_draw).await?;
 
         //   - can mulligan once for 7 cards, then any forced is -1
@@ -237,13 +238,13 @@ impl Game {
         loop {
             let voluntary = player_draw == STARTING_HAND_SIZE;
             let force_mulligan = self.need_mulligan(self.board(player));
-            println!("prompt mulligan: {player:?}");
+            info!("prompt mulligan: {player:?}");
             let mulligan = force_mulligan || voluntary && self.prompt_for_mulligan(player).await;
             if !mulligan {
                 break;
             }
 
-            println!(
+            info!(
                 "player {player:?} mulligan{}",
                 if force_mulligan { " by force" } else { "" }
             );
@@ -257,7 +258,7 @@ impl Game {
             self.send_full_hand_to_main_deck(None, player).await?;
             self.shuffle_main_deck(None, player).await?;
 
-            println!("player {player:?} draws {player_draw}");
+            info!("player {player:?} draws {player_draw}");
             self.draw_from_main_deck(None, player, player_draw).await?;
 
             player_draw -= 1;
@@ -268,7 +269,7 @@ impl Game {
 
         if player_draw == 0 {
             self.state.active_player = player;
-            println!("player {player:?} cannot draw anymore card");
+            info!("player {player:?} cannot draw anymore card");
             self.lose_game(GameOverReason::MulliganToZeroCards).await?;
         }
 
@@ -295,6 +296,28 @@ impl Game {
             .send(ClientReceive::Event(Event {
                 origin: None,
                 kind: EventKind::CardMapping(CardMapping { card_map }),
+            }))
+            .await
+            .unwrap();
+
+        // send the first game state
+        // TODO need to hide private cards
+        let state = self.state.clone();
+        self.client(self.state.active_player)
+            .0
+            .send(ClientReceive::Event(Event {
+                origin: None,
+                kind: EventKind::SendGameState(SendGameState {
+                    state: state.clone(),
+                }),
+            }))
+            .await
+            .unwrap();
+        self.client(self.state.active_player.opponent())
+            .0
+            .send(ClientReceive::Event(Event {
+                origin: None,
+                kind: EventKind::SendGameState(SendGameState { state }),
             }))
             .await
             .unwrap();
@@ -350,7 +373,7 @@ impl Game {
             }
         }
 
-        println!("- active step: {:?}", self.state.active_step);
+        info!("- active step: {:?}", self.state.active_step);
         self.report_enter_step(None, self.state.active_player, self.state.active_step)
             .await?;
 
@@ -376,13 +399,34 @@ impl Game {
             self.end_turn().await?;
         }
 
+        // TODO temporary, until client is done
+        let state = self.state.clone();
+        self.client(self.state.active_player)
+            .0
+            .send(ClientReceive::Event(Event {
+                origin: None,
+                kind: EventKind::SendGameState(SendGameState {
+                    state: state.clone(),
+                }),
+            }))
+            .await
+            .unwrap();
+        self.client(self.state.active_player.opponent())
+            .0
+            .send(ClientReceive::Event(Event {
+                origin: None,
+                kind: EventKind::SendGameState(SendGameState { state }),
+            }))
+            .await
+            .unwrap();
+
         Ok(GameContinue)
     }
 
     pub async fn start_turn(&mut self) -> GameResult {
         self.state.turn_number += 1;
 
-        println!("active player: {:?}", self.state.active_player);
+        info!("active player: {:?}", self.state.active_player);
         self.report_start_turn(None, self.state.active_player)
             .await?;
 
@@ -411,7 +455,7 @@ impl Game {
         // - if no center, back stage to center
         if self.active_board().center_stage.is_none() && !self.active_board().back_stage.is_empty()
         {
-            println!("prompt new center member");
+            info!("prompt new center member");
             // TODO request (intent)
             let back = self
                 .prompt_for_back_stage_to_center(self.state.active_player, false)
@@ -426,7 +470,7 @@ impl Game {
     pub async fn draw_step(&mut self) -> GameResult {
         // - deck is 0 on draw step
         if self.active_board().main_deck.count() == 0 {
-            println!(
+            info!(
                 "player {:?} has no card in their main deck",
                 self.state.active_player
             );
@@ -451,15 +495,15 @@ impl Game {
 
     pub async fn main_step(&mut self) -> GameResult {
         loop {
-            println!("prompt main step action");
-            println!("{} cards in hand", self.active_board().hand().count());
+            info!("prompt main step action");
+            info!("{} cards in hand", self.active_board().hand().count());
 
             // TODO request (intent) main action, all possible actions
             let action = self.prompt_for_main_action(self.state.active_player).await;
             debug!("ACTION = {action:?}");
             match action {
                 MainStepAction::BackStageMember(card) => {
-                    println!("- action: Back stage member");
+                    info!("- action: Back stage member");
                     // - place debut member on back stage
                     self.send_from_hand_to_back_stage(None, self.state.active_player, vec![card])
                         .await?;
@@ -472,7 +516,7 @@ impl Game {
                     // TODO remove the registration once they leave the board?
                 }
                 MainStepAction::BloomMember(bloom) => {
-                    println!("- action: Bloom member");
+                    info!("- action: Bloom member");
                     // - bloom member (evolve e.g. debut -> 1st )
                     //   - bloom effect
                     //   - can't bloom on same turn as placed
@@ -482,7 +526,7 @@ impl Game {
                         .await?;
                 }
                 MainStepAction::UseSupportCard(card) => {
-                    println!("- action: Use support card");
+                    info!("- action: Use support card");
                     // - use support card
                     //   - only one limited per turn
                     //   - otherwise unlimited
@@ -490,7 +534,7 @@ impl Game {
                         .await?;
                 }
                 MainStepAction::CollabMember(card) => {
-                    println!("- action: Collab member");
+                    info!("- action: Collab member");
                     // - put back stage member in collab
                     //   - can be done on first turn?
                     //   - draw down card from deck into power zone
@@ -498,7 +542,7 @@ impl Game {
                         .await?;
                 }
                 MainStepAction::BatonPass(card) => {
-                    println!("- action: Baton pass");
+                    info!("- action: Baton pass");
                     // TODO verify baton pass action
 
                     // - retreat switch (baton pass)
@@ -524,7 +568,7 @@ impl Game {
                     .await?;
                 }
                 MainStepAction::UseOshiSkill(card, i) => {
-                    println!("- action: Use skill");
+                    info!("- action: Use skill");
                     // - use oshi skill
                     //   - oshi power uses card in power zone
                     //   - once per turn / once per game
@@ -532,7 +576,7 @@ impl Game {
                         .await?;
                 }
                 MainStepAction::Done => {
-                    println!("- action: Done");
+                    info!("- action: Done");
                     break;
                 }
             }
@@ -563,7 +607,7 @@ impl Game {
             // let main_stage: Vec<_> = self.active_board().main_stage().collect();
             // for card in main_stage {
             //     if self.board(op).main_stage().count() < 1 {
-            //         println!("no more member to target");
+            //         info!("no more member to target");
             //         continue;
             //     }
 
@@ -582,12 +626,12 @@ impl Game {
                     art_idx,
                     target,
                 } => {
-                    println!("- action: Use art");
+                    info!("- action: Use art");
                     self.perform_art(None, self.state.active_player, card, art_idx, Some(target))
                         .await?;
                 }
                 PerformanceStepAction::Done => {
-                    println!("- action: Done");
+                    info!("- action: Done");
                     break;
                 }
             }
@@ -602,7 +646,7 @@ impl Game {
         // - if no center, back stage to center
         if self.active_board().center_stage.is_none() && !self.active_board().back_stage.is_empty()
         {
-            println!("prompt new center member");
+            info!("prompt new center member");
             // TODO request (intent)
             let back = self
                 .prompt_for_back_stage_to_center(self.state.active_player, false)
@@ -616,8 +660,8 @@ impl Game {
 
     pub async fn win_game(&mut self, reason: GameOverReason) -> GameResult {
         match self.state.active_player {
-            Player::One => println!("player 1 wins"),
-            Player::Two => println!("player 2 wins"),
+            Player::One => info!("player 1 wins"),
+            Player::Two => info!("player 2 wins"),
             _ => unreachable!("both players cannot be active at the same time"),
         };
         // stop the game
@@ -651,13 +695,13 @@ impl Game {
         ] {
             // - life is 0
             if board.life.count() == 0 {
-                println!("player {player:?} has no life remaining");
+                info!("player {player:?} has no life remaining");
                 loss = Some((player, GameOverReason::EmptyLife));
             }
 
             // - 0 member in play
             if board.main_stage().count() + board.back_stage().count() == 0 {
-                println!("player {player:?} has no more members on stage");
+                info!("player {player:?} has no more members on stage");
                 loss = Some((player, GameOverReason::EmptyStage));
             }
 
@@ -1304,7 +1348,7 @@ impl Game {
             .filter(|c| {
                 let cond = condition.evaluate_with_context(&ctx.for_card(*c), &self.state);
                 if !cond {
-                    // println!("viewed: {}", CardDisplay::new(*c, self))
+                    // info!("viewed: {}", CardDisplay::new(*c, self))
                 }
                 cond
             })
@@ -1416,7 +1460,7 @@ impl Game {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, GetSize)]
 pub struct GameBoard {
     pub oshi: Option<CardRef>,
     pub main_deck: VecDeque<CardRef>,
@@ -1843,7 +1887,7 @@ impl ZoneControl for VecDeque<CardRef> {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, GetSize)]
 pub enum Zone {
     All,
     MainDeck,
@@ -1898,13 +1942,13 @@ impl Zone {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, GetSize)]
 pub enum ZoneAddLocation {
     Top,
     Bottom,
 }
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Default)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Default, GetSize)]
 pub enum Step {
     #[default]
     Setup,
@@ -2146,7 +2190,7 @@ impl Display for ArtDisplay {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, GetSize)]
 pub struct GameState {
     pub game_outcome: Option<GameOutcome>,
     pub card_map: HashMap<CardRef, (Player, CardNumber)>, // TODO use a different pair because rarity is not include in card number

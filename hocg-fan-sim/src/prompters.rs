@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 use iter_tools::Itertools;
 use rand::{seq::IteratorRandom, thread_rng, Rng};
+use tracing::info;
 
 use crate::{
     client::IntentRequestHandler,
@@ -19,14 +20,14 @@ impl DefaultPrompter {
 
 impl Prompter for DefaultPrompter {
     fn prompt_choice<'a, T: ToString>(&mut self, text: &str, choices: Vec<T>) -> T {
-        println!("choosing first choice for: {text}");
+        info!("choosing first choice for: {text}");
         self.print_choices(&choices);
 
         let c = choices
             .into_iter()
             .next()
             .expect("always at least one choice");
-        println!("{}", c.to_string());
+        info!("{}", c.to_string());
         c
     }
 
@@ -37,11 +38,11 @@ impl Prompter for DefaultPrompter {
         min: usize,
         _max: usize,
     ) -> Vec<T> {
-        println!("choosing first choices for: {text}");
+        info!("choosing first choices for: {text}");
         self.print_choices(&choices);
 
         let c: Vec<_> = choices.into_iter().take(min).collect();
-        println!("{}", c.iter().map(T::to_string).collect_vec().join(", "));
+        info!("{}", c.iter().map(T::to_string).collect_vec().join(", "));
         c
     }
 }
@@ -56,14 +57,14 @@ impl RandomPrompter {
 
 impl Prompter for RandomPrompter {
     fn prompt_choice<'a, T: ToString>(&mut self, text: &str, choices: Vec<T>) -> T {
-        println!("choosing random choice for: {text}");
+        info!("choosing random choice for: {text}");
         self.print_choices(&choices);
 
         let c = choices
             .into_iter()
             .choose(&mut thread_rng())
             .expect("always at least one choice");
-        println!("{}", c.to_string());
+        info!("{}", c.to_string());
         c
     }
 
@@ -74,7 +75,7 @@ impl Prompter for RandomPrompter {
         min: usize,
         max: usize,
     ) -> Vec<T> {
-        println!("choosing random choices for: {text}");
+        info!("choosing random choices for: {text}");
         self.print_choices(&choices);
 
         let max = max.min(choices.len());
@@ -82,7 +83,7 @@ impl Prompter for RandomPrompter {
         let c = choices
             .into_iter()
             .choose_multiple(&mut thread_rng(), thread_rng().gen_range(min..=max));
-        println!("{}", c.iter().map(T::to_string).collect_vec().join(", "));
+        info!("{}", c.iter().map(T::to_string).collect_vec().join(", "));
         c
     }
 }
@@ -104,13 +105,13 @@ impl BufferedPrompter {
 
 impl Prompter for BufferedPrompter {
     fn prompt_choice<'a, T: ToString>(&mut self, text: &str, mut choices: Vec<T>) -> T {
-        println!("choosing buffered choice for: {text}");
+        info!("choosing buffered choice for: {text}");
         self.print_choices(&choices);
 
         let mut buf = self.buffer.remove(0);
         assert!(buf.len() == 1);
         let c = choices.remove(buf.remove(0));
-        println!("{}", c.to_string());
+        info!("{}", c.to_string());
         c
     }
 
@@ -121,7 +122,7 @@ impl Prompter for BufferedPrompter {
         min: usize,
         max: usize,
     ) -> Vec<T> {
-        println!("choosing buffered choices for: {text}");
+        info!("choosing buffered choices for: {text}");
         self.print_choices(&choices);
 
         let max = max.min(choices.len());
@@ -135,7 +136,7 @@ impl Prompter for BufferedPrompter {
             .filter(|(i, _)| buf.contains(i))
             .map(|(_, c)| c)
             .collect_vec();
-        println!("{}", c.iter().map(T::to_string).collect_vec().join(", "));
+        info!("{}", c.iter().map(T::to_string).collect_vec().join(", "));
         c
     }
 }
@@ -151,7 +152,7 @@ pub trait Prompter: Debug {
     ) -> Vec<T>;
 
     fn print_choices<T: ToString>(&mut self, choices: &[T]) {
-        println!(
+        info!(
             "options:\n{}",
             choices
                 .iter()
