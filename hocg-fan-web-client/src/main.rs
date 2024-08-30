@@ -2,13 +2,14 @@
 
 use std::{iter, time::Duration};
 
+use async_oneshot::oneshot;
 use dioxus::prelude::*;
 use dioxus_logger::tracing::{info, Level};
 use gloo_timers::future::TimeoutFuture;
 use hocg_fan_sim::{
     cards::Loadout,
     client::{Client, DefaultEventHandler, EventHandler},
-    events::Event,
+    events::{Event, EventKind, Shuffle},
     gameplay::{Game, GameState, Player, Zone},
     prompters::RandomPrompter,
 };
@@ -98,6 +99,8 @@ impl Mat {
 
 static COUNT: GlobalSignal<i32> = Signal::global(|| 0);
 static GAME: GlobalSignal<GameState> = Signal::global(GameState::new);
+static ONESHOT: GlobalSignal<Option<async_oneshot::Sender<bool>>> = Signal::global(|| None);
+static EVENT: GlobalSignal<Option<Event>> = Signal::global(|| None);
 
 #[derive(Default)]
 pub struct WebGameEventHandler {}
@@ -107,10 +110,23 @@ impl WebGameEventHandler {
     }
 }
 impl EventHandler for WebGameEventHandler {
-    async fn handle_event(&mut self, game: &GameState, _event: Event) {
+    async fn handle_event(&mut self, game: &GameState, event: Event) {
         info!("it's in web");
         *GAME.write() = game.clone();
-        *COUNT.write() += 1
+        *EVENT.write() = Some(event.clone());
+        *COUNT.write() += 1;
+
+        if matches!(
+            event,
+            Event {
+                kind: EventKind::Shuffle(_),
+                ..
+            }
+        ) {
+            let (s, r) = oneshot::<bool>();
+            *ONESHOT.write() = Some(s);
+            r.await.unwrap();
+        }
     }
 }
 
@@ -171,6 +187,9 @@ fn Home() -> Element {
             (p1_channel_1.0, p1_channel_2.1),
             (p2_channel_1.0, p2_channel_2.1),
         );
+
+        // wait for the page to load
+        TimeoutFuture::new(1000).await;
 
         info!("{:#?}", &game);
         game.start_game().await.unwrap();
@@ -474,6 +493,22 @@ fn Card(
 fn Deck(mat: Mat, player: Player, zone: Zone, size: usize) -> Element {
     let size = use_memo(move || GAME.read().board(player).get_zone(zone).count());
 
+    let mut shuffling = use_signal(|| false);
+    let shuffling_c = use_memo(move || if shuffling() { "deck-shuffling" } else { "" });
+    use_effect(move || {
+        shuffling.set(
+            if let Some(Event {
+                kind: EventKind::Shuffle(Shuffle { player: p, zone: z }),
+                ..
+            }) = *EVENT.read()
+            {
+                p == player && z == zone
+            } else {
+                false
+            },
+        )
+    });
+
     let card_size = mat.card_size;
     let pos = match zone {
         Zone::MainDeck => mat.main_deck_pos,
@@ -521,7 +556,7 @@ fn Deck(mat: Mat, player: Player, zone: Zone, size: usize) -> Element {
                     position: "absolute",
                     border_radius: "5%",
                     filter: "drop-shadow(0 1px 1px rgb(0 0 0 / 0.05))",
-                    class: "bg-cover bg-center",
+                    class: "deck-slice bg-cover bg-center",
                     background_image: "url({back_img})",
                     if i + 1 == size() {
                         "{size}"
@@ -536,7 +571,14 @@ fn Deck(mat: Mat, player: Player, zone: Zone, size: usize) -> Element {
             transform: "translate3d({pos.0}px, {pos.1}px, 0px) {rotate}",
             width: "{card_size.0}px",
             height: "{card_size.1}px",
-            class: "absolute",
+            position: "absolute",
+            class: "{shuffling_c}",
+            onanimationend: move |event| {
+                if event.animation_name() == "deck-shuffling" {
+                    shuffling.set(false);
+                    ONESHOT.write().as_mut().unwrap().send(true).unwrap();
+                }
+            },
             {cards}
         }
     }

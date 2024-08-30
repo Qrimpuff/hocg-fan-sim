@@ -13,6 +13,7 @@
     z-index: 10;
     animation: 0.25s ease-in-out 0s card-flipping;
 }
+
 .card-flipping.card-flipped {
     z-index: 10;
     animation: 0.25s ease-in-out 0s card-flipping-rev;
@@ -31,6 +32,7 @@
         transform: translateZ(0) rotateY(180deg);
     }
 }
+
 @keyframes card-flipping-rev {
     from {
         transform: translateZ(0) rotateY(-180deg);
@@ -42,5 +44,47 @@
 
     to {
         transform: translateZ(0) rotateY(0);
+    }
+}
+
+
+.deck-shuffling {
+    z-index: 10;
+    animation: 0.4s linear 0s deck-shuffling;
+}
+
+@keyframes deck-shuffling {}
+
+.deck-shuffling .deck-slice:nth-child(2n) {
+    z-index: 10;
+    animation: 0.5s ease-in-out 0s deck-slice-shuffling;
+    animation-composition: add;
+}
+
+.deck-shuffling .deck-slice:last-child {
+    animation: none !important;
+}
+
+.deck-shuffling .deck-slice:nth-child(3n) {
+    animation-duration: 0.60s;
+}
+
+.deck-shuffling .deck-slice:nth-child(4n) {
+    animation-direction: reverse;
+}
+
+@keyframes deck-slice-shuffling {
+
+    from,
+    to {
+        transform: rotateZ(0);
+    }
+
+    50% {
+        transform: rotateZ(-90deg);
+    }
+
+    75% {
+        transform: rotateZ(360deg);
     }
 }
