@@ -12,7 +12,7 @@ use crate::card_effects::{
     },
     *,
 };
-use crate::events::{Bloom, Collab, Event, EventKind, TriggeredEvent};
+use crate::events::{Bloom, Collab, Event, TriggeredEvent};
 use crate::gameplay::Zone;
 use crate::gameplay::{CardRef, Game};
 use crate::modifiers::ModifierKind::*;
@@ -320,7 +320,9 @@ pub enum Rarity {
     UltraRare,     // UR
 }
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, GetSize)]
+#[derive(
+    Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, GetSize,
+)]
 #[serde(rename_all = "snake_case")]
 #[allow(clippy::enum_variant_names)]
 pub enum Color {
@@ -613,13 +615,9 @@ impl HoloMemberAbility {
     pub fn should_activate(&self, card: CardRef, triggered_event: &TriggeredEvent) -> bool {
         match self.kind {
             MemberAbilityKind::CollabEffect => {
-                if let TriggeredEvent::After(Event {
-                    kind:
-                        EventKind::Collab(Collab {
-                            card: collab_card, ..
-                        }),
-                    ..
-                }) = triggered_event
+                if let TriggeredEvent::After(Event::Collab(Collab {
+                    card: collab_card, ..
+                })) = triggered_event
                 {
                     collab_card.1 == card
                 } else {
@@ -627,14 +625,10 @@ impl HoloMemberAbility {
                 }
             }
             MemberAbilityKind::BloomEffect => {
-                if let TriggeredEvent::After(Event {
-                    kind:
-                        EventKind::Bloom(Bloom {
-                            from_card: bloom_card,
-                            ..
-                        }),
+                if let TriggeredEvent::After(Event::Bloom(Bloom {
+                    from_card: bloom_card,
                     ..
-                }) = triggered_event
+                })) = triggered_event
                 {
                     bloom_card.1 == card
                 } else {

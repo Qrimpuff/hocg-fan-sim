@@ -250,17 +250,16 @@ impl Game {
 
     pub async fn add_modifier(
         &mut self,
-        event_origin: Option<CardRef>,
+
         card: CardRef,
         kind: ModifierKind,
         life_time: LifeTime,
     ) -> GameResult {
-        self.add_many_modifiers(event_origin, card, vec![(kind, life_time)])
-            .await
+        self.add_many_modifiers(card, vec![(kind, life_time)]).await
     }
     pub async fn add_many_modifiers(
         &mut self,
-        event_origin: Option<CardRef>,
+
         card: CardRef,
         modifiers: Vec<(ModifierKind, LifeTime)>,
     ) -> GameResult {
@@ -275,24 +274,24 @@ impl Game {
                 Modifier::for_card(card, kind, life_time, &mut self.next_modifier_ref)
             })
             .collect();
-        self.add_many_modifiers_to_many_cards(event_origin, player, zone, vec![card], modifiers)
+        self.add_many_modifiers_to_many_cards(player, zone, vec![card], modifiers)
             .await
     }
 
     pub async fn add_zone_modifier(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         zone: Zone,
         kind: ModifierKind,
         life_time: LifeTime,
     ) -> GameResult {
-        self.add_many_zone_modifiers(event_origin, player, zone, kind, life_time, 1)
+        self.add_many_zone_modifiers(player, zone, kind, life_time, 1)
             .await
     }
     pub async fn add_many_zone_modifiers(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         zone: Zone,
         kind: ModifierKind,
@@ -310,22 +309,17 @@ impl Game {
                 )
             })
             .collect();
-        self.add_many_modifiers_to_zone(event_origin, player, zone, modifiers)
+        self.add_many_modifiers_to_zone(player, zone, modifiers)
             .await
     }
 
-    pub async fn remove_all_modifiers(
-        &mut self,
-        event_origin: Option<CardRef>,
-        card: CardRef,
-        kind: ModifierKind,
-    ) -> GameResult {
-        self.remove_all_modifiers_with(event_origin, card, |m| m.kind == kind)
+    pub async fn remove_all_modifiers(&mut self, card: CardRef, kind: ModifierKind) -> GameResult {
+        self.remove_all_modifiers_with(card, |m| m.kind == kind)
             .await
     }
     pub async fn remove_all_modifiers_with(
         &mut self,
-        event_origin: Option<CardRef>,
+
         card: CardRef,
         filter_fn: impl FnMut(&&Modifier) -> bool,
     ) -> GameResult {
@@ -345,29 +339,23 @@ impl Game {
             .map(|m| m.id)
             .collect();
 
-        self.remove_many_modifiers_from_many_cards(
-            event_origin,
-            player,
-            zone,
-            vec![card],
-            modifiers,
-        )
-        .await
+        self.remove_many_modifiers_from_many_cards(player, zone, vec![card], modifiers)
+            .await
     }
 
     pub async fn remove_all_zone_modifiers(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         zone: Zone,
         kind: ModifierKind,
     ) -> GameResult {
-        self.remove_all_zone_modifiers_with(event_origin, player, zone, |(_, m)| m.kind == kind)
+        self.remove_all_zone_modifiers_with(player, zone, |(_, m)| m.kind == kind)
             .await
     }
     pub async fn remove_all_zone_modifiers_with(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         zone: Zone,
         filter_fn: impl FnMut(&&(Zone, Modifier)) -> bool,
@@ -383,22 +371,18 @@ impl Game {
             .map(|(_, m)| m.id)
             .collect();
 
-        self.remove_many_modifiers_from_zone(event_origin, player, zone, modifiers)
+        self.remove_many_modifiers_from_zone(player, zone, modifiers)
             .await
     }
 
-    pub async fn clear_all_modifiers(
-        &mut self,
-        event_origin: Option<CardRef>,
-        card: CardRef,
-    ) -> GameResult {
+    pub async fn clear_all_modifiers(&mut self, card: CardRef) -> GameResult {
         let player = self.player_for_card(card);
         let zone = self
             .board(player)
             .find_card_zone(card)
             .expect("the card should be in a zone");
 
-        self.clear_all_modifiers_from_many_cards(event_origin, player, zone, vec![card])
+        self.clear_all_modifiers_from_many_cards(player, zone, vec![card])
             .await
     }
 
@@ -476,11 +460,7 @@ impl Game {
             });
     }
 
-    pub async fn remove_expiring_modifiers(
-        &mut self,
-        event_origin: Option<CardRef>,
-        life_time: LifeTime,
-    ) -> GameResult {
+    pub async fn remove_expiring_modifiers(&mut self, life_time: LifeTime) -> GameResult {
         // remove expiring card modifiers
         let c_mods: HashMap<_, Vec<_>> = self
             .state
@@ -498,7 +478,7 @@ impl Game {
                 c_m
             });
         for ((p, z, c), m) in c_mods {
-            self.remove_many_modifiers_from_many_cards(event_origin, p, z, vec![c], m)
+            self.remove_many_modifiers_from_many_cards(p, z, vec![c], m)
                 .await?;
         }
 
@@ -514,8 +494,7 @@ impl Game {
                 z_m
             });
         for ((p, z), m) in z_mods {
-            self.remove_many_modifiers_from_zone(event_origin, p, z, m)
-                .await?;
+            self.remove_many_modifiers_from_zone(p, z, m).await?;
         }
 
         Ok(GameContinue)
@@ -534,35 +513,25 @@ impl Game {
         self.state.get_damage(card)
     }
 
-    pub async fn add_damage_markers(
-        &mut self,
-        event_origin: Option<CardRef>,
-        card: CardRef,
-        dmg: DamageMarkers,
-    ) -> GameResult {
+    pub async fn add_damage_markers(&mut self, card: CardRef, dmg: DamageMarkers) -> GameResult {
         let player = self.player_for_card(card);
         let zone = self
             .board(player)
             .find_card_zone(card)
             .expect("the card should be in a zone");
 
-        self.add_damage_markers_to_many_cards(event_origin, player, zone, vec![card], dmg)
+        self.add_damage_markers_to_many_cards(player, zone, vec![card], dmg)
             .await
     }
 
-    pub async fn remove_damage_markers(
-        &mut self,
-        event_origin: Option<CardRef>,
-        card: CardRef,
-        dmg: DamageMarkers,
-    ) -> GameResult {
+    pub async fn remove_damage_markers(&mut self, card: CardRef, dmg: DamageMarkers) -> GameResult {
         let player = self.player_for_card(card);
         let zone = self
             .board(player)
             .find_card_zone(card)
             .expect("the card should be in a zone");
 
-        self.remove_damage_markers_from_many_cards(event_origin, player, zone, vec![card], dmg)
+        self.remove_damage_markers_from_many_cards(player, zone, vec![card], dmg)
             .await
     }
 

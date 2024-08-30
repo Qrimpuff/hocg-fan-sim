@@ -115,7 +115,7 @@ pub(crate) trait EvaluateEffectMut {
             .await;
         game.state.event_span.close_card_span(card);
 
-        game.remove_expiring_modifiers(None, modifiers::LifeTime::ThisEffect)
+        game.remove_expiring_modifiers(modifiers::LifeTime::ThisEffect)
             .await?;
 
         value
@@ -135,7 +135,7 @@ pub(crate) trait EvaluateEffectMut {
     //     let value = self.evaluate_with_context_mut(&mut ctx, game);
     //     game.state.event_span.close_card_span(card);
 
-    //     game.remove_expiring_modifiers(None, modifiers::LifeTime::ThisEffect)?;
+    //     game.remove_expiring_modifiers( modifiers::LifeTime::ThisEffect)?;
 
     //     value
     // }
@@ -226,7 +226,6 @@ impl EvaluateEffectMut for Action {
         match self {
             Action::AddGlobalModifier(player, modifier, life_time) => {
                 game.add_zone_modifier(
-                    ctx.active_card,
                     player.evaluate_with_context(ctx, &game.state),
                     Zone::All,
                     modifier.evaluate_with_context(ctx, &game.state),
@@ -237,7 +236,6 @@ impl EvaluateEffectMut for Action {
             Action::AddModifier(cards, modifier, life_time) => {
                 for card in cards.evaluate_with_context(ctx, &game.state) {
                     game.add_modifier(
-                        ctx.active_card,
                         card,
                         modifier.evaluate_with_context(ctx, &game.state),
                         life_time.evaluate_with_context(ctx, &game.state),
@@ -248,7 +246,6 @@ impl EvaluateEffectMut for Action {
             Action::AddZoneModifier(zone, modifier, life_time) => {
                 let (player, zone) = zone.evaluate_with_context(ctx, &game.state);
                 game.add_zone_modifier(
-                    ctx.active_card,
                     player,
                     zone,
                     modifier.evaluate_with_context(ctx, &game.state),
@@ -264,12 +261,11 @@ impl EvaluateEffectMut for Action {
                 }
                 let player = game
                     .player_for_card(*attachments.first().expect("should have at least one card"));
-                game.attach_cards_to_card(ctx.active_card, player, attachments, target)
+                game.attach_cards_to_card(player, attachments, target)
                     .await?;
             }
             Action::Draw(amount) => {
                 game.draw_from_main_deck(
-                    ctx.active_card,
                     ctx.active_player
                         .expect("there should be an active player to draw"),
                     amount.evaluate_with_context(ctx, &game.state),
@@ -308,8 +304,7 @@ impl EvaluateEffectMut for Action {
                 let map: HashMap<(Player, Zone), Vec<CardRef>> =
                     game.group_by_player_and_zone(cards);
                 for ((player, zone), cards) in map {
-                    game.reveal_cards(ctx.active_card, player, zone, &cards)
-                        .await?;
+                    game.reveal_cards(player, zone, &cards).await?;
                 }
             }
             Action::SendTo(to_zone, cards) => {
@@ -317,14 +312,8 @@ impl EvaluateEffectMut for Action {
                 let cards = cards.evaluate_with_context(ctx, &game.state);
                 if let Some(c) = cards.first() {
                     let player = game.player_for_card(*c);
-                    game.send_cards_to_zone(
-                        ctx.active_card,
-                        player,
-                        cards,
-                        to_zone,
-                        to_zone.default_add_location(),
-                    )
-                    .await?;
+                    game.send_cards_to_zone(player, cards, to_zone, to_zone.default_add_location())
+                        .await?;
                 }
             }
             Action::SendToBottom(to_zone, cards) => {
@@ -332,14 +321,8 @@ impl EvaluateEffectMut for Action {
                 let cards = cards.evaluate_with_context(ctx, &game.state);
                 if let Some(c) = cards.first() {
                     let player = game.player_for_card(*c);
-                    game.send_cards_to_zone(
-                        ctx.active_card,
-                        player,
-                        cards,
-                        to_zone,
-                        ZoneAddLocation::Bottom,
-                    )
-                    .await?;
+                    game.send_cards_to_zone(player, cards, to_zone, ZoneAddLocation::Bottom)
+                        .await?;
                 }
             }
             Action::SendToTop(to_zone, cards) => {
@@ -347,20 +330,13 @@ impl EvaluateEffectMut for Action {
                 let cards = cards.evaluate_with_context(ctx, &game.state);
                 if let Some(c) = cards.first() {
                     let player = game.player_for_card(*c);
-                    game.send_cards_to_zone(
-                        ctx.active_card,
-                        player,
-                        cards,
-                        to_zone,
-                        ZoneAddLocation::Top,
-                    )
-                    .await?;
+                    game.send_cards_to_zone(player, cards, to_zone, ZoneAddLocation::Top)
+                        .await?;
                 }
             }
             Action::Shuffle(zone) => {
                 let (player, zone) = zone.evaluate_with_context(ctx, &game.state);
-                game.send_event(ctx.active_card, Shuffle { player, zone }.into())
-                    .await?;
+                game.send_event(Shuffle { player, zone }.into()).await?;
             }
         }
         Ok(())
@@ -593,7 +569,7 @@ impl EvaluateEffectMut for super::LetValue {
             }
             super::LetValue::RollDice => {
                 let player = ctx.active_player.expect("there should be an active player");
-                let number = game.roll_dice(ctx.active_card, player).await?;
+                let number = game.roll_dice(player).await?;
                 Ok(LetValue::Number(number as usize))
             }
             super::LetValue::SelectAny(cards, condition) => {

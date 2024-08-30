@@ -50,15 +50,9 @@ pub enum AdjustEventOutcome {
     PreventEvent,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
-pub struct Event {
-    pub origin: Option<CardRef>,
-    pub kind: EventKind,
-}
-
 #[enum_dispatch(EvaluateEvent)]
 #[derive(Debug, Clone, PartialEq, Eq, GetSize)]
-pub enum EventKind {
+pub enum Event {
     // Basic events
     SendGameState,
     Setup,
@@ -346,16 +340,7 @@ impl EventSpan {
 }
 
 impl Game {
-    pub async fn send_event(
-        &mut self,
-        event_origin: Option<CardRef>,
-        event_type: EventKind,
-    ) -> Result<Event, GameOutcome> {
-        let mut event = Event {
-            origin: event_origin,
-            kind: event_type,
-        };
-
+    pub async fn send_event(&mut self, mut event: Event) -> Result<Event, GameOutcome> {
         // keep track of current event
         self.state.event_span.open_event_span(event.clone());
 
@@ -475,17 +460,14 @@ impl Game {
                     .prompt_for_optional_activate(self.player_for_card(card))
                     .await;
                 if activate {
-                    self.activate_oshi_skill(Some(card), card, idx, true)
-                        .await?;
+                    self.activate_oshi_skill(card, idx, true).await?;
                 }
             }
             if let Some(idx) = member_ability {
-                self.activate_holo_member_ability(Some(card), card, idx, true)
-                    .await?;
+                self.activate_holo_member_ability(card, idx, true).await?;
             }
             if support_ability {
-                self.activate_support_ability(Some(card), card, true)
-                    .await?;
+                self.activate_support_ability(card, true).await?;
             }
             self.state.event_span.close_untracked_span();
         }
@@ -493,15 +475,14 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub async fn setup_game(&mut self, event_origin: Option<CardRef>) -> GameResult {
-        self.send_event(event_origin, Setup {}.into()).await?;
+    pub async fn setup_game(&mut self) -> GameResult {
+        self.send_event(Setup {}.into()).await?;
 
         Ok(GameContinue)
     }
 
-    pub async fn report_rps_draw(&mut self, event_origin: Option<CardRef>) -> GameResult {
+    pub async fn report_rps_draw(&mut self) -> GameResult {
         self.send_event(
-            event_origin,
             RpsOutcome {
                 winning_player: None,
             }
@@ -511,13 +492,8 @@ impl Game {
 
         Ok(GameContinue)
     }
-    pub async fn report_rps_win(
-        &mut self,
-        event_origin: Option<CardRef>,
-        player: Player,
-    ) -> GameResult {
+    pub async fn report_rps_win(&mut self, player: Player) -> GameResult {
         self.send_event(
-            event_origin,
             RpsOutcome {
                 winning_player: Some(player),
             }
@@ -527,13 +503,8 @@ impl Game {
 
         Ok(GameContinue)
     }
-    pub async fn report_player_going_first(
-        &mut self,
-        event_origin: Option<CardRef>,
-        player: Player,
-    ) -> GameResult {
+    pub async fn report_player_going_first(&mut self, player: Player) -> GameResult {
         self.send_event(
-            event_origin,
             PlayerGoingFirst {
                 first_player: player,
             }
@@ -544,23 +515,13 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub async fn report_start_game(
-        &mut self,
-        event_origin: Option<CardRef>,
-        active_player: Player,
-    ) -> GameResult {
-        self.send_event(event_origin, GameStart { active_player }.into())
-            .await?;
+    pub async fn report_start_game(&mut self, active_player: Player) -> GameResult {
+        self.send_event(GameStart { active_player }.into()).await?;
 
         Ok(GameContinue)
     }
-    pub async fn report_game_over(
-        &mut self,
-        event_origin: Option<CardRef>,
-        game_outcome: GameOutcome,
-    ) -> GameResult {
+    pub async fn report_game_over(&mut self, game_outcome: GameOutcome) -> GameResult {
         self.send_event(
-            event_origin,
             GameOver {
                 game_outcome,
                 turn_number: self.state.turn_number,
@@ -571,9 +532,8 @@ impl Game {
 
         Ok(GameContinue)
     }
-    pub async fn report_game_over_draw(&mut self, event_origin: Option<CardRef>) -> GameResult {
+    pub async fn report_game_over_draw(&mut self) -> GameResult {
         self.send_event(
-            event_origin,
             GameOver {
                 game_outcome: GameOutcome {
                     winning_player: None,
@@ -587,13 +547,8 @@ impl Game {
 
         Ok(GameContinue)
     }
-    pub async fn report_start_turn(
-        &mut self,
-        event_origin: Option<CardRef>,
-        active_player: Player,
-    ) -> GameResult {
+    pub async fn report_start_turn(&mut self, active_player: Player) -> GameResult {
         self.send_event(
-            event_origin,
             StartTurn {
                 active_player,
                 turn_number: self.state.turn_number,
@@ -604,13 +559,8 @@ impl Game {
 
         Ok(GameContinue)
     }
-    pub async fn report_end_turn(
-        &mut self,
-        event_origin: Option<CardRef>,
-        active_player: Player,
-    ) -> GameResult {
+    pub async fn report_end_turn(&mut self, active_player: Player) -> GameResult {
         self.send_event(
-            event_origin,
             EndTurn {
                 active_player,
                 turn_number: self.state.turn_number,
@@ -623,12 +573,11 @@ impl Game {
     }
     pub async fn report_enter_step(
         &mut self,
-        event_origin: Option<CardRef>,
+
         active_player: Player,
         active_step: Step,
     ) -> GameResult {
         self.send_event(
-            event_origin,
             EnterStep {
                 active_player,
                 active_step,
@@ -641,12 +590,11 @@ impl Game {
     }
     pub async fn report_exit_step(
         &mut self,
-        event_origin: Option<CardRef>,
+
         active_player: Player,
         active_step: Step,
     ) -> GameResult {
         self.send_event(
-            event_origin,
             ExitStep {
                 active_player,
                 active_step,
@@ -658,14 +606,9 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub async fn send_full_hand_to_main_deck(
-        &mut self,
-        event_origin: Option<CardRef>,
-        player: Player,
-    ) -> GameResult {
+    pub async fn send_full_hand_to_main_deck(&mut self, player: Player) -> GameResult {
         let hand = self.board(player).get_zone(Zone::Hand);
         self.send_event(
-            event_origin,
             ZoneToZone {
                 player,
                 from_zone: Zone::Hand,
@@ -680,13 +623,8 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub async fn shuffle_main_deck(
-        &mut self,
-        event_origin: Option<CardRef>,
-        player: Player,
-    ) -> GameResult {
+    pub async fn shuffle_main_deck(&mut self, player: Player) -> GameResult {
         self.send_event(
-            event_origin,
             Shuffle {
                 player,
                 zone: Zone::MainDeck,
@@ -698,13 +636,8 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub async fn shuffle_cheer_deck(
-        &mut self,
-        event_origin: Option<CardRef>,
-        player: Player,
-    ) -> GameResult {
+    pub async fn shuffle_cheer_deck(&mut self, player: Player) -> GameResult {
         self.send_event(
-            event_origin,
             Shuffle {
                 player,
                 zone: Zone::CheerDeck,
@@ -718,7 +651,7 @@ impl Game {
 
     pub async fn reveal_cards(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         zone: Zone,
         cards: &[CardRef],
@@ -728,7 +661,6 @@ impl Game {
         }
 
         self.send_event(
-            event_origin,
             Reveal {
                 player,
                 zone,
@@ -744,27 +676,20 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub async fn reveal_all_cards_in_zone(
-        &mut self,
-        event_origin: Option<CardRef>,
-        player: Player,
-        zone: Zone,
-    ) -> GameResult {
+    pub async fn reveal_all_cards_in_zone(&mut self, player: Player, zone: Zone) -> GameResult {
         let cards = self.board(player).get_zone(zone).all_cards();
-        self.reveal_cards(event_origin, player, zone, &cards)
-            .await?;
+        self.reveal_cards(player, zone, &cards).await?;
 
         Ok(GameContinue)
     }
 
     pub async fn send_from_hand_to_center_stage(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         card: CardRef,
     ) -> GameResult {
         self.send_event(
-            event_origin,
             ZoneToZone {
                 player,
                 from_zone: Zone::Hand,
@@ -781,12 +706,11 @@ impl Game {
 
     pub async fn send_from_back_stage_to_center_stage(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         card: CardRef,
     ) -> GameResult {
         self.send_event(
-            event_origin,
             ZoneToZone {
                 player,
                 from_zone: Zone::BackStage,
@@ -803,7 +727,7 @@ impl Game {
 
     pub async fn send_from_hand_to_back_stage(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         cards: Vec<CardRef>,
     ) -> GameResult {
@@ -812,7 +736,6 @@ impl Game {
         }
 
         self.send_event(
-            event_origin,
             ZoneToZone {
                 player,
                 from_zone: Zone::Hand,
@@ -827,12 +750,7 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub async fn send_cards_to_holo_power(
-        &mut self,
-        event_origin: Option<CardRef>,
-        player: Player,
-        amount: usize,
-    ) -> GameResult {
+    pub async fn send_cards_to_holo_power(&mut self, player: Player, amount: usize) -> GameResult {
         if amount < 1 {
             return Ok(GameContinue);
         }
@@ -840,7 +758,6 @@ impl Game {
         let deck = self.board(player).get_zone(Zone::MainDeck);
         if deck.count() > 0 {
             self.send_event(
-                event_origin,
                 ZoneToZone {
                     player,
                     from_zone: Zone::MainDeck,
@@ -858,7 +775,7 @@ impl Game {
 
     pub async fn send_holo_power_to_archive(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         amount: usize,
     ) -> GameResult {
@@ -872,7 +789,6 @@ impl Game {
         }
 
         self.send_event(
-            event_origin,
             ZoneToZone {
                 player,
                 from_zone: Zone::HoloPower,
@@ -889,12 +805,11 @@ impl Game {
 
     pub async fn send_from_back_stage_to_collab(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         card: CardRef,
     ) -> GameResult {
         self.send_event(
-            event_origin,
             Collab {
                 player,
                 card: (Zone::BackStage, card),
@@ -909,12 +824,11 @@ impl Game {
 
     pub async fn send_from_collab_to_back_stage(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         card: CardRef,
     ) -> GameResult {
         self.send_event(
-            event_origin,
             ZoneToZone {
                 player,
                 from_zone: Zone::Collab,
@@ -931,12 +845,11 @@ impl Game {
 
     pub async fn send_from_center_stage_to_back_stage(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         card: CardRef,
     ) -> GameResult {
         self.send_event(
-            event_origin,
             ZoneToZone {
                 player,
                 from_zone: Zone::CenterStage,
@@ -953,13 +866,12 @@ impl Game {
 
     pub async fn baton_pass_center_stage_to_back_stage(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         from_card: CardRef,
         to_card: CardRef,
     ) -> GameResult {
         self.send_event(
-            event_origin,
             BatonPass {
                 player,
                 from_card: (Zone::CenterStage, from_card),
@@ -972,19 +884,13 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub async fn send_cheers_to_life(
-        &mut self,
-        event_origin: Option<CardRef>,
-        player: Player,
-        amount: usize,
-    ) -> GameResult {
+    pub async fn send_cheers_to_life(&mut self, player: Player, amount: usize) -> GameResult {
         if amount < 1 {
             return Ok(GameContinue);
         }
 
         let cheers = self.board(player).get_zone(Zone::CheerDeck);
         self.send_event(
-            event_origin,
             ZoneToZone {
                 player,
                 from_zone: Zone::CheerDeck,
@@ -1001,7 +907,7 @@ impl Game {
 
     pub async fn send_cards_to_archive(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         cards: Vec<CardRef>,
     ) -> GameResult {
@@ -1011,7 +917,6 @@ impl Game {
 
         for (zone, cards) in self.board(player).group_cards_by_zone(&cards) {
             self.send_event(
-                event_origin,
                 ZoneToZone {
                     player,
                     from_zone: zone,
@@ -1029,7 +934,7 @@ impl Game {
 
     pub async fn send_cards_to_zone(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         cards: Vec<CardRef>,
         to_zone: Zone,
@@ -1057,7 +962,6 @@ impl Game {
 
         for (zone, cards) in from_zone {
             self.send_event(
-                event_origin,
                 ZoneToZone {
                     player,
                     from_zone: zone,
@@ -1076,7 +980,6 @@ impl Game {
                 .find_card_zone(from_card)
                 .expect("card should be in a zone");
             self.send_event(
-                event_origin,
                 AttachToZone {
                     player,
                     from_card: (from_zone, from_card),
@@ -1094,7 +997,7 @@ impl Game {
 
     pub async fn attach_cheers_from_zone(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         zone: Zone,
         amount: usize,
@@ -1105,8 +1008,7 @@ impl Game {
 
         // - draw cards from zone (cheer deck, life), then attach it
         let cheers = self.board(player).get_zone(zone).peek_top_cards(amount);
-        self.reveal_cards(event_origin, player, zone, &cheers)
-            .await?;
+        self.reveal_cards(player, zone, &cheers).await?;
         for cheer in cheers {
             // TODO package with prompt
             // info!("lost a life: {}", CardDisplay::new(cheer, self));
@@ -1118,7 +1020,6 @@ impl Game {
                     .expect("the card should be in a zone");
 
                 self.send_event(
-                    event_origin,
                     ZoneToAttach {
                         player,
                         from_zone: zone,
@@ -1130,7 +1031,6 @@ impl Game {
                 .await?;
             } else {
                 self.send_event(
-                    event_origin,
                     ZoneToZone {
                         player,
                         from_zone: zone,
@@ -1149,7 +1049,7 @@ impl Game {
 
     pub async fn attach_cards_to_card(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         attachments: Vec<CardRef>,
         card: CardRef,
@@ -1180,7 +1080,6 @@ impl Game {
 
         for (zone, attachments) in from_zone {
             self.send_event(
-                event_origin,
                 ZoneToAttach {
                     player,
                     from_zone: zone,
@@ -1198,7 +1097,6 @@ impl Game {
                 .find_card_zone(from_card)
                 .expect("card should be in a zone");
             self.send_event(
-                event_origin,
                 AttachToAttach {
                     player,
                     from_card: (from_zone, from_card),
@@ -1215,7 +1113,7 @@ impl Game {
 
     pub async fn send_attachments_to_archive(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         card: CardRef,
         attachments: Vec<CardRef>,
@@ -1230,7 +1128,6 @@ impl Game {
             .expect("the card should be in a zone");
 
         self.send_event(
-            event_origin,
             AttachToZone {
                 player,
                 from_card: (zone, card),
@@ -1247,7 +1144,7 @@ impl Game {
 
     pub async fn add_many_modifiers_to_many_cards(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         zone: Zone,
         cards: Vec<CardRef>,
@@ -1258,7 +1155,6 @@ impl Game {
         }
 
         self.send_event(
-            event_origin,
             AddCardModifiers {
                 player,
                 zone,
@@ -1274,7 +1170,7 @@ impl Game {
 
     pub async fn remove_many_modifiers_from_many_cards(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         zone: Zone,
         cards: Vec<CardRef>,
@@ -1285,7 +1181,6 @@ impl Game {
         }
 
         self.send_event(
-            event_origin,
             RemoveCardModifiers {
                 player,
                 zone,
@@ -1301,7 +1196,7 @@ impl Game {
 
     pub async fn clear_all_modifiers_from_many_cards(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         zone: Zone,
         cards: Vec<CardRef>,
@@ -1316,7 +1211,6 @@ impl Game {
         }
 
         self.send_event(
-            event_origin,
             ClearCardModifiers {
                 player,
                 zone,
@@ -1331,7 +1225,7 @@ impl Game {
 
     pub async fn add_many_modifiers_to_zone(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         zone: Zone,
         modifiers: Vec<Modifier>,
@@ -1341,7 +1235,6 @@ impl Game {
         }
 
         self.send_event(
-            event_origin,
             AddZoneModifiers {
                 player,
                 zone,
@@ -1356,7 +1249,7 @@ impl Game {
 
     pub async fn remove_many_modifiers_from_zone(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         zone: Zone,
         modifiers: Vec<ModifierRef>,
@@ -1366,7 +1259,6 @@ impl Game {
         }
 
         self.send_event(
-            event_origin,
             RemoveZoneModifiers {
                 player,
                 zone,
@@ -1381,7 +1273,7 @@ impl Game {
 
     pub async fn deal_damage(
         &mut self,
-        event_origin: Option<CardRef>,
+
         card: CardRef,
         target: CardRef,
         dmg: DamageMarkers,
@@ -1399,7 +1291,6 @@ impl Game {
             .expect("the target should be in a zone");
 
         self.send_event(
-            event_origin,
             DealDamage {
                 player,
                 card: (card_zone, card),
@@ -1416,7 +1307,7 @@ impl Game {
 
     pub async fn add_damage_markers_to_many_cards(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         zone: Zone,
         cards: Vec<CardRef>,
@@ -1427,7 +1318,6 @@ impl Game {
         }
 
         self.send_event(
-            event_origin,
             AddDamageMarkers {
                 player,
                 zone,
@@ -1443,7 +1333,7 @@ impl Game {
 
     pub async fn remove_damage_markers_from_many_cards(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         zone: Zone,
         cards: Vec<CardRef>,
@@ -1459,7 +1349,6 @@ impl Game {
         }
 
         self.send_event(
-            event_origin,
             RemoveDamageMarkers {
                 player,
                 zone,
@@ -1475,7 +1364,7 @@ impl Game {
 
     pub async fn clear_all_damage_markers_from_many_cards(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         zone: Zone,
         cards: Vec<CardRef>,
@@ -1490,7 +1379,6 @@ impl Game {
         }
 
         self.send_event(
-            event_origin,
             ClearDamageMarkers {
                 player,
                 zone,
@@ -1503,41 +1391,29 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub async fn draw_from_main_deck(
-        &mut self,
-        event_origin: Option<CardRef>,
-        player: Player,
-        amount: usize,
-    ) -> GameResult {
+    pub async fn draw_from_main_deck(&mut self, player: Player, amount: usize) -> GameResult {
         if amount < 1 {
             return Ok(GameContinue);
         }
 
-        self.send_event(event_origin, Draw { player, amount }.into())
-            .await?;
+        self.send_event(Draw { player, amount }.into()).await?;
 
         Ok(GameContinue)
     }
 
-    pub async fn lose_lives(
-        &mut self,
-        event_origin: Option<CardRef>,
-        player: Player,
-        amount: usize,
-    ) -> GameResult {
+    pub async fn lose_lives(&mut self, player: Player, amount: usize) -> GameResult {
         if amount < 1 {
             return Ok(GameContinue);
         }
 
-        self.send_event(event_origin, LoseLives { player, amount }.into())
-            .await?;
+        self.send_event(LoseLives { player, amount }.into()).await?;
 
         Ok(GameContinue)
     }
 
     pub async fn bloom_holo_member(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         bloom: CardRef,
         target: CardRef,
@@ -1547,7 +1423,6 @@ impl Game {
             .find_card_zone(target)
             .expect("the card should be on stage");
         self.send_event(
-            event_origin,
             Bloom {
                 player,
                 // can only bloom from hand, for now
@@ -1561,14 +1436,8 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub async fn use_support_card(
-        &mut self,
-        event_origin: Option<CardRef>,
-        player: Player,
-        card: CardRef,
-    ) -> GameResult {
+    pub async fn use_support_card(&mut self, player: Player, card: CardRef) -> GameResult {
         self.send_event(
-            event_origin,
             ActivateSupportCard {
                 player,
                 // can only use card from hand, for now
@@ -1583,13 +1452,12 @@ impl Game {
 
     pub async fn use_oshi_skill(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         card: CardRef,
         skill_idx: usize,
     ) -> GameResult {
         self.send_event(
-            event_origin,
             ActivateOshiSkill {
                 player,
                 // can only use skill from oshi
@@ -1606,14 +1474,13 @@ impl Game {
 
     pub async fn activate_oshi_skill(
         &mut self,
-        event_origin: Option<CardRef>,
+
         card: CardRef,
         skill_idx: usize,
         is_triggered: bool,
     ) -> GameResult {
         let player = self.player_for_card(card);
         self.send_event(
-            event_origin,
             ActivateOshiSkill {
                 player,
                 // can only use skill from oshi
@@ -1630,7 +1497,7 @@ impl Game {
 
     pub async fn activate_holo_member_ability(
         &mut self,
-        event_origin: Option<CardRef>,
+
         card: CardRef,
         ability_idx: usize,
         is_triggered: bool,
@@ -1641,7 +1508,6 @@ impl Game {
             .find_card_zone(card)
             .expect("member should be in a zone");
         self.send_event(
-            event_origin,
             ActivateHoloMemberAbility {
                 player,
                 card: (zone, card),
@@ -1657,7 +1523,7 @@ impl Game {
 
     pub async fn activate_support_ability(
         &mut self,
-        event_origin: Option<CardRef>,
+
         card: CardRef,
         is_triggered: bool,
     ) -> GameResult {
@@ -1667,7 +1533,6 @@ impl Game {
             .find_card_zone(card)
             .expect("member should be in a zone");
         self.send_event(
-            event_origin,
             ActivateSupportAbility {
                 player,
                 card: (zone, card),
@@ -1682,7 +1547,7 @@ impl Game {
 
     pub async fn perform_art(
         &mut self,
-        event_origin: Option<CardRef>,
+
         player: Player,
         card: CardRef,
         art_idx: usize,
@@ -1706,7 +1571,6 @@ impl Game {
         }
 
         self.send_event(
-            event_origin,
             PerformArt {
                 player,
                 card: (card_zone, card),
@@ -1721,20 +1585,12 @@ impl Game {
         Ok(GameContinue)
     }
 
-    pub async fn roll_dice(
-        &mut self,
-        event_origin: Option<CardRef>,
-        player: Player,
-    ) -> Result<u8, GameOutcome> {
+    pub async fn roll_dice(&mut self, player: Player) -> Result<u8, GameOutcome> {
         let event = self
-            .send_event(event_origin, RollDice { player, number: 0 }.into())
+            .send_event(RollDice { player, number: 0 }.into())
             .await?;
 
-        let Event {
-            kind: EventKind::RollDice(roll_dice),
-            ..
-        } = event
-        else {
+        let Event::RollDice(roll_dice) = event else {
             unreachable!("the event type cannot change")
         };
 
@@ -1744,25 +1600,11 @@ impl Game {
 
 #[enum_dispatch]
 trait EvaluateEvent {
-    async fn adjust_event(
-        &mut self,
-        _event_origin: Option<CardRef>,
-        _game: &mut Game,
-    ) -> AdjustEventResult {
+    async fn adjust_event(&mut self, _game: &mut Game) -> AdjustEventResult {
         Ok(AdjustEventOutcome::ContinueEvent)
     }
 
-    async fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult;
-}
-
-impl Event {
-    async fn adjust_event(&mut self, game: &mut Game) -> AdjustEventResult {
-        self.kind.adjust_event(self.origin, game).await
-    }
-
-    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
-        self.kind.evaluate_event(self.origin, game).await
-    }
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult;
 }
 
 fn verify_cards_in_zone(game: &Game, player: Player, zone: Zone, cards: &[CardRef]) {
@@ -1790,7 +1632,7 @@ pub struct SendGameState {
     pub state: GameState,
 }
 impl EvaluateEvent for SendGameState {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, _game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, _game: &mut Game) -> GameResult {
         Ok(GameContinue)
     }
 }
@@ -1804,16 +1646,16 @@ pub struct Setup {
     // pub player_2: Loadout,
 }
 impl EvaluateEvent for Setup {
-    async fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         game.state.active_step = Step::Setup;
 
         // - shuffle main deck
-        game.shuffle_main_deck(event_origin, Player::One).await?;
-        game.shuffle_main_deck(event_origin, Player::Two).await?;
+        game.shuffle_main_deck(Player::One).await?;
+        game.shuffle_main_deck(Player::Two).await?;
 
         // - shuffle cheer deck
-        game.shuffle_cheer_deck(event_origin, Player::One).await?;
-        game.shuffle_cheer_deck(event_origin, Player::Two).await?;
+        game.shuffle_cheer_deck(Player::One).await?;
+        game.shuffle_cheer_deck(Player::Two).await?;
 
         // - oshi face down
         // TODO oshi hide
@@ -1830,28 +1672,27 @@ impl EvaluateEvent for Setup {
             match rps_1.vs(rps_2) {
                 RpsOutcome::Win => {
                     info!("player 1 win rps");
-                    game.report_rps_win(event_origin, Player::One).await?;
+                    game.report_rps_win(Player::One).await?;
                     // TODO choose first or second
                     first_player = Player::One;
                     break;
                 }
                 RpsOutcome::Lose => {
                     info!("player 2 win rps");
-                    game.report_rps_win(event_origin, Player::Two).await?;
+                    game.report_rps_win(Player::Two).await?;
                     // TODO choose first or second
                     first_player = Player::Two;
                     break;
                 }
                 RpsOutcome::Draw => {
                     info!("draw rps");
-                    game.report_rps_draw(event_origin).await?;
+                    game.report_rps_draw().await?;
                     continue;
                 }
             }
         }
         // TODO choose first or second
-        game.report_player_going_first(event_origin, first_player)
-            .await?;
+        game.report_player_going_first(first_player).await?;
         let second_player = first_player.opponent();
 
         // - draw 7 cards from main deck
@@ -1867,14 +1708,14 @@ impl EvaluateEvent for Setup {
         // TODO request (intent)
         info!("prompt debut 1");
         let debut_1 = game.prompt_for_first_debut(first_player).await;
-        game.send_from_hand_to_center_stage(event_origin, first_player, debut_1)
+        game.send_from_hand_to_center_stage(first_player, debut_1)
             .await?;
 
         // TODO member hide
         // TODO request (intent)
         info!("prompt debut 2");
         let debut_2 = game.prompt_for_first_debut(second_player).await;
-        game.send_from_hand_to_center_stage(event_origin, second_player, debut_2)
+        game.send_from_hand_to_center_stage(second_player, debut_2)
             .await?;
 
         // - place other debut / spot members back stage
@@ -1882,29 +1723,29 @@ impl EvaluateEvent for Setup {
         // TODO request (intent)
         info!("prompt other debut 1");
         let other_debut_1: Vec<_> = game.prompt_for_first_back_stage(first_player).await;
-        game.send_from_hand_to_back_stage(event_origin, first_player, other_debut_1)
+        game.send_from_hand_to_back_stage(first_player, other_debut_1)
             .await?;
 
         // TODO member hide
         // TODO request (intent)
         info!("prompt other debut 2");
         let other_debut_2: Vec<_> = game.prompt_for_first_back_stage(second_player).await;
-        game.send_from_hand_to_back_stage(event_origin, second_player, other_debut_2)
+        game.send_from_hand_to_back_stage(second_player, other_debut_2)
             .await?;
 
         // - reveal face down oshi and members
         // oshi and members reveal
-        game.reveal_all_cards_in_zone(event_origin, first_player, Zone::Oshi)
+        game.reveal_all_cards_in_zone(first_player, Zone::Oshi)
             .await?;
-        game.reveal_all_cards_in_zone(event_origin, second_player, Zone::Oshi)
+        game.reveal_all_cards_in_zone(second_player, Zone::Oshi)
             .await?;
-        game.reveal_all_cards_in_zone(event_origin, first_player, Zone::CenterStage)
+        game.reveal_all_cards_in_zone(first_player, Zone::CenterStage)
             .await?;
-        game.reveal_all_cards_in_zone(event_origin, second_player, Zone::CenterStage)
+        game.reveal_all_cards_in_zone(second_player, Zone::CenterStage)
             .await?;
-        game.reveal_all_cards_in_zone(event_origin, first_player, Zone::BackStage)
+        game.reveal_all_cards_in_zone(first_player, Zone::BackStage)
             .await?;
-        game.reveal_all_cards_in_zone(event_origin, second_player, Zone::BackStage)
+        game.reveal_all_cards_in_zone(second_player, Zone::BackStage)
             .await?;
 
         // - draw life cards face down from cheer
@@ -1913,7 +1754,7 @@ impl EvaluateEvent for Setup {
             .oshi()
             .and_then(|c| game.lookup_oshi(c))
             .expect("oshi should always be there");
-        game.send_cheers_to_life(event_origin, first_player, oshi_1.life as usize)
+        game.send_cheers_to_life(first_player, oshi_1.life as usize)
             .await?;
 
         let oshi_2 = game
@@ -1921,12 +1762,11 @@ impl EvaluateEvent for Setup {
             .oshi()
             .and_then(|c| game.lookup_oshi(c))
             .expect("oshi should always be there");
-        game.send_cheers_to_life(event_origin, second_player, oshi_2.life as usize)
+        game.send_cheers_to_life(second_player, oshi_2.life as usize)
             .await?;
 
         // skip the first reset step of each player
         game.add_zone_modifier(
-            event_origin,
             first_player,
             Zone::All,
             SkipStep(Step::Reset),
@@ -1934,7 +1774,6 @@ impl EvaluateEvent for Setup {
         )
         .await?;
         game.add_zone_modifier(
-            event_origin,
             second_player,
             Zone::All,
             SkipStep(Step::Reset),
@@ -1944,7 +1783,6 @@ impl EvaluateEvent for Setup {
 
         // cannot use limited support on the first turn of the first player
         game.add_zone_modifier(
-            event_origin,
             first_player,
             Zone::All,
             PreventLimitedSupport,
@@ -1954,7 +1792,6 @@ impl EvaluateEvent for Setup {
 
         // cannot bloom on each player's first turn
         game.add_zone_modifier(
-            event_origin,
             first_player,
             Zone::All,
             PreventBloom,
@@ -1962,7 +1799,6 @@ impl EvaluateEvent for Setup {
         )
         .await?;
         game.add_zone_modifier(
-            event_origin,
             second_player,
             Zone::All,
             PreventBloom,
@@ -1972,7 +1808,6 @@ impl EvaluateEvent for Setup {
 
         // skip the first performance step of the game
         game.add_zone_modifier(
-            event_origin,
             first_player,
             Zone::All,
             SkipStep(Step::Performance),
@@ -1990,7 +1825,7 @@ pub struct Shuffle {
     pub zone: Zone,
 }
 impl EvaluateEvent for Shuffle {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         // need that split, because the borrow checker needs to know we are accessing different fields
         let zone = match self.player {
             Player::One => game.state.player_1.get_zone_mut(self.zone),
@@ -2008,7 +1843,7 @@ pub struct RpsOutcome {
     pub winning_player: Option<Player>,
 }
 impl EvaluateEvent for RpsOutcome {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, _game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, _game: &mut Game) -> GameResult {
         // the winning player doesn't change the state of the game
 
         Ok(GameContinue)
@@ -2020,7 +1855,7 @@ pub struct PlayerGoingFirst {
     pub first_player: Player,
 }
 impl EvaluateEvent for PlayerGoingFirst {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         game.state.active_player = self.first_player;
 
         Ok(GameContinue)
@@ -2034,7 +1869,7 @@ pub struct Reveal {
     pub cards: Vec<(CardRef, CardNumber)>,
 }
 impl EvaluateEvent for Reveal {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() {
             return Ok(GameContinue);
         }
@@ -2057,7 +1892,7 @@ pub struct CardMapping {
     pub card_map: HashMap<CardRef, (Player, CardNumber)>,
 }
 impl EvaluateEvent for CardMapping {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, _game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, _game: &mut Game) -> GameResult {
         unimplemented!("it's a temporary patch")
     }
 }
@@ -2067,7 +1902,7 @@ pub struct GameStart {
     pub active_player: Player,
 }
 impl EvaluateEvent for GameStart {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         // the state changes on start turn
         game.state.active_player = self.active_player;
 
@@ -2081,7 +1916,7 @@ pub struct GameOver {
     pub turn_number: u8,
 }
 impl EvaluateEvent for GameOver {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         game.state.active_step = Step::GameOver;
         game.state.game_outcome = Some(self.game_outcome);
 
@@ -2095,7 +1930,7 @@ pub struct StartTurn {
     pub turn_number: u8,
 }
 impl EvaluateEvent for StartTurn {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         game.state.active_player = self.active_player;
 
         game.start_turn_modifiers(self.active_player);
@@ -2110,14 +1945,13 @@ pub struct EndTurn {
     pub turn_number: u8,
 }
 impl EvaluateEvent for EndTurn {
-    async fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         assert_eq!(self.active_player, game.state.active_player);
 
         game.end_turn_modifiers(self.active_player);
 
         game.state.event_span.open_untracked_span();
-        game.remove_expiring_modifiers(event_origin, LifeTime::ThisTurn)
-            .await?;
+        game.remove_expiring_modifiers(LifeTime::ThisTurn).await?;
         game.state.event_span.close_untracked_span();
 
         Ok(GameContinue)
@@ -2130,7 +1964,7 @@ pub struct EnterStep {
     pub active_step: Step,
 }
 impl EvaluateEvent for EnterStep {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         assert_eq!(self.active_player, game.state.active_player);
         game.state.active_step = self.active_step;
 
@@ -2144,13 +1978,12 @@ pub struct ExitStep {
     pub active_step: Step,
 }
 impl EvaluateEvent for ExitStep {
-    async fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         assert_eq!(self.active_player, game.state.active_player);
         assert_eq!(self.active_step, game.state.active_step);
 
         game.state.event_span.open_untracked_span();
-        game.remove_expiring_modifiers(event_origin, LifeTime::ThisStep)
-            .await?;
+        game.remove_expiring_modifiers(LifeTime::ThisStep).await?;
         game.state.event_span.close_untracked_span();
 
         Ok(GameContinue)
@@ -2165,7 +1998,7 @@ pub struct AddCardModifiers {
     pub modifiers: Vec<Modifier>,
 }
 impl EvaluateEvent for AddCardModifiers {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() || self.modifiers.is_empty() {
             return Ok(GameContinue);
         }
@@ -2192,7 +2025,7 @@ pub struct RemoveCardModifiers {
     pub modifiers: Vec<ModifierRef>,
 }
 impl EvaluateEvent for RemoveCardModifiers {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() || self.modifiers.is_empty() {
             return Ok(GameContinue);
         }
@@ -2237,7 +2070,7 @@ pub struct ClearCardModifiers {
     pub cards: Vec<CardRef>,
 }
 impl EvaluateEvent for ClearCardModifiers {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() {
             return Ok(GameContinue);
         }
@@ -2259,7 +2092,7 @@ pub struct AddZoneModifiers {
     pub modifiers: Vec<Modifier>,
 }
 impl EvaluateEvent for AddZoneModifiers {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.modifiers.is_empty() {
             return Ok(GameContinue);
         }
@@ -2286,7 +2119,7 @@ pub struct RemoveZoneModifiers {
     pub modifiers: Vec<ModifierRef>,
 }
 impl EvaluateEvent for RemoveZoneModifiers {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.modifiers.is_empty() {
             return Ok(GameContinue);
         }
@@ -2328,7 +2161,7 @@ pub struct AddDamageMarkers {
     pub dmg: DamageMarkers,
 }
 impl EvaluateEvent for AddDamageMarkers {
-    async fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() || self.dmg.0 < 1 {
             return Ok(GameContinue);
         }
@@ -2364,7 +2197,6 @@ impl EvaluateEvent for AddDamageMarkers {
         // send member to archive, from attack
         for card in defeated {
             game.send_event(
-                event_origin,
                 HoloMemberDefeated {
                     player: self.player,
                     card: (self.zone, card),
@@ -2375,8 +2207,7 @@ impl EvaluateEvent for AddDamageMarkers {
         }
 
         // TODO do we need a untracked span here?
-        game.lose_lives(event_origin, self.player, life_loss)
-            .await?;
+        game.lose_lives(self.player, life_loss).await?;
 
         Ok(GameContinue)
     }
@@ -2390,7 +2221,7 @@ pub struct RemoveDamageMarkers {
     pub dmg: DamageMarkers,
 }
 impl EvaluateEvent for RemoveDamageMarkers {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() || self.dmg.0 < 1 {
             return Ok(GameContinue);
         }
@@ -2412,7 +2243,7 @@ pub struct ClearDamageMarkers {
     pub cards: Vec<CardRef>,
 }
 impl EvaluateEvent for ClearDamageMarkers {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() {
             return Ok(GameContinue);
         }
@@ -2434,7 +2265,7 @@ pub struct LookAndSelect {
     pub cards: Vec<CardRef>, // could just be a count, it's just for the opponent
 }
 impl EvaluateEvent for LookAndSelect {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() {
             return Ok(GameContinue);
         }
@@ -2455,7 +2286,7 @@ pub struct ZoneToZone {
     pub to_zone_location: ZoneAddLocation,
 }
 impl EvaluateEvent for ZoneToZone {
-    async fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() {
             return Ok(GameContinue);
         }
@@ -2484,7 +2315,6 @@ impl EvaluateEvent for ZoneToZone {
         // lose attachments and buffs when leaving stage
         if !Zone::Stage.includes(self.to_zone) {
             game.clear_all_damage_markers_from_many_cards(
-                event_origin,
                 self.player,
                 self.to_zone,
                 self.cards.clone(),
@@ -2493,10 +2323,10 @@ impl EvaluateEvent for ZoneToZone {
 
             for card in &self.cards {
                 let attachments = game.board(self.player).attachments(*card);
-                game.send_attachments_to_archive(event_origin, self.player, *card, attachments)
+                game.send_attachments_to_archive(self.player, *card, attachments)
                     .await?;
 
-                game.clear_all_modifiers(event_origin, *card).await?;
+                game.clear_all_modifiers(*card).await?;
             }
         }
 
@@ -2516,7 +2346,7 @@ pub struct ZoneToAttach {
     pub to_card: (Zone, CardRef),
 }
 impl EvaluateEvent for ZoneToAttach {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.attachments.is_empty() {
             return Ok(GameContinue);
         }
@@ -2541,7 +2371,7 @@ pub struct AttachToAttach {
     pub to_card: (Zone, CardRef),
 }
 impl EvaluateEvent for AttachToAttach {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.attachments.is_empty() {
             return Ok(GameContinue);
         }
@@ -2569,7 +2399,7 @@ pub struct AttachToZone {
     pub to_zone_location: ZoneAddLocation,
 }
 impl EvaluateEvent for AttachToZone {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.attachments.is_empty() {
             return Ok(GameContinue);
         }
@@ -2594,14 +2424,13 @@ pub struct Draw {
     pub amount: usize,
 }
 impl EvaluateEvent for Draw {
-    async fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.amount < 1 {
             return Ok(GameContinue);
         }
 
         let deck = game.board(self.player).get_zone(Zone::MainDeck);
         game.send_event(
-            event_origin,
             ZoneToZone {
                 player: self.player,
                 from_zone: Zone::MainDeck,
@@ -2625,7 +2454,7 @@ pub struct Collab {
     pub holo_power_amount: usize,
 }
 impl EvaluateEvent for Collab {
-    async fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
         // check condition for collab
@@ -2640,7 +2469,6 @@ impl EvaluateEvent for Collab {
         }
 
         game.send_event(
-            event_origin,
             ZoneToZone {
                 player: self.player,
                 from_zone: self.card.0,
@@ -2654,18 +2482,12 @@ impl EvaluateEvent for Collab {
 
         game.state.event_span.open_untracked_span();
         //   - draw down card from deck into power zone
-        game.send_cards_to_holo_power(event_origin, self.player, self.holo_power_amount)
+        game.send_cards_to_holo_power(self.player, self.holo_power_amount)
             .await?;
 
         // can only collab once per turn
-        game.add_zone_modifier(
-            event_origin,
-            self.player,
-            Zone::All,
-            PreventCollab,
-            LifeTime::ThisTurn,
-        )
-        .await?;
+        game.add_zone_modifier(self.player, Zone::All, PreventCollab, LifeTime::ThisTurn)
+            .await?;
         game.state.event_span.close_untracked_span();
 
         Ok(GameContinue)
@@ -2679,7 +2501,7 @@ pub struct LoseLives {
     pub amount: usize,
 }
 impl EvaluateEvent for LoseLives {
-    async fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.amount < 1 {
             return Ok(GameContinue);
         }
@@ -2687,10 +2509,8 @@ impl EvaluateEvent for LoseLives {
         // if the remaining lives are too few, send them to archive
         if game.board(self.player).get_zone(Zone::Life).count() <= self.amount {
             let cheers = game.board(self.player).get_zone(Zone::Life).all_cards();
-            game.reveal_cards(event_origin, self.player, Zone::Life, &cheers)
-                .await?;
+            game.reveal_cards(self.player, Zone::Life, &cheers).await?;
             game.send_event(
-                event_origin,
                 ZoneToZone {
                     player: self.player,
                     from_zone: Zone::Life,
@@ -2702,7 +2522,7 @@ impl EvaluateEvent for LoseLives {
             )
             .await?;
         } else {
-            game.attach_cheers_from_zone(event_origin, self.player, Zone::Life, self.amount)
+            game.attach_cheers_from_zone(self.player, Zone::Life, self.amount)
                 .await?;
         }
 
@@ -2718,7 +2538,7 @@ pub struct Bloom {
     pub to_card: (Zone, CardRef),
 }
 impl EvaluateEvent for Bloom {
-    async fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.from_card.0, &[self.from_card.1]);
         verify_cards_in_zone(game, self.player, self.to_card.0, &[self.to_card.1]);
 
@@ -2745,13 +2565,8 @@ impl EvaluateEvent for Bloom {
         game.promote_damage_markers(self.from_card.1, self.to_card.1);
 
         // prevent it from blooming again this turn
-        game.add_modifier(
-            event_origin,
-            self.from_card.1,
-            PreventBloom,
-            LifeTime::ThisTurn,
-        )
-        .await?;
+        game.add_modifier(self.from_card.1, PreventBloom, LifeTime::ThisTurn)
+            .await?;
 
         game.state.event_span.close_untracked_span();
 
@@ -2767,7 +2582,7 @@ pub struct BatonPass {
     pub to_card: (Zone, CardRef),
 }
 impl EvaluateEvent for BatonPass {
-    async fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.from_card.0, &[self.from_card.1]);
         verify_cards_in_zone(game, self.player, self.to_card.0, &[self.to_card.1]);
 
@@ -2789,27 +2604,21 @@ impl EvaluateEvent for BatonPass {
         let cheers = game
             .prompt_for_baton_pass(self.player, self.from_card.1, mem.baton_pass_cost)
             .await;
-        game.send_attachments_to_archive(event_origin, self.player, self.from_card.1, cheers)
+        game.send_attachments_to_archive(self.player, self.from_card.1, cheers)
             .await?;
 
         // send the center member to the back
-        game.send_from_center_stage_to_back_stage(event_origin, self.player, self.from_card.1)
+        game.send_from_center_stage_to_back_stage(self.player, self.from_card.1)
             .await?;
 
         // send back stage member to center
-        game.send_from_back_stage_to_center_stage(event_origin, self.player, self.to_card.1)
+        game.send_from_back_stage_to_center_stage(self.player, self.to_card.1)
             .await?;
 
         // can only baton pass once per turn
         game.state.event_span.open_untracked_span();
-        game.add_zone_modifier(
-            event_origin,
-            self.player,
-            Zone::All,
-            PreventBatonPass,
-            LifeTime::ThisTurn,
-        )
-        .await?;
+        game.add_zone_modifier(self.player, Zone::All, PreventBatonPass, LifeTime::ThisTurn)
+            .await?;
         game.state.event_span.close_untracked_span();
 
         Ok(GameContinue)
@@ -2822,7 +2631,7 @@ pub struct ActivateSupportCard {
     pub card: (Zone, CardRef),
 }
 impl EvaluateEvent for ActivateSupportCard {
-    async fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
         // - use support card
@@ -2842,7 +2651,6 @@ impl EvaluateEvent for ActivateSupportCard {
         // send the support card out of the game, so it doesn't affect itself
         game.state.event_span.open_untracked_span();
         game.send_event(
-            event_origin,
             ZoneToZone {
                 player: self.player,
                 from_zone: self.card.0,
@@ -2864,7 +2672,6 @@ impl EvaluateEvent for ActivateSupportCard {
         // limited support can only be used once per turn
         if limited_use {
             game.add_zone_modifier(
-                event_origin,
                 self.player,
                 Zone::All,
                 PreventLimitedSupport,
@@ -2874,7 +2681,7 @@ impl EvaluateEvent for ActivateSupportCard {
         }
 
         // send the used card to the archive
-        game.send_cards_to_archive(event_origin, game.state.active_player, vec![self.card.1])
+        game.send_cards_to_archive(game.state.active_player, vec![self.card.1])
             .await?;
         game.state.event_span.close_untracked_span();
 
@@ -2890,7 +2697,7 @@ pub struct ActivateSupportAbility {
     pub is_triggered: bool,
 }
 impl EvaluateEvent for ActivateSupportAbility {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
         let support = game
@@ -2921,7 +2728,7 @@ pub struct ActivateOshiSkill {
     pub is_triggered: bool,
 }
 impl EvaluateEvent for ActivateOshiSkill {
-    async fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
         let oshi = game
@@ -2947,8 +2754,7 @@ impl EvaluateEvent for ActivateOshiSkill {
         // pay the cost of the oshi skill
         // TODO could have a buff that could pay for the skill
         game.state.event_span.open_untracked_span();
-        game.send_holo_power_to_archive(event_origin, self.player, cost)
-            .await?;
+        game.send_holo_power_to_archive(self.player, cost).await?;
         game.state.event_span.close_untracked_span();
 
         effect
@@ -2958,7 +2764,6 @@ impl EvaluateEvent for ActivateOshiSkill {
         //   - once per turn / once per game
         game.state.event_span.open_untracked_span();
         game.add_modifier(
-            event_origin,
             self.card.1,
             PreventOshiSkill(self.skill_idx),
             prevent_life_time,
@@ -2979,7 +2784,7 @@ pub struct ActivateHoloMemberAbility {
     pub is_triggered: bool,
 }
 impl EvaluateEvent for ActivateHoloMemberAbility {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
         let mem = game
@@ -3010,7 +2815,7 @@ pub struct ActivateHoloMemberArtEffect {
     pub skill_idx: usize,
 }
 impl EvaluateEvent for ActivateHoloMemberArtEffect {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
         unimplemented!()
@@ -3026,7 +2831,7 @@ pub struct PerformArt {
     pub target: Option<(Zone, CardRef)>,
 }
 impl EvaluateEvent for PerformArt {
-    async fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
         if let (Some(target), Some(target_player)) = (self.target, self.target_player) {
@@ -3074,22 +2879,15 @@ impl EvaluateEvent for PerformArt {
 
         // deal damage if there is a target. if any other damage is done, it will be in the effect
         if let Some(target) = self.target {
-            game.deal_damage(event_origin, self.card.1, target.1, dmg)
-                .await?;
+            game.deal_damage(self.card.1, target.1, dmg).await?;
         }
 
         game.state.event_span.open_untracked_span();
-        game.remove_expiring_modifiers(event_origin, LifeTime::ThisArt)
-            .await?;
+        game.remove_expiring_modifiers(LifeTime::ThisArt).await?;
 
         // can only perform art once per turn
-        game.add_modifier(
-            event_origin,
-            self.card.1,
-            PreventAllArts,
-            LifeTime::ThisTurn,
-        )
-        .await?;
+        game.add_modifier(self.card.1, PreventAllArts, LifeTime::ThisTurn)
+            .await?;
         game.state.event_span.close_untracked_span();
 
         Ok(GameContinue)
@@ -3102,7 +2900,7 @@ pub struct WaitingForPlayerIntent {
     // reason?
 }
 impl EvaluateEvent for WaitingForPlayerIntent {
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, _game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, _game: &mut Game) -> GameResult {
         // TODO implement
         unimplemented!()
     }
@@ -3116,10 +2914,10 @@ pub struct HoloMemberDefeated {
     pub card: (Zone, CardRef),
 }
 impl EvaluateEvent for HoloMemberDefeated {
-    async fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
-        game.send_cards_to_archive(event_origin, self.player, vec![self.card.1])
+        game.send_cards_to_archive(self.player, vec![self.card.1])
             .await?;
 
         Ok(GameContinue)
@@ -3135,12 +2933,11 @@ pub struct DealDamage {
     pub dmg: DamageMarkers,
 }
 impl EvaluateEvent for DealDamage {
-    async fn evaluate_event(&self, event_origin: Option<CardRef>, game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
         verify_cards_in_zone(game, self.target_player, self.target.0, &[self.target.1]);
 
-        game.add_damage_markers(event_origin, self.target.1, self.dmg)
-            .await?;
+        game.add_damage_markers(self.target.1, self.dmg).await?;
 
         Ok(GameContinue)
     }
@@ -3153,11 +2950,7 @@ pub struct RollDice {
     pub number: u8,
 }
 impl EvaluateEvent for RollDice {
-    async fn adjust_event(
-        &mut self,
-        event_origin: Option<CardRef>,
-        game: &mut Game,
-    ) -> AdjustEventResult {
+    async fn adjust_event(&mut self, game: &mut Game) -> AdjustEventResult {
         // look for modifiers, and consume them, if not permanent
         let mut to_remove = None;
         for m in game.find_player_modifiers(self.player) {
@@ -3171,7 +2964,7 @@ impl EvaluateEvent for RollDice {
         }
         if let Some(id) = to_remove {
             game.state.event_span.open_untracked_span();
-            game.remove_many_modifiers_from_zone(event_origin, self.player, Zone::All, vec![id])
+            game.remove_many_modifiers_from_zone(self.player, Zone::All, vec![id])
                 .await?;
             game.state.event_span.close_untracked_span();
             return Ok(AdjustEventOutcome::PreventEvent);
@@ -3183,7 +2976,7 @@ impl EvaluateEvent for RollDice {
         Ok(AdjustEventOutcome::ContinueEvent)
     }
 
-    async fn evaluate_event(&self, _event_origin: Option<CardRef>, _game: &mut Game) -> GameResult {
+    async fn evaluate_event(&self, _game: &mut Game) -> GameResult {
         // nothing to do here
         Ok(GameContinue)
     }

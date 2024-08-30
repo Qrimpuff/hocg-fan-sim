@@ -9,7 +9,7 @@ use gloo_timers::future::TimeoutFuture;
 use hocg_fan_sim::{
     cards::Loadout,
     client::{Client, DefaultEventHandler, EventHandler},
-    events::{Event, EventKind, Shuffle},
+    events::{Event, Shuffle},
     gameplay::{Game, GameState, Player, Zone},
     prompters::RandomPrompter,
 };
@@ -116,13 +116,7 @@ impl EventHandler for WebGameEventHandler {
         *EVENT.write() = Some(event.clone());
         *COUNT.write() += 1;
 
-        if matches!(
-            event,
-            Event {
-                kind: EventKind::Shuffle(_),
-                ..
-            }
-        ) {
+        if matches!(event, Event::Shuffle(_),) {
             let (s, r) = oneshot::<bool>();
             *ONESHOT.write() = Some(s);
             r.await.unwrap();
@@ -497,11 +491,7 @@ fn Deck(mat: Mat, player: Player, zone: Zone, size: usize) -> Element {
     let shuffling_c = use_memo(move || if shuffling() { "deck-shuffling" } else { "" });
     use_effect(move || {
         shuffling.set(
-            if let Some(Event {
-                kind: EventKind::Shuffle(Shuffle { player: p, zone: z }),
-                ..
-            }) = *EVENT.read()
-            {
+            if let Some(Event::Shuffle(Shuffle { player: p, zone: z })) = *EVENT.read() {
                 p == player && z == zone
             } else {
                 false

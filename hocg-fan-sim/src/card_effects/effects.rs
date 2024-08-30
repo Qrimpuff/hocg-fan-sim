@@ -35,7 +35,7 @@ use iter_tools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    events::{EnterStep, Event, EventKind, ExitStep, TriggeredEvent},
+    events::{EnterStep, Event, ExitStep, TriggeredEvent},
     gameplay::Step,
 };
 
@@ -472,28 +472,14 @@ impl Trigger {
         match self {
             Trigger::ActivateInMainStep => false,
             Trigger::OnStartTurn => {
-                matches!(
-                    triggered_event,
-                    TriggeredEvent::After(Event {
-                        kind: EventKind::StartTurn(_),
-                        ..
-                    })
-                )
+                matches!(triggered_event, TriggeredEvent::After(Event::StartTurn(_)))
             }
             Trigger::OnEndTurn => {
-                matches!(
-                    triggered_event,
-                    TriggeredEvent::After(Event {
-                        kind: EventKind::EndTurn(_),
-                        ..
-                    })
-                )
+                matches!(triggered_event, TriggeredEvent::After(Event::EndTurn(_),))
             }
             Trigger::OnEnterStep(step) => {
-                if let TriggeredEvent::After(Event {
-                    kind: EventKind::EnterStep(EnterStep { active_step, .. }),
-                    ..
-                }) = triggered_event
+                if let TriggeredEvent::After(Event::EnterStep(EnterStep { active_step, .. })) =
+                    triggered_event
                 {
                     active_step == step
                 } else {
@@ -501,10 +487,8 @@ impl Trigger {
                 }
             }
             Trigger::OnExitStep(step) => {
-                if let TriggeredEvent::After(Event {
-                    kind: EventKind::ExitStep(ExitStep { active_step, .. }),
-                    ..
-                }) = triggered_event
+                if let TriggeredEvent::After(Event::ExitStep(ExitStep { active_step, .. })) =
+                    triggered_event
                 {
                     active_step == step
                 } else {
@@ -514,38 +498,17 @@ impl Trigger {
             Trigger::OnBeforePerformArt => {
                 matches!(
                     triggered_event,
-                    TriggeredEvent::Before(Event {
-                        kind: EventKind::PerformArt(_),
-                        ..
-                    })
+                    TriggeredEvent::Before(Event::PerformArt(_))
                 )
             }
             Trigger::OnAfterPerformArt => {
-                matches!(
-                    triggered_event,
-                    TriggeredEvent::After(Event {
-                        kind: EventKind::PerformArt(_),
-                        ..
-                    })
-                )
+                matches!(triggered_event, TriggeredEvent::After(Event::PerformArt(_)))
             }
             Trigger::OnBeforeRollDice => {
-                matches!(
-                    triggered_event,
-                    TriggeredEvent::Before(Event {
-                        kind: EventKind::RollDice(_),
-                        ..
-                    })
-                )
+                matches!(triggered_event, TriggeredEvent::Before(Event::RollDice(_)))
             }
             Trigger::OnAfterRollDice => {
-                matches!(
-                    triggered_event,
-                    TriggeredEvent::After(Event {
-                        kind: EventKind::RollDice(_),
-                        ..
-                    })
-                )
+                matches!(triggered_event, TriggeredEvent::After(Event::RollDice(_)))
             }
         }
     }

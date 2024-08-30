@@ -42,54 +42,54 @@ where
             ClientReceive::Event(event) => {
                 debug!("RECEIVED EVENT = {:?}", event);
 
-                match &event.kind {
-                    EventKind::SendGameState(SendGameState { state }) => self.game = state.clone(),
-                    // EventKind::Setup(Setup {}) => todo!(),
-                    // EventKind::Shuffle(_) => todo!(),
-                    // EventKind::RpsOutcome(_) => todo!(),
-                    // EventKind::PlayerGoingFirst(_) => todo!(),
-                    // EventKind::Reveal(_) => todo!(),
+                match &event {
+                    Event::SendGameState(SendGameState { state }) => self.game = state.clone(),
+                    // Event::Setup(Setup {}) => todo!(),
+                    // Event::Shuffle(_) => todo!(),
+                    // Event::RpsOutcome(_) => todo!(),
+                    // Event::PlayerGoingFirst(_) => todo!(),
+                    // Event::Reveal(_) => todo!(),
                     // TODO add to card mapping, by reveal, or gradually
-                    EventKind::CardMapping(CardMapping { card_map }, ..) => {
+                    Event::CardMapping(CardMapping { card_map }, ..) => {
                         self.game.card_map.clone_from(card_map);
                     }
-                    // EventKind::GameStart(_) => todo!(),
-                    EventKind::GameOver(game_over) => {
+                    // Event::GameStart(_) => todo!(),
+                    Event::GameOver(game_over) => {
                         self.game.game_outcome = Some(game_over.game_outcome);
                         return Err(game_over.game_outcome);
                     }
-                    // EventKind::StartTurn(_) => todo!(),
-                    // EventKind::EndTurn(_) => todo!(),
-                    // EventKind::EnterStep(_) => todo!(),
-                    // EventKind::ExitStep(_) => todo!(),
-                    // EventKind::AddCardModifiers(_) => todo!(),
-                    // EventKind::RemoveCardModifiers(_) => todo!(),
-                    // EventKind::ClearCardModifiers(_) => todo!(),
-                    // EventKind::AddZoneModifiers(_) => todo!(),
-                    // EventKind::RemoveZoneModifiers(_) => todo!(),
-                    // EventKind::AddDamageMarkers(_) => todo!(),
-                    // EventKind::RemoveDamageMarkers(_) => todo!(),
-                    // EventKind::ClearDamageMarkers(_) => todo!(),
-                    // EventKind::LookAndSelect(_) => todo!(),
-                    // EventKind::ZoneToZone(_) => todo!(),
-                    // EventKind::ZoneToAttach(_) => todo!(),
-                    // EventKind::AttachToAttach(_) => todo!(),
-                    // EventKind::AttachToZone(_) => todo!(),
-                    // EventKind::Draw(_) => todo!(),
-                    // EventKind::Collab(_) => todo!(),
-                    // EventKind::LoseLives(_) => todo!(),
-                    // EventKind::Bloom(_) => todo!(),
-                    // EventKind::BatonPass(_) => todo!(),
-                    // EventKind::ActivateSupportCard(_) => todo!(),
-                    // EventKind::ActivateSupportAbility(_) => todo!(),
-                    // EventKind::ActivateOshiSkill(_) => todo!(),
-                    // EventKind::ActivateHoloMemberAbility(_) => todo!(),
-                    // EventKind::ActivateHoloMemberArtEffect(_) => todo!(),
-                    // EventKind::PerformArt(_) => todo!(),
-                    // EventKind::WaitingForPlayerIntent(_) => todo!(),
-                    // EventKind::HoloMemberDefeated(_) => todo!(),
-                    // EventKind::DealDamage(_) => todo!(),
-                    // EventKind::RollDice(_) => todo!(),
+                    // Event::StartTurn(_) => todo!(),
+                    // Event::EndTurn(_) => todo!(),
+                    // Event::EnterStep(_) => todo!(),
+                    // Event::ExitStep(_) => todo!(),
+                    // Event::AddCardModifiers(_) => todo!(),
+                    // Event::RemoveCardModifiers(_) => todo!(),
+                    // Event::ClearCardModifiers(_) => todo!(),
+                    // Event::AddZoneModifiers(_) => todo!(),
+                    // Event::RemoveZoneModifiers(_) => todo!(),
+                    // Event::AddDamageMarkers(_) => todo!(),
+                    // Event::RemoveDamageMarkers(_) => todo!(),
+                    // Event::ClearDamageMarkers(_) => todo!(),
+                    // Event::LookAndSelect(_) => todo!(),
+                    // Event::ZoneToZone(_) => todo!(),
+                    // Event::ZoneToAttach(_) => todo!(),
+                    // Event::AttachToAttach(_) => todo!(),
+                    // Event::AttachToZone(_) => todo!(),
+                    // Event::Draw(_) => todo!(),
+                    // Event::Collab(_) => todo!(),
+                    // Event::LoseLives(_) => todo!(),
+                    // Event::Bloom(_) => todo!(),
+                    // Event::BatonPass(_) => todo!(),
+                    // Event::ActivateSupportCard(_) => todo!(),
+                    // Event::ActivateSupportAbility(_) => todo!(),
+                    // Event::ActivateOshiSkill(_) => todo!(),
+                    // Event::ActivateHoloMemberAbility(_) => todo!(),
+                    // Event::ActivateHoloMemberArtEffect(_) => todo!(),
+                    // Event::PerformArt(_) => todo!(),
+                    // Event::WaitingForPlayerIntent(_) => todo!(),
+                    // Event::HoloMemberDefeated(_) => todo!(),
+                    // Event::DealDamage(_) => todo!(),
+                    // Event::RollDice(_) => todo!(),
                     _ => {}
                 }
 
