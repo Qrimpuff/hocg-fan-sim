@@ -1629,7 +1629,7 @@ fn verify_cards_attached(game: &Game, player: Player, card: CardRef, attachments
 
 #[derive(Debug, Clone, PartialEq, Eq, GetSize)]
 pub struct SendGameState {
-    pub state: GameState,
+    pub state: Box<GameState>,
 }
 impl EvaluateEvent for SendGameState {
     async fn evaluate_event(&self, _game: &mut Game) -> GameResult {

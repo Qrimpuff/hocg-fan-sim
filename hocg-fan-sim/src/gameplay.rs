@@ -301,14 +301,14 @@ impl Game {
         self.client(self.state.active_player)
             .0
             .send(ClientReceive::Event(Event::SendGameState(SendGameState {
-                state: state.clone(),
+                state: Box::new(state.clone()),
             })))
             .await
             .unwrap();
         self.client(self.state.active_player.opponent())
             .0
             .send(ClientReceive::Event(Event::SendGameState(SendGameState {
-                state,
+                state: Box::new(state),
             })))
             .await
             .unwrap();
@@ -394,14 +394,14 @@ impl Game {
         self.client(self.state.active_player)
             .0
             .send(ClientReceive::Event(Event::SendGameState(SendGameState {
-                state: state.clone(),
+                state: Box::new(state.clone()),
             })))
             .await
             .unwrap();
         self.client(self.state.active_player.opponent())
             .0
             .send(ClientReceive::Event(Event::SendGameState(SendGameState {
-                state,
+                state: Box::new(state),
             })))
             .await
             .unwrap();

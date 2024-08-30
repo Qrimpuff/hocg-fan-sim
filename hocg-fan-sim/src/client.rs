@@ -43,7 +43,9 @@ where
                 debug!("RECEIVED EVENT = {:?}", event);
 
                 match &event {
-                    Event::SendGameState(SendGameState { state }) => self.game = state.clone(),
+                    Event::SendGameState(SendGameState { state }) => {
+                        self.game = state.as_ref().clone()
+                    }
                     // Event::Setup(Setup {}) => todo!(),
                     // Event::Shuffle(_) => todo!(),
                     // Event::RpsOutcome(_) => todo!(),
