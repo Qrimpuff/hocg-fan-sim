@@ -99,8 +99,9 @@ impl Mat {
 
 static COUNT: GlobalSignal<i32> = Signal::global(|| 0);
 static GAME: GlobalSignal<GameState> = Signal::global(GameState::new);
-static ONESHOT: GlobalSignal<Option<async_oneshot::Sender<bool>>> = Signal::global(|| None);
 static EVENT: GlobalSignal<Option<Event>> = Signal::global(|| None);
+static ANIM_LOCK: GlobalSignal<Option<async_oneshot::Sender<()>>> = Signal::global(|| None);
+static ANIM_COUNT: GlobalSignal<u32> = Signal::global(|| 0);
 
 #[derive(Default)]
 pub struct WebGameEventHandler {}
@@ -117,8 +118,8 @@ impl EventHandler for WebGameEventHandler {
         *COUNT.write() += 1;
 
         if matches!(event, Event::Shuffle(_),) {
-            let (s, r) = oneshot::<bool>();
-            *ONESHOT.write() = Some(s);
+            let (s, r) = oneshot::<()>();
+            *ANIM_LOCK.write() = Some(s);
             r.await.unwrap();
         }
     }
@@ -247,16 +248,21 @@ fn Home() -> Element {
     rsx! {
         Link { to: Route::Blog { id: COUNT() }, "Go to blog" }
         div {
-            h1 { "High-Five counter: {COUNT}" }
-            button { class: "btn", onclick: move |_| *COUNT.write() += 1, "Up high!" }
-            button { class: "btn", onclick: move |_| *COUNT.write() -= 1, "Down low!" }
-            button { class: "btn btn-lg", "Large" }
-            button { class: "btn", "Normal" }
-            button { class: "btn btn-sm", "Small" }
-            button { class: "btn btn-xs", "Tiny" }
+            h1 { "Event counter: {COUNT}" }
+            h1 { "Animation counter: {ANIM_COUNT}" }
         }
 
-        div { class: "relative text-center mx-auto",
+        div {
+            class: "relative text-center mx-auto",
+            onanimationstart: move |_event| {
+                *ANIM_COUNT.write() += 1;
+            },
+            onanimationend: move |_event| {
+                *ANIM_COUNT.write() -= 1;
+                if *ANIM_COUNT.read() == 0 {
+                    ANIM_LOCK.write().as_mut().unwrap().send(()).unwrap();
+                }
+            },
             div {
                 perspective: "1000px",
                 width: "{rel_mat_size.0}px",
@@ -563,12 +569,6 @@ fn Deck(mat: Mat, player: Player, zone: Zone, size: usize) -> Element {
             height: "{card_size.1}px",
             position: "absolute",
             class: "{shuffling_c}",
-            onanimationend: move |event| {
-                if event.animation_name() == "deck-shuffling" {
-                    shuffling.set(false);
-                    ONESHOT.write().as_mut().unwrap().send(true).unwrap();
-                }
-            },
             {cards}
         }
     }

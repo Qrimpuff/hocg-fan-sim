@@ -50,10 +50,7 @@
 
 .deck-shuffling {
     z-index: 10;
-    animation: 0.4s linear 0s deck-shuffling;
 }
-
-@keyframes deck-shuffling {}
 
 .deck-shuffling .deck-slice:nth-child(2n) {
     z-index: 10;
