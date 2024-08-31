@@ -261,6 +261,15 @@ pub enum Card {
 }
 
 impl Card {
+    pub fn card_number(&self) -> &str {
+        match self {
+            Card::OshiHoloMember(c) => &c.card_number,
+            Card::HoloMember(c) => &c.card_number,
+            Card::Support(c) => &c.card_number,
+            Card::Cheer(c) => &c.card_number,
+        }
+    }
+
     pub fn is_attribute(&self, attribute: HoloMemberExtraAttribute) -> bool {
         match self {
             Card::HoloMember(m) => m.attributes.contains(&attribute),

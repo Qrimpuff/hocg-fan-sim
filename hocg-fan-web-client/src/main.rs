@@ -10,7 +10,7 @@ use hocg_fan_sim::{
     cards::Loadout,
     client::{Client, DefaultEventHandler, EventHandler},
     events::{Event, Shuffle},
-    gameplay::{Game, GameState, Player, Zone},
+    gameplay::{CardRef, Game, GameState, Player, Zone},
     prompters::RandomPrompter,
 };
 
@@ -245,6 +245,24 @@ fn Home() -> Element {
     // relative size
     let rel_mat_size = rel_mat.read().mat_size;
 
+    // cards on stage
+    let game = GAME.read();
+    let center_stage = game.player_1.center_stage().map(|c| {
+        rsx! {
+            Card { key: "{c}",  mat: rel_mat(), card: c, zone: Zone::CenterStage, num: (1, 1) }
+        }
+    });
+    let collab = game.player_1.collab().map(|c| {
+        rsx! {
+            Card { key: "{c}",  mat: rel_mat(), card: c, zone: Zone::Collab, num: (1, 1) }
+        }
+    });
+    let back_stage = game.player_1.back_stage().enumerate().map(|(i, c)| {
+        rsx! {
+            Card { key: "{c}",  mat: rel_mat(), card: c, zone: Zone::BackStage, num: (1 + i as u32, 5) }
+        }
+    });
+
     rsx! {
         Link { to: Route::Blog { id: COUNT() }, "Go to blog" }
         div {
@@ -323,10 +341,14 @@ fn Home() -> Element {
                         background_image: "url(https://hololive-official-cardgame.com/wp-content/uploads/2024/07/img_sec4_04.jpg)",
                         height: "{rel_mat_size.1}px",
                         class: "relative bg-cover bg-center",
+                        // cards on stage
+                        {center_stage},
+                        {collab},
+                        {back_stage},
                         // main stage
                         Card { mat: rel_mat(), zone: Zone::Oshi }
-                        Card { mat: rel_mat(), zone: Zone::CenterStage }
-                        Card { mat: rel_mat(), zone: Zone::Collab }
+                        // Card { mat: rel_mat(), zone: Zone::CenterStage }
+                        // Card { mat: rel_mat(), zone: Zone::Collab }
                         // cheer deck
                         Deck { mat: rel_mat(), player: Player::One, zone: Zone::CheerDeck, size: 20 }
                         // archive
@@ -343,26 +365,26 @@ fn Home() -> Element {
                         Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (5, 6) }
                         Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (6, 6) }
                         // back stage
-                        Card {key: "{1}",
-                            mat: rel_mat(),
-                            zone: Zone::BackStage,
-                            num: (1, 5),
-                            rested: false
-                        }
-                        Card { key: "{2}", mat: rel_mat(), zone: Zone::BackStage, num: (2, 5) }
-                        Card {key: "{3}",
-                            mat: rel_mat(),
-                            zone: Zone::BackStage,
-                            num: (3, 5),
-                            rested: false
-                        }
-                        Card { key: "{4}", mat: rel_mat(), zone: Zone::BackStage, num: (4, 5) }
-                        Card {key: "{5}",
-                            mat: rel_mat(),
-                            zone: Zone::BackStage,
-                            num: (5, 5),
-                            rested: false
-                        }
+                        // Card {key: "{1}",
+                        //     mat: rel_mat(),
+                        //     zone: Zone::BackStage,
+                        //     num: (1, 5),
+                        //     rested: false
+                        // }
+                        // Card { key: "{2}", mat: rel_mat(), zone: Zone::BackStage, num: (2, 5) }
+                        // Card {key: "{3}",
+                        //     mat: rel_mat(),
+                        //     zone: Zone::BackStage,
+                        //     num: (3, 5),
+                        //     rested: false
+                        // }
+                        // Card { key: "{4}", mat: rel_mat(), zone: Zone::BackStage, num: (4, 5) }
+                        // Card {key: "{5}",
+                        //     mat: rel_mat(),
+                        //     zone: Zone::BackStage,
+                        //     num: (5, 5),
+                        //     rested: false
+                        // }
                     }
                 }
             }
@@ -373,16 +395,25 @@ fn Home() -> Element {
 #[component]
 fn Card(
     mat: Mat,
+    card: Option<CardRef>,
     zone: Zone,
     flipped: Option<bool>,
     rested: Option<bool>,
     num: Option<(u32, u32)>,
 ) -> Element {
-    let zone = use_signal(|| zone);
+    let zone = use_memo(move || {
+        if let Some(card) = card {
+            GAME().board_for_card(card).find_card_zone(card).unwrap()
+        } else {
+            zone
+        }
+    });
     let mut moving = use_signal(|| false);
     let rested = use_signal(|| rested.unwrap_or_default());
     let mut flipped = use_signal(|| flipped.unwrap_or_default());
     let mut flipping = use_signal(|| false);
+
+    let card_number = card.map(|c| GAME().lookup_card(c).card_number().to_owned()).unwrap_or_default();
 
     let card_size = mat.card_size;
     let pos = match zone() {
@@ -449,8 +480,8 @@ fn Card(
             z_index: "{z_index}",
             position: "absolute",
             onclick: move |_event| {
-                flipping.set(true);
-                moving.set(true);
+                // flipping.set(true);
+                // moving.set(true);
             },
             div {
                 transform_style: "preserve-3d",
@@ -471,7 +502,7 @@ fn Card(
                     class: "bg-cover bg-center",
                     background_image: "url({front_img})",
                     border_radius: "3.7%",
-                    "{pos:?}"
+                    "{card_number}"
                 }
                 div {
                     width: "100%",
@@ -482,7 +513,7 @@ fn Card(
                     class: "bg-cover bg-center",
                     background_image: "url({back_img})",
                     border_radius: "3.7%",
-                    "{pos:?}"
+                    "{card_number}"
                 }
             }
         }
