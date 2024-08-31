@@ -5,10 +5,7 @@ use std::{collections::HashMap, fmt::Debug};
 
 use crate::card_effects::evaluate::{EvaluateContext, EvaluateEffect};
 use crate::card_effects::{Condition, Trigger};
-use crate::events::{
-    CardMapping, ClientReceive, ClientSend, Event, EventSpan, IntentRequest, IntentResponse,
-    SendGameState,
-};
+use crate::events::{ClientReceive, ClientSend, EventSpan, IntentRequest, IntentResponse};
 use crate::temp::test_library;
 
 use super::cards::*;
@@ -169,14 +166,8 @@ impl Game {
     pub fn active_board(&self) -> &GameBoard {
         self.state.active_board()
     }
-    pub fn active_board_mut(&mut self) -> &mut GameBoard {
-        self.state.active_board_mut()
-    }
     pub fn board(&self, player: Player) -> &GameBoard {
         self.state.board(player)
-    }
-    pub fn board_mut(&mut self, player: Player) -> &mut GameBoard {
-        self.state.board_mut(player)
     }
 
     pub fn player_for_card(&self, card: CardRef) -> Player {
@@ -278,40 +269,9 @@ impl Game {
     pub async fn start_game(&mut self) -> GameResult {
         debug!("card_map: {:?}", self.state.card_map);
 
-        // TODO send the mapping gradually through out the game
-        let card_map = self.state.card_map.clone();
-        self.client(self.state.active_player)
-            .0
-            .send(ClientReceive::Event(Event::CardMapping(CardMapping {
-                card_map: card_map.clone(),
-            })))
-            .await
-            .unwrap();
-        self.client(self.state.active_player.opponent())
-            .0
-            .send(ClientReceive::Event(Event::CardMapping(CardMapping {
-                card_map,
-            })))
-            .await
-            .unwrap();
-
         // send the first game state
         // TODO need to hide private cards
-        let state = self.state.clone();
-        self.client(self.state.active_player)
-            .0
-            .send(ClientReceive::Event(Event::SendGameState(SendGameState {
-                state: Box::new(state.clone()),
-            })))
-            .await
-            .unwrap();
-        self.client(self.state.active_player.opponent())
-            .0
-            .send(ClientReceive::Event(Event::SendGameState(SendGameState {
-                state: Box::new(state),
-            })))
-            .await
-            .unwrap();
+        self.sync_game_state().await?;
 
         // - game setup
         self.setup_game().await?;
@@ -388,23 +348,6 @@ impl Game {
         if self.state.active_step == Step::End {
             self.end_turn().await?;
         }
-
-        // TODO temporary, until client is done
-        let state = self.state.clone();
-        self.client(self.state.active_player)
-            .0
-            .send(ClientReceive::Event(Event::SendGameState(SendGameState {
-                state: Box::new(state.clone()),
-            })))
-            .await
-            .unwrap();
-        self.client(self.state.active_player.opponent())
-            .0
-            .send(ClientReceive::Event(Event::SendGameState(SendGameState {
-                state: Box::new(state),
-            })))
-            .await
-            .unwrap();
 
         Ok(GameContinue)
     }

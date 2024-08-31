@@ -204,11 +204,11 @@ pub fn setup_test_game(
         player_1_prompt,
     );
     p1_client.game = state.clone();
-    // for the client to stop gracefully
-    p1_client.game.game_outcome = Some(GameOutcome {
-        winning_player: None,
-        reason: GameOverReason::Draw,
-    });
+    // // for the client to stop gracefully (not sure if it's needed anymore)
+    // p1_client.game.game_outcome = Some(GameOutcome {
+    //     winning_player: None,
+    //     reason: GameOverReason::Draw,
+    // });
     tokio::spawn(p1_client.receive_requests());
 
     // Player 2
@@ -218,11 +218,11 @@ pub fn setup_test_game(
         player_2_prompt,
     );
     p2_client.game = state;
-    // for the client to stop gracefully
-    p2_client.game.game_outcome = Some(GameOutcome {
-        winning_player: None,
-        reason: GameOverReason::Draw,
-    });
+    // // for the client to stop gracefully (not sure if it's needed anymore)
+    // p2_client.game.game_outcome = Some(GameOutcome {
+    //     winning_player: None,
+    //     reason: GameOverReason::Draw,
+    // });
     tokio::spawn(p2_client.receive_requests());
 
     game

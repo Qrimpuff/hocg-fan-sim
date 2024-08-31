@@ -193,6 +193,73 @@ impl GameState {
             .any(filter_fn)
     }
 
+    pub fn promote_modifiers(&mut self, attachment: CardRef, parent: CardRef) {
+        if let Some((_, modifiers)) = self.card_modifiers.remove_entry(&parent) {
+            self.card_modifiers
+                .entry(attachment)
+                .or_default()
+                .extend(modifiers);
+        }
+    }
+
+    pub fn start_turn_modifiers(&mut self, player: Player) {
+        // house keeping for the card modifiers
+        // split in 2 because can't modify and player_for_card at the same time
+        let to_modify: Vec<_> = self
+            .card_modifiers
+            .iter()
+            .enumerate()
+            .filter(|(_, (c, _))| self.player_for_card(**c) == player)
+            .map(|(i, _)| i)
+            .collect();
+        self.card_modifiers
+            .iter_mut()
+            .enumerate()
+            .filter(|(i, _)| to_modify.contains(i))
+            .flat_map(|(_, (_, ms))| ms)
+            .for_each(|m| {
+                m.start_turn(player);
+            });
+
+        // house keeping for the zone modifiers
+        self.zone_modifiers
+            .get_mut(&player)
+            .into_iter()
+            .flatten()
+            .for_each(|(_, m)| {
+                m.start_turn(player);
+            });
+    }
+
+    pub fn end_turn_modifiers(&mut self, player: Player) {
+        // house keeping for the card modifiers
+        // split in 2 because can't modify and player_for_card at the same time
+        let to_modify: Vec<_> = self
+            .card_modifiers
+            .iter()
+            .enumerate()
+            .filter(|(_, (c, _))| self.player_for_card(**c) == player)
+            .map(|(i, _)| i)
+            .collect();
+        self.card_modifiers
+            .iter_mut()
+            .enumerate()
+            .filter(|(i, _)| to_modify.contains(i))
+            .flat_map(|(_, (_, ms))| ms)
+            .for_each(|m| {
+                m.end_turn(player);
+            });
+
+        // house keeping for the zone modifiers
+        self.zone_modifiers
+            .get_mut(&player)
+            .into_iter()
+            .flatten()
+            .for_each(|(_, m)| {
+                m.end_turn(player);
+            });
+    }
+
     // damage markers
     pub fn has_damage(&self, card: CardRef) -> bool {
         self.card_damage_markers
@@ -215,6 +282,12 @@ impl GameState {
             .get(&card)
             .copied()
             .unwrap_or_default()
+    }
+
+    pub fn promote_damage_markers(&mut self, attachment: CardRef, parent: CardRef) {
+        if let Some((_, dmg)) = self.card_damage_markers.remove_entry(&parent) {
+            *self.card_damage_markers.entry(attachment).or_default() += dmg;
+        }
     }
 }
 
@@ -386,80 +459,6 @@ impl Game {
             .await
     }
 
-    pub fn promote_modifiers(&mut self, attachment: CardRef, parent: CardRef) {
-        if let Some((_, modifiers)) = self.state.card_modifiers.remove_entry(&parent) {
-            self.state
-                .card_modifiers
-                .entry(attachment)
-                .or_default()
-                .extend(modifiers);
-        }
-    }
-
-    pub fn start_turn_modifiers(&mut self, player: Player) {
-        // house keeping for the card modifiers
-        // split in 2 because can't modify and player_for_card at the same time
-        let to_modify: Vec<_> = self
-            .state
-            .card_modifiers
-            .iter()
-            .enumerate()
-            .filter(|(_, (c, _))| self.player_for_card(**c) == player)
-            .map(|(i, _)| i)
-            .collect();
-        self.state
-            .card_modifiers
-            .iter_mut()
-            .enumerate()
-            .filter(|(i, _)| to_modify.contains(i))
-            .flat_map(|(_, (_, ms))| ms)
-            .for_each(|m| {
-                m.start_turn(player);
-            });
-
-        // house keeping for the zone modifiers
-        self.state
-            .zone_modifiers
-            .get_mut(&player)
-            .into_iter()
-            .flatten()
-            .for_each(|(_, m)| {
-                m.start_turn(player);
-            });
-    }
-
-    pub fn end_turn_modifiers(&mut self, player: Player) {
-        // house keeping for the card modifiers
-        // split in 2 because can't modify and player_for_card at the same time
-        let to_modify: Vec<_> = self
-            .state
-            .card_modifiers
-            .iter()
-            .enumerate()
-            .filter(|(_, (c, _))| self.player_for_card(**c) == player)
-            .map(|(i, _)| i)
-            .collect();
-        self.state
-            .card_modifiers
-            .iter_mut()
-            .enumerate()
-            .filter(|(i, _)| to_modify.contains(i))
-            .flat_map(|(_, (_, ms))| ms)
-            .for_each(|m| {
-                m.end_turn(player);
-            });
-
-        // house keeping for the zone modifiers
-        self.state
-            .zone_modifiers
-            .get_mut(&player)
-            .into_iter()
-            .flatten()
-            .for_each(|(_, m)| {
-                m.end_turn(player);
-            });
-    }
-
     pub async fn remove_expiring_modifiers(&mut self, life_time: LifeTime) -> GameResult {
         // remove expiring card modifiers
         let c_mods: HashMap<_, Vec<_>> = self
@@ -533,16 +532,6 @@ impl Game {
 
         self.remove_damage_markers_from_many_cards(player, zone, vec![card], dmg)
             .await
-    }
-
-    pub fn promote_damage_markers(&mut self, attachment: CardRef, parent: CardRef) {
-        if let Some((_, dmg)) = self.state.card_damage_markers.remove_entry(&parent) {
-            *self
-                .state
-                .card_damage_markers
-                .entry(attachment)
-                .or_default() += dmg;
-        }
     }
 }
 

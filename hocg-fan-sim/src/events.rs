@@ -54,13 +54,12 @@ pub enum AdjustEventOutcome {
 #[derive(Debug, Clone, PartialEq, Eq, GetSize)]
 pub enum Event {
     // Basic events
-    SendGameState,
+    SyncGameState,
     Setup,
     Shuffle,
     RpsOutcome,
     PlayerGoingFirst,
     Reveal,
-    CardMapping,
 
     GameStart,
     GameOver,
@@ -360,9 +359,7 @@ impl Game {
             "EVENT = [{:?}] {event:?}",
             self.state.event_span.current_card()
         );
-        // perform the modification to the game state
-        Box::pin(event.evaluate_event(self)).await?;
-
+        // send the event before evaluating. it will prepare the client to receive the related events
         // TODO sanitize the event before sending it to each player
         self.client(self.state.active_player)
             .0
@@ -374,6 +371,8 @@ impl Game {
             .send(ClientReceive::Event(event.clone()))
             .await
             .unwrap();
+        // perform the modification to the game state
+        Box::pin(event.evaluate_event(self)).await?;
 
         // trigger after effects
         let after = TriggeredEvent::After(&event);
@@ -471,6 +470,18 @@ impl Game {
             }
             self.state.event_span.close_untracked_span();
         }
+
+        Ok(GameContinue)
+    }
+
+    pub async fn sync_game_state(&mut self) -> GameResult {
+        self.send_event(
+            SyncGameState {
+                state: Box::new(self.state.clone()),
+            }
+            .into(),
+        )
+        .await?;
 
         Ok(GameContinue)
     }
@@ -1599,10 +1610,13 @@ impl Game {
 }
 
 #[enum_dispatch]
-trait EvaluateEvent {
+#[allow(async_fn_in_trait)]
+pub trait EvaluateEvent {
     async fn adjust_event(&mut self, _game: &mut Game) -> AdjustEventResult {
         Ok(AdjustEventOutcome::ContinueEvent)
     }
+
+    fn apply_state_change(&self, _state: &mut GameState);
 
     async fn evaluate_event(&self, game: &mut Game) -> GameResult;
 }
@@ -1628,11 +1642,30 @@ fn verify_cards_attached(game: &Game, player: Player, card: CardRef, attachments
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, GetSize)]
-pub struct SendGameState {
+pub struct SyncGameState {
     pub state: Box<GameState>,
 }
-impl EvaluateEvent for SendGameState {
-    async fn evaluate_event(&self, _game: &mut Game) -> GameResult {
+impl EvaluateEvent for SyncGameState {
+    fn apply_state_change(&self, state: &mut GameState) {
+        state.clone_from(self.state.as_ref());
+    }
+
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
+        assert_eq!(game.state.game_outcome, self.state.game_outcome);
+        assert_eq!(game.state.card_map, self.state.card_map);
+        assert_eq!(game.state.player_1, self.state.player_1);
+        assert_eq!(game.state.player_2, self.state.player_2);
+        assert_eq!(game.state.active_player, self.state.active_player);
+        assert_eq!(game.state.active_step, self.state.active_step);
+        assert_eq!(game.state.turn_number, self.state.turn_number);
+        assert_eq!(game.state.zone_modifiers, self.state.zone_modifiers);
+        assert_eq!(game.state.card_modifiers, self.state.card_modifiers);
+        assert_eq!(
+            game.state.card_damage_markers,
+            self.state.card_damage_markers
+        );
+        // assert_eq!(game.state.event_span, self.state.event_span);
+
         Ok(GameContinue)
     }
 }
@@ -1646,8 +1679,12 @@ pub struct Setup {
     // pub player_2: Loadout,
 }
 impl EvaluateEvent for Setup {
+    fn apply_state_change(&self, state: &mut GameState) {
+        state.active_step = Step::Setup;
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
-        game.state.active_step = Step::Setup;
+        self.apply_state_change(&mut game.state);
 
         // - shuffle main deck
         game.shuffle_main_deck(Player::One).await?;
@@ -1825,6 +1862,11 @@ pub struct Shuffle {
     pub zone: Zone,
 }
 impl EvaluateEvent for Shuffle {
+    fn apply_state_change(&self, _state: &mut GameState) {
+        // no state change
+        // the order doesn't mater on client side
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         // need that split, because the borrow checker needs to know we are accessing different fields
         let zone = match self.player {
@@ -1843,6 +1885,10 @@ pub struct RpsOutcome {
     pub winning_player: Option<Player>,
 }
 impl EvaluateEvent for RpsOutcome {
+    fn apply_state_change(&self, _state: &mut GameState) {
+        // no state change
+    }
+
     async fn evaluate_event(&self, _game: &mut Game) -> GameResult {
         // the winning player doesn't change the state of the game
 
@@ -1855,8 +1901,12 @@ pub struct PlayerGoingFirst {
     pub first_player: Player,
 }
 impl EvaluateEvent for PlayerGoingFirst {
+    fn apply_state_change(&self, state: &mut GameState) {
+        state.active_player = self.first_player;
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
-        game.state.active_player = self.first_player;
+        self.apply_state_change(&mut game.state);
 
         Ok(GameContinue)
     }
@@ -1869,6 +1919,10 @@ pub struct Reveal {
     pub cards: Vec<(CardRef, CardNumber)>,
 }
 impl EvaluateEvent for Reveal {
+    fn apply_state_change(&self, _state: &mut GameState) {
+        // no state change
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() {
             return Ok(GameContinue);
@@ -1888,23 +1942,17 @@ impl EvaluateEvent for Reveal {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, GetSize)]
-pub struct CardMapping {
-    pub card_map: HashMap<CardRef, (Player, CardNumber)>,
-}
-impl EvaluateEvent for CardMapping {
-    async fn evaluate_event(&self, _game: &mut Game) -> GameResult {
-        unimplemented!("it's a temporary patch")
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
 pub struct GameStart {
     pub active_player: Player,
 }
 impl EvaluateEvent for GameStart {
-    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
+    fn apply_state_change(&self, state: &mut GameState) {
         // the state changes on start turn
-        game.state.active_player = self.active_player;
+        state.active_player = self.active_player;
+    }
+
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
+        self.apply_state_change(&mut game.state);
 
         Ok(GameContinue)
     }
@@ -1916,9 +1964,13 @@ pub struct GameOver {
     pub turn_number: u8,
 }
 impl EvaluateEvent for GameOver {
+    fn apply_state_change(&self, state: &mut GameState) {
+        state.active_step = Step::GameOver;
+        state.game_outcome = Some(self.game_outcome);
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
-        game.state.active_step = Step::GameOver;
-        game.state.game_outcome = Some(self.game_outcome);
+        self.apply_state_change(&mut game.state);
 
         Ok(GameContinue)
     }
@@ -1930,10 +1982,15 @@ pub struct StartTurn {
     pub turn_number: u8,
 }
 impl EvaluateEvent for StartTurn {
-    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
-        game.state.active_player = self.active_player;
+    fn apply_state_change(&self, state: &mut GameState) {
+        state.active_player = self.active_player;
+        state.turn_number = self.turn_number;
 
-        game.start_turn_modifiers(self.active_player);
+        state.start_turn_modifiers(self.active_player);
+    }
+
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
+        self.apply_state_change(&mut game.state);
 
         Ok(GameContinue)
     }
@@ -1945,10 +2002,15 @@ pub struct EndTurn {
     pub turn_number: u8,
 }
 impl EvaluateEvent for EndTurn {
+    fn apply_state_change(&self, state: &mut GameState) {
+        state.end_turn_modifiers(self.active_player);
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         assert_eq!(self.active_player, game.state.active_player);
+        assert_eq!(self.turn_number, game.state.turn_number);
 
-        game.end_turn_modifiers(self.active_player);
+        self.apply_state_change(&mut game.state);
 
         game.state.event_span.open_untracked_span();
         game.remove_expiring_modifiers(LifeTime::ThisTurn).await?;
@@ -1964,9 +2026,14 @@ pub struct EnterStep {
     pub active_step: Step,
 }
 impl EvaluateEvent for EnterStep {
+    fn apply_state_change(&self, state: &mut GameState) {
+        state.active_step = self.active_step;
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         assert_eq!(self.active_player, game.state.active_player);
-        game.state.active_step = self.active_step;
+
+        self.apply_state_change(&mut game.state);
 
         Ok(GameContinue)
     }
@@ -1978,6 +2045,10 @@ pub struct ExitStep {
     pub active_step: Step,
 }
 impl EvaluateEvent for ExitStep {
+    fn apply_state_change(&self, _state: &mut GameState) {
+        // no state change
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         assert_eq!(self.active_player, game.state.active_player);
         assert_eq!(self.active_step, game.state.active_step);
@@ -1998,6 +2069,16 @@ pub struct AddCardModifiers {
     pub modifiers: Vec<Modifier>,
 }
 impl EvaluateEvent for AddCardModifiers {
+    fn apply_state_change(&self, state: &mut GameState) {
+        for card in &self.cards {
+            state
+                .card_modifiers
+                .entry(*card)
+                .or_default()
+                .extend(self.modifiers.iter().cloned());
+        }
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() || self.modifiers.is_empty() {
             return Ok(GameContinue);
@@ -2005,13 +2086,7 @@ impl EvaluateEvent for AddCardModifiers {
 
         verify_cards_in_zone(game, self.player, self.zone, &self.cards);
 
-        for card in &self.cards {
-            game.state
-                .card_modifiers
-                .entry(*card)
-                .or_default()
-                .extend(self.modifiers.iter().cloned());
-        }
+        self.apply_state_change(&mut game.state);
 
         Ok(GameContinue)
     }
@@ -2025,13 +2100,7 @@ pub struct RemoveCardModifiers {
     pub modifiers: Vec<ModifierRef>,
 }
 impl EvaluateEvent for RemoveCardModifiers {
-    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
-        if self.cards.is_empty() || self.modifiers.is_empty() {
-            return Ok(GameContinue);
-        }
-
-        verify_cards_in_zone(game, self.player, self.zone, &self.cards);
-
+    fn apply_state_change(&self, state: &mut GameState) {
         let mut to_remove = self
             .cards
             .iter()
@@ -2040,24 +2109,30 @@ impl EvaluateEvent for RemoveCardModifiers {
             .collect_vec();
 
         for card in &self.cards {
-            game.state
-                .card_modifiers
-                .entry(*card)
-                .or_default()
-                .retain(|m| {
-                    let idx = to_remove
-                        .iter()
-                        .enumerate()
-                        .find(|(_, r)| r.0 == *card && r.1 == m.id)
-                        .map(|(i, _)| i);
-                    if let Some(idx) = idx {
-                        to_remove.swap_remove(idx);
-                        false
-                    } else {
-                        true
-                    }
-                });
+            state.card_modifiers.entry(*card).or_default().retain(|m| {
+                let idx = to_remove
+                    .iter()
+                    .enumerate()
+                    .find(|(_, r)| r.0 == *card && r.1 == m.id)
+                    .map(|(i, _)| i);
+                if let Some(idx) = idx {
+                    to_remove.swap_remove(idx);
+                    false
+                } else {
+                    true
+                }
+            });
         }
+    }
+
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
+        if self.cards.is_empty() || self.modifiers.is_empty() {
+            return Ok(GameContinue);
+        }
+
+        verify_cards_in_zone(game, self.player, self.zone, &self.cards);
+
+        self.apply_state_change(&mut game.state);
 
         Ok(GameContinue)
     }
@@ -2070,6 +2145,12 @@ pub struct ClearCardModifiers {
     pub cards: Vec<CardRef>,
 }
 impl EvaluateEvent for ClearCardModifiers {
+    fn apply_state_change(&self, state: &mut GameState) {
+        for card in &self.cards {
+            state.card_modifiers.remove_entry(card);
+        }
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() {
             return Ok(GameContinue);
@@ -2077,9 +2158,7 @@ impl EvaluateEvent for ClearCardModifiers {
 
         verify_cards_in_zone(game, self.player, self.zone, &self.cards);
 
-        for card in &self.cards {
-            game.state.card_modifiers.remove_entry(card);
-        }
+        self.apply_state_change(&mut game.state);
 
         Ok(GameContinue)
     }
@@ -2092,21 +2171,21 @@ pub struct AddZoneModifiers {
     pub modifiers: Vec<Modifier>,
 }
 impl EvaluateEvent for AddZoneModifiers {
+    fn apply_state_change(&self, state: &mut GameState) {
+        state.zone_modifiers.entry(self.player).or_default().extend(
+            self.modifiers
+                .iter()
+                .cloned()
+                .map(|m: Modifier| (self.zone, m)),
+        );
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.modifiers.is_empty() {
             return Ok(GameContinue);
         }
 
-        game.state
-            .zone_modifiers
-            .entry(self.player)
-            .or_default()
-            .extend(
-                self.modifiers
-                    .iter()
-                    .cloned()
-                    .map(|m: Modifier| (self.zone, m)),
-            );
+        self.apply_state_change(&mut game.state);
 
         Ok(GameContinue)
     }
@@ -2119,11 +2198,7 @@ pub struct RemoveZoneModifiers {
     pub modifiers: Vec<ModifierRef>,
 }
 impl EvaluateEvent for RemoveZoneModifiers {
-    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
-        if self.modifiers.is_empty() {
-            return Ok(GameContinue);
-        }
-
+    fn apply_state_change(&self, state: &mut GameState) {
         let mut to_remove = self
             .modifiers
             .iter()
@@ -2131,7 +2206,7 @@ impl EvaluateEvent for RemoveZoneModifiers {
             .map(|m| (self.player, self.zone, m))
             .collect_vec();
 
-        game.state
+        state
             .zone_modifiers
             .entry(self.player)
             .or_default()
@@ -2148,6 +2223,14 @@ impl EvaluateEvent for RemoveZoneModifiers {
                     true
                 }
             });
+    }
+
+    async fn evaluate_event(&self, game: &mut Game) -> GameResult {
+        if self.modifiers.is_empty() {
+            return Ok(GameContinue);
+        }
+
+        self.apply_state_change(&mut game.state);
 
         Ok(GameContinue)
     }
@@ -2161,6 +2244,12 @@ pub struct AddDamageMarkers {
     pub dmg: DamageMarkers,
 }
 impl EvaluateEvent for AddDamageMarkers {
+    fn apply_state_change(&self, state: &mut GameState) {
+        for card in &self.cards {
+            *state.card_damage_markers.entry(*card).or_default() += self.dmg;
+        }
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() || self.dmg.0 < 1 {
             return Ok(GameContinue);
@@ -2168,9 +2257,7 @@ impl EvaluateEvent for AddDamageMarkers {
 
         verify_cards_in_zone(game, self.player, self.zone, &self.cards);
 
-        for card in &self.cards {
-            *game.state.card_damage_markers.entry(*card).or_default() += self.dmg;
-        }
+        self.apply_state_change(&mut game.state);
 
         // verify that they are still alive
         let defeated = self
@@ -2221,6 +2308,12 @@ pub struct RemoveDamageMarkers {
     pub dmg: DamageMarkers,
 }
 impl EvaluateEvent for RemoveDamageMarkers {
+    fn apply_state_change(&self, state: &mut GameState) {
+        for card in &self.cards {
+            *state.card_damage_markers.entry(*card).or_default() -= self.dmg;
+        }
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() || self.dmg.0 < 1 {
             return Ok(GameContinue);
@@ -2228,9 +2321,7 @@ impl EvaluateEvent for RemoveDamageMarkers {
 
         verify_cards_in_zone(game, self.player, self.zone, &self.cards);
 
-        for card in &self.cards {
-            *game.state.card_damage_markers.entry(*card).or_default() -= self.dmg;
-        }
+        self.apply_state_change(&mut game.state);
 
         Ok(GameContinue)
     }
@@ -2243,6 +2334,12 @@ pub struct ClearDamageMarkers {
     pub cards: Vec<CardRef>,
 }
 impl EvaluateEvent for ClearDamageMarkers {
+    fn apply_state_change(&self, state: &mut GameState) {
+        for card in &self.cards {
+            state.card_damage_markers.remove_entry(card);
+        }
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() {
             return Ok(GameContinue);
@@ -2250,9 +2347,7 @@ impl EvaluateEvent for ClearDamageMarkers {
 
         verify_cards_in_zone(game, self.player, self.zone, &self.cards);
 
-        for card in &self.cards {
-            game.state.card_damage_markers.remove_entry(card);
-        }
+        self.apply_state_change(&mut game.state);
 
         Ok(GameContinue)
     }
@@ -2265,6 +2360,10 @@ pub struct LookAndSelect {
     pub cards: Vec<CardRef>, // could just be a count, it's just for the opponent
 }
 impl EvaluateEvent for LookAndSelect {
+    fn apply_state_change(&self, _state: &mut GameState) {
+        // no state change
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() {
             return Ok(GameContinue);
@@ -2286,6 +2385,14 @@ pub struct ZoneToZone {
     pub to_zone_location: ZoneAddLocation,
 }
 impl EvaluateEvent for ZoneToZone {
+    fn apply_state_change(&self, state: &mut GameState) {
+        state.board_mut(self.player).send_many_to_zone(
+            self.cards.clone(),
+            self.to_zone,
+            self.to_zone_location,
+        );
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.cards.is_empty() {
             return Ok(GameContinue);
@@ -2305,11 +2412,7 @@ impl EvaluateEvent for ZoneToZone {
             }
         }
 
-        game.board_mut(self.player).send_many_to_zone(
-            self.cards.clone(),
-            self.to_zone,
-            self.to_zone_location,
-        );
+        self.apply_state_change(&mut game.state);
 
         game.state.event_span.open_untracked_span();
         // lose attachments and buffs when leaving stage
@@ -2346,6 +2449,14 @@ pub struct ZoneToAttach {
     pub to_card: (Zone, CardRef),
 }
 impl EvaluateEvent for ZoneToAttach {
+    fn apply_state_change(&self, state: &mut GameState) {
+        for attachment in &self.attachments {
+            state
+                .board_mut(self.player)
+                .attach_to_card(*attachment, self.to_card.1);
+        }
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.attachments.is_empty() {
             return Ok(GameContinue);
@@ -2354,10 +2465,7 @@ impl EvaluateEvent for ZoneToAttach {
         verify_cards_in_zone(game, self.player, self.from_zone, &self.attachments);
         verify_cards_in_zone(game, self.player, self.to_card.0, &[self.to_card.1]);
 
-        for attachment in &self.attachments {
-            game.board_mut(self.player)
-                .attach_to_card(*attachment, self.to_card.1);
-        }
+        self.apply_state_change(&mut game.state);
 
         Ok(GameContinue)
     }
@@ -2371,6 +2479,15 @@ pub struct AttachToAttach {
     pub to_card: (Zone, CardRef),
 }
 impl EvaluateEvent for AttachToAttach {
+    fn apply_state_change(&self, state: &mut GameState) {
+        // zone to attach
+        for attachment in &self.attachments {
+            state
+                .board_mut(self.player)
+                .attach_to_card(*attachment, self.to_card.1);
+        }
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.attachments.is_empty() {
             return Ok(GameContinue);
@@ -2380,11 +2497,7 @@ impl EvaluateEvent for AttachToAttach {
         verify_cards_attached(game, self.player, self.from_card.1, &self.attachments);
         verify_cards_in_zone(game, self.player, self.to_card.0, &[self.to_card.1]);
 
-        // zone to attach
-        for attachment in &self.attachments {
-            game.board_mut(self.player)
-                .attach_to_card(*attachment, self.to_card.1);
-        }
+        self.apply_state_change(&mut game.state);
 
         Ok(GameContinue)
     }
@@ -2399,6 +2512,14 @@ pub struct AttachToZone {
     pub to_zone_location: ZoneAddLocation,
 }
 impl EvaluateEvent for AttachToZone {
+    fn apply_state_change(&self, state: &mut GameState) {
+        state.board_mut(self.player).send_many_to_zone(
+            self.attachments.clone(),
+            self.to_zone,
+            self.to_zone_location,
+        );
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.attachments.is_empty() {
             return Ok(GameContinue);
@@ -2407,11 +2528,7 @@ impl EvaluateEvent for AttachToZone {
         verify_cards_in_zone(game, self.player, self.from_card.0, &[self.from_card.1]);
         verify_cards_attached(game, self.player, self.from_card.1, &self.attachments);
 
-        game.board_mut(self.player).send_many_to_zone(
-            self.attachments.clone(),
-            self.to_zone,
-            self.to_zone_location,
-        );
+        self.apply_state_change(&mut game.state);
 
         Ok(GameContinue)
     }
@@ -2424,6 +2541,10 @@ pub struct Draw {
     pub amount: usize,
 }
 impl EvaluateEvent for Draw {
+    fn apply_state_change(&self, _state: &mut GameState) {
+        // no state change
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.amount < 1 {
             return Ok(GameContinue);
@@ -2454,6 +2575,10 @@ pub struct Collab {
     pub holo_power_amount: usize,
 }
 impl EvaluateEvent for Collab {
+    fn apply_state_change(&self, _state: &mut GameState) {
+        // no state change
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
@@ -2501,6 +2626,10 @@ pub struct LoseLives {
     pub amount: usize,
 }
 impl EvaluateEvent for LoseLives {
+    fn apply_state_change(&self, _state: &mut GameState) {
+        // no state change
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         if self.amount < 1 {
             return Ok(GameContinue);
@@ -2538,6 +2667,20 @@ pub struct Bloom {
     pub to_card: (Zone, CardRef),
 }
 impl EvaluateEvent for Bloom {
+    fn apply_state_change(&self, state: &mut GameState) {
+        // attach the bloom card to the bloom target
+        state
+            .board_mut(self.player)
+            .attach_to_card(self.from_card.1, self.to_card.1);
+
+        // move the attachments and damage to the new card
+        state
+            .board_mut(self.player)
+            .promote_attachment(self.from_card.1, self.to_card.1);
+        state.promote_modifiers(self.from_card.1, self.to_card.1);
+        state.promote_damage_markers(self.from_card.1, self.to_card.1);
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.from_card.0, &[self.from_card.1]);
         verify_cards_in_zone(game, self.player, self.to_card.0, &[self.to_card.1]);
@@ -2552,22 +2695,12 @@ impl EvaluateEvent for Bloom {
             unreachable!("bloom should not be an option, if it's not allowed")
         }
 
-        game.state.event_span.open_untracked_span();
-
-        // attach the bloom card to the bloom target
-        game.board_mut(self.player)
-            .attach_to_card(self.from_card.1, self.to_card.1);
-
-        // move the attachments and damage to the new card
-        game.board_mut(self.player)
-            .promote_attachment(self.from_card.1, self.to_card.1);
-        game.promote_modifiers(self.from_card.1, self.to_card.1);
-        game.promote_damage_markers(self.from_card.1, self.to_card.1);
+        self.apply_state_change(&mut game.state);
 
         // prevent it from blooming again this turn
+        game.state.event_span.open_untracked_span();
         game.add_modifier(self.from_card.1, PreventBloom, LifeTime::ThisTurn)
             .await?;
-
         game.state.event_span.close_untracked_span();
 
         Ok(GameContinue)
@@ -2582,6 +2715,10 @@ pub struct BatonPass {
     pub to_card: (Zone, CardRef),
 }
 impl EvaluateEvent for BatonPass {
+    fn apply_state_change(&self, _state: &mut GameState) {
+        // no state change
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.from_card.0, &[self.from_card.1]);
         verify_cards_in_zone(game, self.player, self.to_card.0, &[self.to_card.1]);
@@ -2631,6 +2768,10 @@ pub struct ActivateSupportCard {
     pub card: (Zone, CardRef),
 }
 impl EvaluateEvent for ActivateSupportCard {
+    fn apply_state_change(&self, _state: &mut GameState) {
+        // no state change
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
@@ -2661,10 +2802,8 @@ impl EvaluateEvent for ActivateSupportCard {
             .into(),
         )
         .await?;
-        game.state.event_span.close_untracked_span();
 
         // activate the support card
-        game.state.event_span.open_untracked_span();
         effect
             .evaluate_with_card_mut(game, self.card.1, false)
             .await?;
@@ -2697,6 +2836,10 @@ pub struct ActivateSupportAbility {
     pub is_triggered: bool,
 }
 impl EvaluateEvent for ActivateSupportAbility {
+    fn apply_state_change(&self, _state: &mut GameState) {
+        // no state change
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
@@ -2728,6 +2871,10 @@ pub struct ActivateOshiSkill {
     pub is_triggered: bool,
 }
 impl EvaluateEvent for ActivateOshiSkill {
+    fn apply_state_change(&self, _state: &mut GameState) {
+        // no state change
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
@@ -2784,6 +2931,10 @@ pub struct ActivateHoloMemberAbility {
     pub is_triggered: bool,
 }
 impl EvaluateEvent for ActivateHoloMemberAbility {
+    fn apply_state_change(&self, _state: &mut GameState) {
+        // no state change
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
@@ -2815,6 +2966,10 @@ pub struct ActivateHoloMemberArtEffect {
     pub skill_idx: usize,
 }
 impl EvaluateEvent for ActivateHoloMemberArtEffect {
+    fn apply_state_change(&self, _state: &mut GameState) {
+        // no state change
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
@@ -2831,6 +2986,10 @@ pub struct PerformArt {
     pub target: Option<(Zone, CardRef)>,
 }
 impl EvaluateEvent for PerformArt {
+    fn apply_state_change(&self, _state: &mut GameState) {
+        // no state change
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
@@ -2900,6 +3059,10 @@ pub struct WaitingForPlayerIntent {
     // reason?
 }
 impl EvaluateEvent for WaitingForPlayerIntent {
+    fn apply_state_change(&self, _state: &mut GameState) {
+        // no state change
+    }
+
     async fn evaluate_event(&self, _game: &mut Game) -> GameResult {
         // TODO implement
         unimplemented!()
@@ -2914,6 +3077,10 @@ pub struct HoloMemberDefeated {
     pub card: (Zone, CardRef),
 }
 impl EvaluateEvent for HoloMemberDefeated {
+    fn apply_state_change(&self, _state: &mut GameState) {
+        // no state change
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
 
@@ -2933,6 +3100,10 @@ pub struct DealDamage {
     pub dmg: DamageMarkers,
 }
 impl EvaluateEvent for DealDamage {
+    fn apply_state_change(&self, _state: &mut GameState) {
+        // no state change
+    }
+
     async fn evaluate_event(&self, game: &mut Game) -> GameResult {
         verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
         verify_cards_in_zone(game, self.target_player, self.target.0, &[self.target.1]);
@@ -2950,6 +3121,10 @@ pub struct RollDice {
     pub number: u8,
 }
 impl EvaluateEvent for RollDice {
+    fn apply_state_change(&self, _state: &mut GameState) {
+        // no state change
+    }
+
     async fn adjust_event(&mut self, game: &mut Game) -> AdjustEventResult {
         // look for modifiers, and consume them, if not permanent
         let mut to_remove = None;
