@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 use dioxus_logger::tracing::{info, Level};
 use gloo_timers::future::TimeoutFuture;
 use hocg_fan_sim::{
-    cards::Loadout,
+    cards::{Card, Loadout},
     client::{Client, DefaultEventHandler, EventHandler},
     events::{Event, Shuffle},
     gameplay::{CardRef, Game, GameState, Player, Zone},
@@ -258,8 +258,8 @@ fn Home() -> Element {
             center_pos: (928 + 236 / 2, 110 + 323 / 2),
             collab_pos: (539 + 236 / 2, 110 + 323 / 2),
             back_line: (
-                (928 + (236 / 2) - 20 * 3 - 236 * 2 - 22, 630 + 323 / 2),
-                (928 + (236 / 2) + 20 * 3 + 236 * 2 - 22, 630 + 323 / 2),
+                (928 + (236 / 2) - 23 * 3 - 236 * 2 - 30, 630 + 323 / 2),
+                (928 + (236 / 2) + 23 * 3 + 236 * 2 - 30, 630 + 323 / 2),
             ),
             life_line: ((49 + 323 / 2, 40 + 236 / 2), (49 + 323 / 2, 305 + 236 / 2)),
             cheer_deck_pos: (49 + 236 / 2, 677 + 323 / 2),
@@ -345,7 +345,7 @@ fn Board(mat: Signal<Mat>, player: Player) -> Element {
         .enumerate()
         .map(|(i, c)| {
             rsx! {
-                    Card { key: "{c}", mat, card: c, num: (1 + i as u32, 6) }
+                Card { key: "{c}", mat, card: c, num: (1 + i as u32, 6) }
             }
         });
 
@@ -394,7 +394,7 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
     let pos = mat().zone_pos(zone(), num);
     let pos = (pos.0 - card_size.0 / 2, pos.1 - card_size.1 / 2);
 
-    let z_index = if moving() { "2" } else { "1" };
+    let z_index = if moving() { "200" } else { "100" };
 
     let rotate = if zone() == Zone::HoloPower || zone() == Zone::Life {
         "rotateZ(-90deg)"
@@ -420,49 +420,106 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
         _ => unimplemented!(),
     };
 
+    let attachments_count = game.attachments(card).count();
+    let cheer_gap = 8;
+    let cheers = game
+        .attachments(card)
+        .filter_map(|a| game.lookup_cheer(a))
+        .enumerate()
+        .map(|(i, att)| {
+            let img = att.illustration_url.to_string();
+            rsx! {
+                div {
+                    id: "{att.card_number}",
+                    transform: "translate3d(0px, {i as i32 * cheer_gap + cheer_gap}px, 0px)",
+                    z_index: "{attachments_count - i + 20}",
+                    position: "absolute",
+                    width: "{card_size.0}px",
+                    height: "{card_size.1}px",
+                    class: "bg-cover bg-center",
+                    background_image: "url({img})",
+                    border_radius: "3.7%",
+                    "{att.card_number}"
+                }
+            }
+        });
+    let support_gap = -8;
+    let supports = game
+        .attachments(card)
+        .filter_map(|a| game.lookup_support(a))
+        .enumerate()
+        .map(|(i, att)| {
+            let img = att.illustration_url.to_string();
+            rsx! {
+                div {
+                    id: "{att.card_number}",
+                    transform: "translate3d(0px, {i as i32 * support_gap + support_gap}px, 0px)",
+                    z_index: "{attachments_count - i + 20}",
+                    position: "absolute",
+                    width: "{card_size.0}px",
+                    height: "{card_size.1}px",
+                    class: "bg-cover bg-center",
+                    background_image: "url({img})",
+                    border_radius: "3.7%",
+                    "{att.card_number}"
+                }
+            }
+        });
+
     rsx! {
         div {
             id: "{card}",
             transform_style: "preserve-3d",
             transition: "transform 0.25s ease-in-out",
             ontransitionend: move |_event| moving.set(false),
-            transform: "translate3d({pos.0}px, {pos.1}px, 0px) {rotate}",
+            transform: "translate3d({pos.0}px, {pos.1}px, 0px)",
             width: "{card_size.0}px",
             height: "{card_size.1}px",
             z_index: "{z_index}",
             position: "absolute",
             onclick: move |_event| {},
+            {cheers},
+            {supports},
             div {
+                transition: "transform 0.1s ease-in-out",
                 transform_style: "preserve-3d",
                 position: "absolute",
                 width: "100%",
                 height: "100%",
-                class: "{flipped_class} {flipping_class}",
-                onanimationend: move |_event| {
-                    flipped.set(!flipped());
-                    flipping.set(false);
-                    moving.set(false);
-                },
+                z_index: "{z_index}",
+                transform: "{rotate}",
                 div {
+                    transform_style: "preserve-3d",
+                    position: "absolute",
                     width: "100%",
                     height: "100%",
-                    position: "absolute",
-                    backface_visibility: "hidden",
-                    class: "bg-cover bg-center",
-                    background_image: "url({front_img})",
-                    border_radius: "3.7%",
-                    "{card}"
-                }
-                div {
-                    width: "100%",
-                    height: "100%",
-                    position: "absolute",
-                    backface_visibility: "hidden",
-                    transform: "rotateY(180deg)",
-                    class: "bg-cover bg-center",
-                    background_image: "url({back_img})",
-                    border_radius: "3.7%",
-                    "{card}"
+                    class: "{flipped_class} {flipping_class}",
+                    onanimationend: move |_event| {
+                        flipped.set(!flipped());
+                        flipping.set(false);
+                        moving.set(false);
+                    },
+                    div {
+                        width: "100%",
+                        height: "100%",
+                        position: "absolute",
+                        backface_visibility: "hidden",
+                        class: "bg-cover bg-center",
+                        background_image: "url({front_img})",
+                        border_radius: "3.7%",
+                        "{card}"
+                    }
+                    div {
+                        width: "100%",
+                        height: "100%",
+                        position: "absolute",
+                        backface_visibility: "hidden",
+                        transform: "rotateY(180deg)",
+                        class: "bg-cover bg-center",
+                        background_image: "url({back_img})",
+                        border_radius: "3.7%",
+                        "{card}"
+                    }
                 }
             }
         }
@@ -516,19 +573,21 @@ fn Deck(mat: Signal<Mat>, player: Player, zone: Zone) -> Element {
         .step_by(step_cards)
         .chain(size().saturating_sub(top_cards)..size())
         .map(|i| {
+            let card = GAME
+                .read()
+                .board(player)
+                .get_zone(zone)
+                .peek_card(size() - 1 - i) // this is more stable with step by
+                .unwrap();
+
             // archive is face-up
             if zone == Zone::Archive {
-                let card = GAME
-                    .read()
-                    .board(player)
-                    .get_zone(zone)
-                    .peek_card(size() - 1 - i) // this is more stable with step by
-                    .unwrap();
                 img = GAME.read().lookup_card(card).illustration_url().to_string();
             }
 
             rsx! {
                 div {
+                    id: "{card}",
                     transform: "translate3d(0px, 0px, {i as f64 * px_per_cards}px)",
                     width: "{card_size.0}px",
                     height: "{card_size.1}px",
