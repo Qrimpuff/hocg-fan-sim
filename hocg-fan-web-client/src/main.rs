@@ -11,6 +11,7 @@ use hocg_fan_sim::{
     client::{Client, DefaultEventHandler, EventHandler},
     events::{Event, Shuffle},
     gameplay::{CardRef, Game, GameState, Player, Zone},
+    modifiers::ModifierKind,
     prompters::RandomPrompter,
 };
 
@@ -223,45 +224,27 @@ fn Home() -> Element {
         Signal::new(Mat {
             mat_size: (2040, 1044),
             card_size: (236, 323), // easier to center the zones
-            oshi_pos: (1334 + 236 / 2, 109 + 323 / 2),
-            center_pos: (927 + 236 / 2, 109 + 323 / 2),
-            collab_pos: (539 + 236 / 2, 109 + 323 / 2),
+            oshi_pos: (1334 + 236 / 2, 110 + 323 / 2),
+            center_pos: (928 + 236 / 2, 110 + 323 / 2),
+            collab_pos: (539 + 236 / 2, 110 + 323 / 2),
             back_line: (
-                (927 + (236 / 2) - 20 * 3 - 236 * 2 - 22, 675 + 323 / 2),
-                (927 + (236 / 2) + 20 * 3 + 236 * 2 - 22, 675 + 323 / 2),
+                (928 + (236 / 2) - 20 * 3 - 236 * 2 - 22, 630 + 323 / 2),
+                (928 + (236 / 2) + 20 * 3 + 236 * 2 - 22, 630 + 323 / 2),
             ),
             life_line: ((49 + 323 / 2, 40 + 236 / 2), (49 + 323 / 2, 305 + 236 / 2)),
-            cheer_deck_pos: (49 + 236 / 2, 675 + 323 / 2),
-            main_deck_pos: (1753 + 236 / 2, 323 + 323 / 2),
-            archive_pos: (1753 + 236 / 2, 675 + 323 / 2),
-            holo_power_pos: (1753 + 236 - 323 / 2, 40 + 236 / 2),
+            cheer_deck_pos: (49 + 236 / 2, 677 + 323 / 2),
+            main_deck_pos: (1755 + 236 / 2, 325 + 323 / 2),
+            archive_pos: (1755 + 236 / 2, 677 + 323 / 2),
+            holo_power_pos: (1755 + 236 - 323 / 2, 40 + 236 / 2),
         })
     });
     let rel_mat = use_signal(|| {
         let mat = mat.read();
-        mat.relative_to((800, 409), (95, 132))
+        mat.relative_to((800, 409), (86, 120))
     });
 
     // relative size
     let rel_mat_size = rel_mat.read().mat_size;
-
-    // cards on stage
-    let game = GAME.read();
-    let center_stage = game.player_1.center_stage().map(|c| {
-        rsx! {
-            Card { key: "{c}",  mat: rel_mat(), card: c, zone: Zone::CenterStage, num: (1, 1) }
-        }
-    });
-    let collab = game.player_1.collab().map(|c| {
-        rsx! {
-            Card { key: "{c}",  mat: rel_mat(), card: c, zone: Zone::Collab, num: (1, 1) }
-        }
-    });
-    let back_stage = game.player_1.back_stage().enumerate().map(|(i, c)| {
-        rsx! {
-            Card { key: "{c}",  mat: rel_mat(), card: c, zone: Zone::BackStage, num: (1 + i as u32, 5) }
-        }
-    });
 
     rsx! {
         Link { to: Route::Blog { id: COUNT() }, "Go to blog" }
@@ -288,104 +271,8 @@ fn Home() -> Element {
                 div {
                     transform: "rotateX(20deg) translateY(-48px)",
                     transform_style: "preserve-3d",
-                    div {
-                        transform: "rotateZ(180deg)",
-                        transform_style: "preserve-3d",
-                        background_image: "url(https://hololive-official-cardgame.com/wp-content/uploads/2024/07/img_sec4_04.jpg)",
-                        height: "{rel_mat_size.1}px",
-                        class: "relative bg-cover bg-center",
-                        // main stage
-                        Card { mat: rel_mat(), zone: Zone::Oshi }
-                        Card { mat: rel_mat(), zone: Zone::CenterStage }
-                        Card { mat: rel_mat(), zone: Zone::Collab }
-                        // cheer deck
-                        Deck { mat: rel_mat(), player: Player::Two, zone: Zone::CheerDeck, size: 20 }
-                        // archive
-                        Deck { mat: rel_mat(), player: Player::Two, zone: Zone::Archive, size: 0 }
-                        // -- main deck --
-                        Deck { mat: rel_mat(), player: Player::Two, zone: Zone::MainDeck, size: 50 }
-                        // holo power
-                        Deck { mat: rel_mat(), player: Player::Two, zone: Zone::HoloPower, size: 5 }
-                        // life
-                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (1, 6) }
-                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (2, 6) }
-                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (3, 6) }
-                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (4, 6) }
-                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (5, 6) }
-                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (6, 6) }
-                        // back stage
-                        Card {key: "{1}",
-                            mat: rel_mat(),
-                            zone: Zone::BackStage,
-                            num: (1, 5),
-                            rested: false
-                        }
-                        Card { key: "{2}", mat: rel_mat(), zone: Zone::BackStage, num: (2, 5) }
-                        Card {key: "{3}",
-                            mat: rel_mat(),
-                            zone: Zone::BackStage,
-                            num: (3, 5),
-                            rested: false
-                        }
-                        Card { key: "{4}", mat: rel_mat(), zone: Zone::BackStage, num: (4, 5) }
-                        Card {key: "{5}",
-                            mat: rel_mat(),
-                            zone: Zone::BackStage,
-                            num: (5, 5),
-                            rested: false
-                        }
-                    }
-                    div {
-                        // transform: "rotateZ(180deg)",
-                        transform_style: "preserve-3d",
-                        background_image: "url(https://hololive-official-cardgame.com/wp-content/uploads/2024/07/img_sec4_04.jpg)",
-                        height: "{rel_mat_size.1}px",
-                        class: "relative bg-cover bg-center",
-                        // cards on stage
-                        {center_stage},
-                        {collab},
-                        {back_stage},
-                        // main stage
-                        Card { mat: rel_mat(), zone: Zone::Oshi }
-                        // Card { mat: rel_mat(), zone: Zone::CenterStage }
-                        // Card { mat: rel_mat(), zone: Zone::Collab }
-                        // cheer deck
-                        Deck { mat: rel_mat(), player: Player::One, zone: Zone::CheerDeck, size: 20 }
-                        // archive
-                        Deck { mat: rel_mat(), player: Player::One, zone: Zone::Archive, size: 0 }
-                        // -- main deck --
-                        Deck { mat: rel_mat(), player: Player::One, zone: Zone::MainDeck, size: 50 }
-                        // holo power
-                        Deck { mat: rel_mat(), player: Player::One, zone: Zone::HoloPower, size: 5 }
-                        // life
-                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (1, 6) }
-                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (2, 6) }
-                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (3, 6) }
-                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (4, 6) }
-                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (5, 6) }
-                        Card { mat: rel_mat(), zone: Zone::Life, flipped: true, num: (6, 6) }
-                        // back stage
-                        // Card {key: "{1}",
-                        //     mat: rel_mat(),
-                        //     zone: Zone::BackStage,
-                        //     num: (1, 5),
-                        //     rested: false
-                        // }
-                        // Card { key: "{2}", mat: rel_mat(), zone: Zone::BackStage, num: (2, 5) }
-                        // Card {key: "{3}",
-                        //     mat: rel_mat(),
-                        //     zone: Zone::BackStage,
-                        //     num: (3, 5),
-                        //     rested: false
-                        // }
-                        // Card { key: "{4}", mat: rel_mat(), zone: Zone::BackStage, num: (4, 5) }
-                        // Card {key: "{5}",
-                        //     mat: rel_mat(),
-                        //     zone: Zone::BackStage,
-                        //     num: (5, 5),
-                        //     rested: false
-                        // }
-                    }
+                    Board { mat: rel_mat, player: Player::Two }
+                    Board { mat: rel_mat, player: Player::One }
                 }
             }
         }
@@ -393,62 +280,115 @@ fn Home() -> Element {
 }
 
 #[component]
-fn Card(
-    mat: Mat,
-    card: Option<CardRef>,
-    zone: Zone,
-    flipped: Option<bool>,
-    rested: Option<bool>,
-    num: Option<(u32, u32)>,
-) -> Element {
-    let zone = use_memo(move || {
-        if let Some(card) = card {
-            GAME().board_for_card(card).find_card_zone(card).unwrap()
-        } else {
-            zone
+fn Board(mat: Signal<Mat>, player: Player) -> Element {
+    // relative size
+    let rel_mat_size = mat().mat_size;
+
+    // cards on stage
+    let game = GAME.read();
+    let oshi = game.board(player).oshi().map(|c| {
+        rsx! {
+            Card { key: "{c}", mat, card: c }
         }
     });
+    let center_stage = game.board(player).center_stage().map(|c| {
+        rsx! {
+            Card { key: "{c}", mat, card: c }
+        }
+    });
+    let collab = game.board(player).collab().map(|c| {
+        rsx! {
+            Card { key: "{c}", mat, card: c }
+        }
+    });
+    let back_stage = game.board(player).back_stage().enumerate().map(|(i, c)| {
+        rsx! {
+            Card { key: "{c}", mat, card: c, num: (1 + i as u32, 5) }
+        }
+    });
+    let life = game
+        .board(player)
+        .life
+        .iter()
+        .rev()
+        .copied()
+        .enumerate()
+        .map(|(i, c)| {
+            rsx! {
+                Card { key: "{c}", mat, card: c, num: (1 + i as u32, 6) }
+            }
+        });
+
+    rsx! {
+        div {
+            transform: if player == Player::Two { "rotateZ(180deg)" },
+            transform_style: "preserve-3d",
+            background_image: "url(https://hololive-official-cardgame.com/wp-content/uploads/2024/07/img_sec4_04.jpg)",
+            height: "{rel_mat_size.1}px",
+            class: "relative bg-cover bg-center",
+            // main stage
+            {oshi},
+            {center_stage},
+            {collab},
+            // back stage
+            {back_stage},
+            // cheer deck
+            Deck { mat, player, zone: Zone::CheerDeck }
+            // archive
+            Deck { mat, player, zone: Zone::Archive }
+            // -- main deck --
+            Deck { mat, player, zone: Zone::MainDeck }
+            // holo power
+            Deck { mat, player, zone: Zone::HoloPower }
+            // life
+            {life}
+        }
+    }
+}
+
+#[component]
+fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
+    let zone = use_memo(move || GAME().board_for_card(card).find_card_zone(card).unwrap());
     let mut moving = use_signal(|| false);
-    let rested = use_signal(|| rested.unwrap_or_default());
-    let mut flipped = use_signal(|| flipped.unwrap_or_default());
+    let rested = use_memo(move || GAME().has_modifier(card, ModifierKind::Resting));
+    let mut flipped = use_signal(|| zone() == Zone::Life);
     let mut flipping = use_signal(|| false);
 
-    let card_number = card.map(|c| GAME().lookup_card(c).card_number().to_owned()).unwrap_or_default();
+    let card_number = GAME().lookup_card(card).card_number().to_owned();
 
-    let card_size = mat.card_size;
+    let card_size = mat().card_size;
     let pos = match zone() {
-        Zone::MainDeck => mat.main_deck_pos,
-        Zone::Oshi => mat.oshi_pos,
-        Zone::CenterStage => mat.center_pos,
-        Zone::Collab => mat.collab_pos,
+        Zone::MainDeck => mat().main_deck_pos,
+        Zone::Oshi => mat().oshi_pos,
+        Zone::CenterStage => mat().center_pos,
+        Zone::Collab => mat().collab_pos,
         Zone::BackStage => {
             if let Some(num) = num {
-                mat.pos_on_line(mat.back_line, num.0, num.1)
+                mat().pos_on_line(mat().back_line, num.0, num.1)
             } else {
-                mat.back_line.1
+                mat().back_line.1
             }
         }
         Zone::Life => {
             if let Some(num) = num {
-                mat.pos_on_line(mat.life_line, num.0, num.1)
+                mat().pos_on_line(mat().life_line, num.0, num.1)
             } else {
-                mat.life_line.1
+                mat().life_line.1
             }
         }
-        Zone::CheerDeck => mat.cheer_deck_pos,
-        Zone::HoloPower => mat.holo_power_pos,
-        Zone::Archive => mat.archive_pos,
+        Zone::CheerDeck => mat().cheer_deck_pos,
+        Zone::HoloPower => mat().holo_power_pos,
+        Zone::Archive => mat().archive_pos,
         _ => unimplemented!(),
     };
     let pos = (pos.0 - card_size.0 / 2, pos.1 - card_size.1 / 2);
 
     let z_index = if moving() { "2" } else { "1" };
 
-    let side_way = matches!(zone(), Zone::Life | Zone::HoloPower);
-    let side_way = if rested() { !side_way } else { side_way };
-
-    let rotate = if side_way {
+    let rotate = if zone() == Zone::HoloPower || zone() == Zone::Life {
         "rotateZ(-90deg)"
+    } else if rested() {
+        "rotateZ(90deg)"
     } else {
         "rotateZ(0)"
     };
@@ -479,10 +419,7 @@ fn Card(
             height: "{card_size.1}px",
             z_index: "{z_index}",
             position: "absolute",
-            onclick: move |_event| {
-                // flipping.set(true);
-                // moving.set(true);
-            },
+            onclick: move |_event| {},
             div {
                 transform_style: "preserve-3d",
                 position: "absolute",
@@ -521,7 +458,7 @@ fn Card(
 }
 
 #[component]
-fn Deck(mat: Mat, player: Player, zone: Zone, size: usize) -> Element {
+fn Deck(mat: Signal<Mat>, player: Player, zone: Zone) -> Element {
     let size = use_memo(move || GAME.read().board(player).get_zone(zone).count());
 
     let mut shuffling = use_signal(|| false);
@@ -536,17 +473,17 @@ fn Deck(mat: Mat, player: Player, zone: Zone, size: usize) -> Element {
         )
     });
 
-    let card_size = mat.card_size;
+    let card_size = mat().card_size;
     let pos = match zone {
-        Zone::MainDeck => mat.main_deck_pos,
-        Zone::Oshi => mat.oshi_pos,
-        Zone::CenterStage => mat.center_pos,
-        Zone::Collab => mat.collab_pos,
-        Zone::BackStage => mat.back_line.0,
-        Zone::Life => mat.life_line.0,
-        Zone::CheerDeck => mat.cheer_deck_pos,
-        Zone::HoloPower => mat.holo_power_pos,
-        Zone::Archive => mat.archive_pos,
+        Zone::MainDeck => mat().main_deck_pos,
+        Zone::Oshi => mat().oshi_pos,
+        Zone::CenterStage => mat().center_pos,
+        Zone::Collab => mat().collab_pos,
+        Zone::BackStage => mat().back_line.0,
+        Zone::Life => mat().life_line.0,
+        Zone::CheerDeck => mat().cheer_deck_pos,
+        Zone::HoloPower => mat().holo_power_pos,
+        Zone::Archive => mat().archive_pos,
         _ => unimplemented!(),
     };
     let rotate = matches!(zone, Zone::Life | Zone::HoloPower);
