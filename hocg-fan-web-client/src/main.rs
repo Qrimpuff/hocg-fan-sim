@@ -96,6 +96,33 @@ impl Mat {
             pos_on_range(range.0 .1, range.1 .1) as i32,
         )
     }
+
+    pub fn zone_pos(&self, zone: Zone, num: Option<(u32, u32)>) -> (i32, i32) {
+        match zone {
+            Zone::MainDeck => self.main_deck_pos,
+            Zone::Oshi => self.oshi_pos,
+            Zone::CenterStage => self.center_pos,
+            Zone::Collab => self.collab_pos,
+            Zone::BackStage => {
+                if let Some(num) = num {
+                    self.pos_on_line(self.back_line, num.0, num.1)
+                } else {
+                    self.back_line.1
+                }
+            }
+            Zone::Life => {
+                if let Some(num) = num {
+                    self.pos_on_line(self.life_line, num.0, num.1)
+                } else {
+                    self.life_line.1
+                }
+            }
+            Zone::CheerDeck => self.cheer_deck_pos,
+            Zone::HoloPower => self.holo_power_pos,
+            Zone::Archive => self.archive_pos,
+            _ => unimplemented!(),
+        }
+    }
 }
 
 static COUNT: GlobalSignal<i32> = Signal::global(|| 0);
@@ -123,6 +150,9 @@ impl EventHandler for WebGameEventHandler {
             *ANIM_LOCK.write() = Some(s);
             r.await.unwrap();
         }
+
+        // yield
+        TimeoutFuture::new(1).await;
     }
 }
 
@@ -315,7 +345,7 @@ fn Board(mat: Signal<Mat>, player: Player) -> Element {
         .enumerate()
         .map(|(i, c)| {
             rsx! {
-                Card { key: "{c}", mat, card: c, num: (1 + i as u32, 6) }
+                    Card { key: "{c}", mat, card: c, num: (1 + i as u32, 6) }
             }
         });
 
@@ -354,33 +384,14 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
     let mut flipped = use_signal(|| zone() == Zone::Life);
     let mut flipping = use_signal(|| false);
 
-    let card_number = GAME().lookup_card(card).card_number().to_owned();
+    let game = GAME();
+    let card_lookup = game.lookup_card(card);
+    // let card_number = card_lookup.card_number().to_owned();
+    let illustration_url = card_lookup.illustration_url().to_owned();
 
     let card_size = mat().card_size;
-    let pos = match zone() {
-        Zone::MainDeck => mat().main_deck_pos,
-        Zone::Oshi => mat().oshi_pos,
-        Zone::CenterStage => mat().center_pos,
-        Zone::Collab => mat().collab_pos,
-        Zone::BackStage => {
-            if let Some(num) = num {
-                mat().pos_on_line(mat().back_line, num.0, num.1)
-            } else {
-                mat().back_line.1
-            }
-        }
-        Zone::Life => {
-            if let Some(num) = num {
-                mat().pos_on_line(mat().life_line, num.0, num.1)
-            } else {
-                mat().life_line.1
-            }
-        }
-        Zone::CheerDeck => mat().cheer_deck_pos,
-        Zone::HoloPower => mat().holo_power_pos,
-        Zone::Archive => mat().archive_pos,
-        _ => unimplemented!(),
-    };
+
+    let pos = mat().zone_pos(zone(), num);
     let pos = (pos.0 - card_size.0 / 2, pos.1 - card_size.1 / 2);
 
     let z_index = if moving() { "2" } else { "1" };
@@ -397,7 +408,7 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
     let flipping_class = if flipping() { "card-flipping" } else { "" };
 
     // TODO use our own images
-    let front_img = "https://github.com/GabeJWJ/holoDelta/blob/e2d323fffaede48e0f153fc46a2ab579ef0af0a6/hBP01-041.png?raw=true";
+    let front_img = illustration_url;
     let back_img = match zone() {
         Zone::MainDeck | Zone::CenterStage | Zone::Collab | Zone::BackStage | Zone::HoloPower => {
             "https://github.com/GabeJWJ/holoDelta/blob/master/fuda_holoBack.png?raw=true"
@@ -411,6 +422,7 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
 
     rsx! {
         div {
+            id: "{card}",
             transform_style: "preserve-3d",
             transition: "transform 0.25s ease-in-out",
             ontransitionend: move |_event| moving.set(false),
@@ -439,7 +451,7 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
                     class: "bg-cover bg-center",
                     background_image: "url({front_img})",
                     border_radius: "3.7%",
-                    "{card_number}"
+                    "{card}"
                 }
                 div {
                     width: "100%",
@@ -450,7 +462,7 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
                     class: "bg-cover bg-center",
                     background_image: "url({back_img})",
                     border_radius: "3.7%",
-                    "{card_number}"
+                    "{card}"
                 }
             }
         }
@@ -474,32 +486,25 @@ fn Deck(mat: Signal<Mat>, player: Player, zone: Zone) -> Element {
     });
 
     let card_size = mat().card_size;
-    let pos = match zone {
-        Zone::MainDeck => mat().main_deck_pos,
-        Zone::Oshi => mat().oshi_pos,
-        Zone::CenterStage => mat().center_pos,
-        Zone::Collab => mat().collab_pos,
-        Zone::BackStage => mat().back_line.0,
-        Zone::Life => mat().life_line.0,
-        Zone::CheerDeck => mat().cheer_deck_pos,
-        Zone::HoloPower => mat().holo_power_pos,
-        Zone::Archive => mat().archive_pos,
-        _ => unimplemented!(),
-    };
-    let rotate = matches!(zone, Zone::Life | Zone::HoloPower);
 
+    let pos = mat().zone_pos(zone, None);
     let pos = (pos.0 - card_size.0 / 2, pos.1 - card_size.1 / 2);
-    let rotate = if rotate { " rotateZ(-90deg)" } else { "" };
+
+    let rotate = if zone == Zone::HoloPower || zone == Zone::Life {
+        "rotateZ(-90deg)"
+    } else {
+        "rotateZ(0)"
+    };
 
     // TODO use our own images
-    let back_img = match zone {
+    let mut img = match zone {
         Zone::MainDeck | Zone::CenterStage | Zone::Collab | Zone::BackStage | Zone::HoloPower => {
-            "https://github.com/GabeJWJ/holoDelta/blob/master/fuda_holoBack.png?raw=true"
+            "https://github.com/GabeJWJ/holoDelta/blob/master/fuda_holoBack.png?raw=true".into()
         }
         Zone::Oshi | Zone::Life | Zone::CheerDeck => {
-            "https://github.com/GabeJWJ/holoDelta/blob/master/cheerBack.png?raw=true"
+            "https://github.com/GabeJWJ/holoDelta/blob/master/cheerBack.png?raw=true".into()
         }
-        Zone::Archive => "https://github.com/GabeJWJ/holoDelta/blob/e2d323fffaede48e0f153fc46a2ab579ef0af0a6/hBP01-041.png?raw=true",
+        Zone::Archive => "".into(),
         _ => unimplemented!(),
     };
 
@@ -511,6 +516,17 @@ fn Deck(mat: Signal<Mat>, player: Player, zone: Zone) -> Element {
         .step_by(step_cards)
         .chain(size().saturating_sub(top_cards)..size())
         .map(|i| {
+            // archive is face-up
+            if zone == Zone::Archive {
+                let card = GAME
+                    .read()
+                    .board(player)
+                    .get_zone(zone)
+                    .peek_card(size() - 1 - i) // this is more stable with step by
+                    .unwrap();
+                img = GAME.read().lookup_card(card).illustration_url().to_string();
+            }
+
             rsx! {
                 div {
                     transform: "translate3d(0px, 0px, {i as f64 * px_per_cards}px)",
@@ -521,7 +537,7 @@ fn Deck(mat: Signal<Mat>, player: Player, zone: Zone) -> Element {
                     border_radius: "5%",
                     filter: "drop-shadow(0 1px 1px rgb(0 0 0 / 0.05))",
                     class: "deck-slice bg-cover bg-center",
-                    background_image: "url({back_img})",
+                    background_image: "url({img})",
                     if i + 1 == size() {
                         "{size}"
                     }

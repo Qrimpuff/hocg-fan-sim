@@ -1691,6 +1691,7 @@ impl GameBoard {
 
 pub trait ZoneControl {
     fn count(&self) -> usize;
+    fn peek_card(&self, idx: usize) -> Option<CardRef>;
     fn peek_top_card(&self) -> Option<CardRef>;
     fn peek_top_cards(&self, amount: usize) -> Vec<CardRef>;
     fn all_cards(&self) -> Vec<CardRef>;
@@ -1708,6 +1709,14 @@ impl ZoneControl for Option<CardRef> {
             1
         } else {
             0
+        }
+    }
+
+    fn peek_card(&self, idx: usize) -> Option<CardRef> {
+        if idx > 0 {
+            None
+        } else {
+            *self
         }
     }
 
@@ -1761,6 +1770,10 @@ impl ZoneControl for Option<CardRef> {
 impl ZoneControl for VecDeque<CardRef> {
     fn count(&self) -> usize {
         self.len()
+    }
+
+    fn peek_card(&self, idx: usize) -> Option<CardRef> {
+        self.get(idx).copied()
     }
 
     fn peek_top_card(&self) -> Option<CardRef> {
@@ -2230,10 +2243,12 @@ impl GameState {
         }
     }
 
+    pub fn attachments(&self, card: CardRef) -> impl Iterator<Item = CardRef> + '_ {
+        self.board_for_card(card).attachments(card).into_iter()
+    }
+
     pub fn attached_cheers(&self, card: CardRef) -> impl Iterator<Item = CardRef> + '_ {
-        self.board_for_card(card)
-            .attachments(card)
-            .into_iter()
+        self.attachments(card)
             .filter(|a| self.lookup_cheer(*a).is_some())
     }
 

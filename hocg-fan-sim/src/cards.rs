@@ -119,21 +119,30 @@ impl GlobalLibrary {
         let default_trigger = Trigger::ActivateInMainStep;
         let default_condition = Condition::True;
         let default_action = Action::Noop;
+        let default_url = "https://github.com/GabeJWJ/holoDelta/blob/master/fuda_holoBack.png?raw=true".to_string();
         // let default_damage_mod = DamageModifier::None;
         for card in self.cards.values_mut() {
             match card {
-                Card::OshiHoloMember(o) => o.skills.iter_mut().for_each(|s| {
-                    if s.triggers.is_empty() {
-                        s.triggers.push(default_trigger)
-                    }
-                    if s.condition.is_empty() {
-                        s.condition.push(default_condition.clone())
-                    }
-                    if s.effect.is_empty() {
-                        s.effect.push(default_action.clone())
-                    }
-                }),
+                Card::OshiHoloMember(o) => {
+                    if o.illustration_url.is_empty() {
+                        o.illustration_url.clone_from(&default_url);
+                    };
+                    o.skills.iter_mut().for_each(|s| {
+                        if s.triggers.is_empty() {
+                            s.triggers.push(default_trigger)
+                        }
+                        if s.condition.is_empty() {
+                            s.condition.push(default_condition.clone())
+                        }
+                        if s.effect.is_empty() {
+                            s.effect.push(default_action.clone())
+                        }
+                    });
+                }
                 Card::HoloMember(m) => {
+                    if m.illustration_url.is_empty() {
+                        m.illustration_url.clone_from(&default_url);
+                    };
                     m.abilities.iter_mut().for_each(|a| {
                         if a.condition.is_empty() {
                             a.condition.push(default_condition.clone())
@@ -152,6 +161,9 @@ impl GlobalLibrary {
                     })
                 }
                 Card::Support(s) => {
+                    if s.illustration_url.is_empty() {
+                        s.illustration_url.clone_from(&default_url);
+                    };
                     if s.attachment_condition.is_empty() {
                         s.attachment_condition.push(default_condition.clone())
                     }
@@ -165,7 +177,12 @@ impl GlobalLibrary {
                         s.effect.push(default_action.clone())
                     }
                 }
-                Card::Cheer(_) => {} // cheers do not have conditions
+                Card::Cheer(c) => {
+                    if c.illustration_url.is_empty() {
+                        c.illustration_url.clone_from(&default_url);
+                    };
+                    // cheers do not have conditions
+                }
             }
         }
         // end of: DON'T REMOVE YET. NOT BEFORE THE FILES ARE MADE
@@ -269,6 +286,14 @@ impl Card {
             Card::Cheer(c) => &c.card_number,
         }
     }
+    pub fn illustration_url(&self) -> &str {
+        match self {
+            Card::OshiHoloMember(c) => &c.illustration_url,
+            Card::HoloMember(c) => &c.illustration_url,
+            Card::Support(c) => &c.illustration_url,
+            Card::Cheer(c) => &c.illustration_url,
+        }
+    }
 
     pub fn is_attribute(&self, attribute: HoloMemberExtraAttribute) -> bool {
         match self {
@@ -345,7 +370,7 @@ pub enum Color {
 }
 
 pub type CardNumber = String;
-pub type IllustrationPath = String;
+pub type IllustrationUrl = String;
 pub type OshiLife = u8;
 pub type HoloMemberHp = u16;
 pub type OshiSkillCost = u8;
@@ -364,7 +389,7 @@ pub struct OshiHoloMemberCard {
     pub life: OshiLife,
     pub skills: Vec<OshiSkill>,
     pub rarity: Rarity,
-    pub illustration: IllustrationPath,
+    pub illustration_url: IllustrationUrl,
     pub artist: String,
 }
 
@@ -434,7 +459,7 @@ pub struct HoloMemberCard {
     pub extra: Option<String>, // TODO will probably be an enum
     pub attributes: Vec<HoloMemberExtraAttribute>,
     pub rarity: Rarity,
-    pub illustration: IllustrationPath,
+    pub illustration_url: IllustrationUrl,
     pub artist: String,
 }
 
@@ -701,7 +726,7 @@ pub struct SupportCard {
     #[serde(deserialize_with = "deserialize_actions")]
     pub effect: CardEffect,
     pub rarity: Rarity,
-    pub illustration: IllustrationPath,
+    pub illustration_url: IllustrationUrl,
     pub artist: String,
 }
 
@@ -752,6 +777,6 @@ pub struct CheerCard {
     pub color: Color,
     pub text: String,
     pub rarity: Rarity,
-    pub illustration: IllustrationPath,
+    pub illustration_url: IllustrationUrl,
     pub artist: String,
 }

@@ -75,12 +75,9 @@ where
     }
 }
 
+#[allow(async_fn_in_trait)]
 pub trait EventHandler {
-    fn handle_event(
-        &mut self,
-        game: &GameState,
-        event: Event,
-    ) -> impl std::future::Future<Output = ()> + Send;
+    async fn handle_event(&mut self, game: &GameState, event: Event);
 }
 pub trait IntentRequestHandler {
     fn handle_intent_request(&mut self, game: &GameState, req: IntentRequest) -> IntentResponse;
