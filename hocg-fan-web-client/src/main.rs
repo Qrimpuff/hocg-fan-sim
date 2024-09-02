@@ -485,22 +485,28 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
         });
 
     let dmg_markers = game.get_damage(card);
-    let damage = (dmg_markers.0 > 0).then_some({
-        let dmg_color = if dmg_markers.to_hp() >= 100 {
-            "badge-error"
-        } else {
-            "badge-warning"
+    let damage = if card_lookup.is_member() && dmg_markers.0 > 0 {
+        let rem_hp = game.remaining_hp(card);
+        let dmg_color = match game.remaining_hp(card) {
+            ..=50 => ("#D62828", "white"),
+            51..=100 => ("#FD9E02", "black"),
+            _ => ("#FCBF49", "black"),
         };
         rsx! {
             div {
-                transform: "translate3d(-40px, 30px, 0px) rotateZ({(dmg_markers.0 as i32 % 6) * 8 - 20}deg)",
+                transform: "translate3d(-40px, 30px, 0px) rotateZ({(rem_hp as i32 / 10 % 6) * 8 - 20}deg)",
                 z_index: "300",
                 position: "absolute",
-                class: "badge badge-lg {dmg_color}",
+                background_color: "{dmg_color.0}",
+                color: "{dmg_color.1}",
+                border_color: "transparent",
+                class: "badge badge-lg",
                 "{dmg_markers.to_hp()}"
             }
         }
-    });
+    } else {
+        None
+    };
 
     rsx! {
         div {
