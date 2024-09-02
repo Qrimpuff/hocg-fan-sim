@@ -50,9 +50,12 @@
 
 .deck-shuffling {
     z-index: 10;
+    animation: 0.5s buffer-animation;
 }
 
-.deck-shuffling .deck-slice:nth-child(2n) {
+@keyframes buffer-animation {}
+
+.deck-shuffling .deck-slice:nth-child(2n-1) {
     z-index: 10;
     animation: 0.5s ease-in-out 0s deck-slice-shuffling;
     animation-composition: add;
@@ -62,11 +65,11 @@
     animation: none !important;
 }
 
-.deck-shuffling .deck-slice:nth-child(3n) {
-    animation-duration: 0.60s;
+.deck-shuffling .deck-slice:nth-child(3n-1) {
+    animation-duration: 0.40s;
 }
 
-.deck-shuffling .deck-slice:nth-child(4n) {
+.deck-shuffling .deck-slice:nth-child(4n-1) {
     animation-direction: reverse;
 }
 

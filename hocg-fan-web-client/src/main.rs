@@ -407,17 +407,14 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
     let flipped_class = if flipped() { "card-flipped" } else { "" };
     let flipping_class = if flipping() { "card-flipping" } else { "" };
 
-    // TODO use our own images
     let front_img = illustration_url;
-    let back_img = match zone() {
-        Zone::MainDeck | Zone::CenterStage | Zone::Collab | Zone::BackStage | Zone::HoloPower => {
-            "https://github.com/GabeJWJ/holoDelta/blob/master/fuda_holoBack.png?raw=true"
+    let back_img = match card_lookup {
+        Card::OshiHoloMember(_) | Card::Cheer(_) => {
+            "https://qrimpuff.github.io/hocg-fan-sim-assets/img/cheer-back.webp"
         }
-        Zone::Oshi | Zone::Life | Zone::CheerDeck => {
-            "https://github.com/GabeJWJ/holoDelta/blob/master/cheerBack.png?raw=true"
+        Card::HoloMember(_) | Card::Support(_) => {
+            "https://qrimpuff.github.io/hocg-fan-sim-assets/img/card-back.webp"
         }
-        Zone::Archive => "https://github.com/GabeJWJ/holoDelta/blob/e2d323fffaede48e0f153fc46a2ab579ef0af0a6/hBP01-041.png?raw=true",
-        _ => unimplemented!(),
     };
 
     let attachments_count = game.attachments(card).count();
@@ -553,13 +550,12 @@ fn Deck(mat: Signal<Mat>, player: Player, zone: Zone) -> Element {
         "rotateZ(0)"
     };
 
-    // TODO use our own images
     let mut img = match zone {
         Zone::MainDeck | Zone::CenterStage | Zone::Collab | Zone::BackStage | Zone::HoloPower => {
-            "https://github.com/GabeJWJ/holoDelta/blob/master/fuda_holoBack.png?raw=true".into()
+            "https://qrimpuff.github.io/hocg-fan-sim-assets/img/card-back.webp".into()
         }
         Zone::Oshi | Zone::Life | Zone::CheerDeck => {
-            "https://github.com/GabeJWJ/holoDelta/blob/master/cheerBack.png?raw=true".into()
+            "https://qrimpuff.github.io/hocg-fan-sim-assets/img/cheer-back.webp".into()
         }
         Zone::Archive => "".into(),
         _ => unimplemented!(),
