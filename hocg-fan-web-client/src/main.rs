@@ -463,6 +463,24 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
             }
         });
 
+    let dmg_markers = game.get_damage(card);
+    let damage = (dmg_markers.0 > 0).then_some({
+        let dmg_color = if dmg_markers.to_hp() >= 100 {
+            "badge-error"
+        } else {
+            "badge-warning"
+        };
+        rsx! {
+            div {
+                transform: "translate3d(-40px, 30px, 0px) rotateZ({(dmg_markers.0 as i32 % 6) * 8 - 20}deg)",
+                z_index: "300",
+                position: "absolute",
+                class: "badge badge-lg {dmg_color}",
+                "{dmg_markers.to_hp()}"
+            }
+        }
+    });
+
     rsx! {
         div {
             id: "{card}",
@@ -485,6 +503,7 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
                 height: "100%",
                 z_index: "{z_index}",
                 transform: "{rotate}",
+                {damage},
                 div {
                     transform_style: "preserve-3d",
                     position: "absolute",
