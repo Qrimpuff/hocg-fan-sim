@@ -89,6 +89,56 @@ impl Prompter for RandomPrompter {
 }
 
 #[derive(Debug, Default)]
+pub struct PreferFirstPrompter {}
+impl PreferFirstPrompter {
+    pub fn new() -> Self {
+        PreferFirstPrompter {}
+    }
+}
+
+impl Prompter for PreferFirstPrompter {
+    fn prompt_choice<'a, T: ToString>(&mut self, text: &str, choices: Vec<T>) -> T {
+        info!("choosing random (prefer first) choice for: {text}");
+        self.print_choices(&choices);
+
+        let last = choices.len() - 1;
+        for (i, c) in choices.into_iter().enumerate() {
+            if thread_rng().gen_bool(1.1 / 2.0) || i == last {
+                info!("{}", c.to_string());
+                return c;
+            }
+        }
+        unreachable!()
+    }
+
+    fn prompt_multi_choices<'a, T: ToString>(
+        &mut self,
+        text: &str,
+        choices: Vec<T>,
+        min: usize,
+        max: usize,
+    ) -> Vec<T> {
+        info!("choosing random (prefer first) choices for: {text}");
+        self.print_choices(&choices);
+
+        let max = max.min(choices.len());
+
+        let last = choices.len() - 1;
+        let mut cs = vec![];
+        for (i, c) in choices.into_iter().enumerate() {
+            if thread_rng().gen_bool(1.1 / 2.0) && cs.len() < max
+                || min.saturating_sub(cs.len()) > last - i
+            {
+                cs.push(c);
+            }
+        }
+
+        info!("{}", cs.iter().map(T::to_string).collect_vec().join(", "));
+        cs
+    }
+}
+
+#[derive(Debug, Default)]
 pub struct BufferedPrompter {
     buffer: Vec<Vec<usize>>,
 }
@@ -213,8 +263,8 @@ impl<P: Prompter> IntentRequestHandler for P {
             }
             IntentRequest::SelectToAttach {
                 player,
-                zones,
                 select_cards,
+                ..
             } => {
                 let select_cards = select_cards
                     .into_iter()
@@ -244,10 +294,10 @@ impl<P: Prompter> IntentRequestHandler for P {
             }
             IntentRequest::SelectAttachments {
                 player,
-                card,
                 select_attachments,
                 min_amount,
                 max_amount,
+                ..
             } => {
                 let select_attachments = select_attachments
                     .into_iter()

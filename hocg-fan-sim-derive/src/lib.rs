@@ -20,7 +20,6 @@ use syn::{
 /// Derives a struct for each enum variant.
 ///
 /// Struct fields including their attributes are copied over.
-#[cfg(not(tarpaulin_include))]
 #[proc_macro_derive(HocgFanSimCardEffect, attributes(hocg_fan_sim))]
 pub fn enum_variant_type(input: TokenStream) -> TokenStream {
     use syn::parse_macro_input;

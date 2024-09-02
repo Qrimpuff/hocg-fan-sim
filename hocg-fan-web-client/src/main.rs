@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use std::{iter, time::Duration};
+use std::iter;
 
 use async_oneshot::oneshot;
 use dioxus::prelude::*;
@@ -12,7 +12,7 @@ use hocg_fan_sim::{
     events::{Event, Shuffle},
     gameplay::{CardRef, Game, GameState, Player, Zone},
     modifiers::ModifierKind,
-    prompters::RandomPrompter,
+    prompters::PreferFirstPrompter,
 };
 
 #[derive(Clone, Routable, Debug, PartialEq)]
@@ -231,7 +231,7 @@ fn Home() -> Element {
     let p1_client = Client::new(
         (p1_channel_2.0, p1_channel_1.1),
         WebGameEventHandler::new(),
-        RandomPrompter::new(),
+        PreferFirstPrompter::new(),
     );
     let _p1_c: Coroutine<()> = use_coroutine(|_rx| async move {
         p1_client.receive_requests().await;
@@ -241,7 +241,7 @@ fn Home() -> Element {
     let p2_client = Client::new(
         (p2_channel_2.0, p2_channel_1.1),
         DefaultEventHandler::new(),
-        RandomPrompter::new(),
+        PreferFirstPrompter::new(),
     );
     let _p2_c: Coroutine<()> = use_coroutine(|_rx| async move {
         p2_client.receive_requests().await;
