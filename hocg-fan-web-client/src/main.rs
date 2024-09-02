@@ -348,6 +348,16 @@ fn Board(mat: Signal<Mat>, player: Player) -> Element {
                 Card { key: "{c}", mat, card: c, num: (1 + i as u32, 6) }
             }
         });
+    let support = game
+        .board(player)
+        .activate_support
+        .iter()
+        .copied()
+        .map(|c| {
+            rsx! {
+                Card { key: "{c}", mat, card: c }
+            }
+        });
 
     rsx! {
         div {
@@ -372,6 +382,8 @@ fn Board(mat: Signal<Mat>, player: Player) -> Element {
             Deck { mat, player, zone: Zone::HoloPower }
             // life
             {life}
+            // activate support
+            {support}
         }
     }
 }
@@ -391,8 +403,17 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
 
     let card_size = mat().card_size;
 
-    let pos = mat().zone_pos(zone(), num);
-    let pos = (pos.0 - card_size.0 / 2, pos.1 - card_size.1 / 2);
+    let pos = if zone() == Zone::ActivateSupport {
+        let deck_pos = mat().zone_pos(Zone::MainDeck, None);
+        (
+            deck_pos.0 - card_size.0 * 2,
+            deck_pos.1 - card_size.1 / 2,
+            20,
+        )
+    } else {
+        let pos = mat().zone_pos(zone(), num);
+        (pos.0 - card_size.0 / 2, pos.1 - card_size.1 / 2, 0)
+    };
 
     let z_index = if moving() { "200" } else { "100" };
 
@@ -487,7 +508,7 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
             transform_style: "preserve-3d",
             transition: "transform 0.25s ease-in-out",
             ontransitionend: move |_event| moving.set(false),
-            transform: "translate3d({pos.0}px, {pos.1}px, 0px)",
+            transform: "translate3d({pos.0}px, {pos.1}px, {pos.2}px)",
             width: "{card_size.0}px",
             height: "{card_size.1}px",
             z_index: "{z_index}",
