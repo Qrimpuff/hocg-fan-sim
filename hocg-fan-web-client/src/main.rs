@@ -62,7 +62,7 @@ struct Mat {
 }
 
 impl Mat {
-    pub fn relative_to(&self, mat_size: (i32, i32), card_size: (i32, i32)) -> Mat {
+    pub fn relative_to(&self, mat_size: (i32, i32)) -> Mat {
         let rel = |pos: (i32, i32)| {
             (
                 (pos.0 as f64 / self.mat_size.0 as f64 * mat_size.0 as f64) as i32,
@@ -71,7 +71,7 @@ impl Mat {
         };
         Mat {
             mat_size,
-            card_size,
+            card_size: rel(self.card_size),
             oshi_pos: rel(self.oshi_pos),
             center_pos: rel(self.center_pos),
             collab_pos: rel(self.collab_pos),
@@ -253,7 +253,7 @@ fn Home() -> Element {
     let mat = use_context_provider(|| {
         Signal::new(Mat {
             mat_size: (2040, 1044),
-            card_size: (236, 323), // easier to center the zones
+            card_size: (220, 307), // easier to center the zones
             oshi_pos: (1334 + 236 / 2, 110 + 323 / 2),
             center_pos: (928 + 236 / 2, 110 + 323 / 2),
             collab_pos: (539 + 236 / 2, 110 + 323 / 2),
@@ -270,7 +270,7 @@ fn Home() -> Element {
     });
     let rel_mat = use_signal(|| {
         let mat = mat.read();
-        mat.relative_to((800, 409), (86, 120))
+        mat.relative_to((700, 358))
     });
 
     // relative size
@@ -284,7 +284,7 @@ fn Home() -> Element {
         }
 
         div {
-            class: "relative text-center mx-auto",
+            class: "",
             onanimationstart: move |_event| {
                 *ANIM_COUNT.write() += 1;
             },
@@ -297,7 +297,7 @@ fn Home() -> Element {
             div {
                 perspective: "1000px",
                 width: "{rel_mat_size.0}px",
-                class: "h-full",
+                class: "mx-auto",
                 div {
                     transform: "rotateX(20deg) translateY(-48px)",
                     transform_style: "preserve-3d",
@@ -363,27 +363,31 @@ fn Board(mat: Signal<Mat>, player: Player) -> Element {
         div {
             transform: if player == Player::Two { "rotateZ(180deg)" },
             transform_style: "preserve-3d",
-            background_image: "url(https://hololive-official-cardgame.com/wp-content/uploads/2024/07/img_sec4_04.jpg)",
-            height: "{rel_mat_size.1}px",
-            class: "relative bg-cover bg-center",
-            // main stage
-            {oshi},
-            {center_stage},
-            {collab},
-            // back stage
-            {back_stage},
-            // cheer deck
-            Deck { mat, player, zone: Zone::CheerDeck }
-            // archive
-            Deck { mat, player, zone: Zone::Archive }
-            // -- main deck --
-            Deck { mat, player, zone: Zone::MainDeck }
-            // holo power
-            Deck { mat, player, zone: Zone::HoloPower }
-            // life
-            {life}
-            // activate support
-            {support}
+            div {
+                transform_style: "preserve-3d",
+                background_image: "url(https://hololive-official-cardgame.com/wp-content/uploads/2024/07/img_sec4_04.jpg)",
+                height: "{rel_mat_size.1}px",
+                class: "relative bg-cover bg-center",
+                // main stage
+                {oshi},
+                {center_stage},
+                {collab},
+                // back stage
+                {back_stage},
+                // cheer deck
+                Deck { mat, player, zone: Zone::CheerDeck }
+                // archive
+                Deck { mat, player, zone: Zone::Archive }
+                // -- main deck --
+                Deck { mat, player, zone: Zone::MainDeck }
+                // holo power
+                Deck { mat, player, zone: Zone::HoloPower }
+                // life
+                {life},
+                // activate support
+                {support}
+            }
+            Hand { mat, player }
         }
     }
 }
@@ -403,7 +407,9 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
 
     let card_size = mat().card_size;
 
-    let pos = if zone() == Zone::ActivateSupport {
+    let pos = if zone() == Zone::Hand {
+        (0, 0, 0)
+    } else if zone() == Zone::ActivateSupport {
         let deck_pos = mat().zone_pos(Zone::MainDeck, None);
         (
             deck_pos.0 - card_size.0 * 2,
@@ -454,10 +460,13 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
                     position: "absolute",
                     width: "{card_size.0}px",
                     height: "{card_size.1}px",
-                    class: "bg-cover bg-center",
-                    background_image: "url({img})",
                     border_radius: "3.7%",
-                    "{att.card_number}"
+                    overflow: "hidden",
+                    img {
+                        width: "{card_size.0}px",
+                        height: "{card_size.1}px",
+                        src: "{img}"
+                    }
                 }
             }
         });
@@ -476,10 +485,13 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
                     position: "absolute",
                     width: "{card_size.0}px",
                     height: "{card_size.1}px",
-                    class: "bg-cover bg-center",
-                    background_image: "url({img})",
                     border_radius: "3.7%",
-                    "{att.card_number}"
+                    overflow: "hidden",
+                    img {
+                        width: "{card_size.0}px",
+                        height: "{card_size.1}px",
+                        src: "{img}"
+                    }
                 }
             }
         });
@@ -494,7 +506,7 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
         };
         rsx! {
             div {
-                transform: "translate3d(-40px, 30px, 0px) rotateZ({(rem_hp as i32 / 10 % 6) * 8 - 20}deg)",
+                transform: "translate3d(3px, 27px, 0px) rotateZ({(rem_hp as i32 / 10 % 6) * 8 - 20}deg)",
                 z_index: "300",
                 position: "absolute",
                 background_color: "{dmg_color.0}",
@@ -530,6 +542,7 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
                 height: "100%",
                 z_index: "{z_index}",
                 transform: "{rotate}",
+                text_align: "left",
                 {damage},
                 div {
                     transform_style: "preserve-3d",
@@ -547,10 +560,13 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
                         height: "100%",
                         position: "absolute",
                         backface_visibility: "hidden",
-                        class: "bg-cover bg-center",
-                        background_image: "url({front_img})",
                         border_radius: "3.7%",
-                        "{card}"
+                        overflow: "hidden",
+                        img {
+                            width: "{card_size.0}px",
+                            height: "{card_size.1}px",
+                            src: "{front_img}"
+                        }
                     }
                     div {
                         width: "100%",
@@ -558,10 +574,13 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
                         position: "absolute",
                         backface_visibility: "hidden",
                         transform: "rotateY(180deg)",
-                        class: "bg-cover bg-center",
-                        background_image: "url({back_img})",
                         border_radius: "3.7%",
-                        "{card}"
+                        overflow: "hidden",
+                        img {
+                            width: "{card_size.0}px",
+                            height: "{card_size.1}px",
+                            src: "{back_img}"
+                        }
                     }
                 }
             }
@@ -635,12 +654,19 @@ fn Deck(mat: Signal<Mat>, player: Player, zone: Zone) -> Element {
                     height: "{card_size.1}px",
                     z_index: "2",
                     position: "absolute",
-                    border_radius: "5%",
+                    border_radius: "3.7%",
+                    overflow: "hidden",
                     filter: "drop-shadow(0 1px 1px rgb(0 0 0 / 0.05))",
-                    class: "deck-slice bg-cover bg-center",
-                    background_image: "url({img})",
+                    class: "deck-slice",
+                    text_align: "center",
+                    img {
+                        position: "absolute",
+                        width: "{card_size.0}px",
+                        height: "{card_size.1}px",
+                        src: "{img}"
+                    }
                     if i + 1 == size() {
-                        "{size}"
+                        div { z_index: "10", position: "relative", "{size}" }
                     }
                 }
             }
@@ -654,6 +680,33 @@ fn Deck(mat: Signal<Mat>, player: Player, zone: Zone) -> Element {
             height: "{card_size.1}px",
             position: "absolute",
             class: "{shuffling_c}",
+            {cards}
+        }
+    }
+}
+
+#[component]
+fn Hand(mat: Signal<Mat>, player: Player) -> Element {
+    let game = GAME.read();
+    let card_size = mat().card_size;
+
+    let cards = game.board(player).hand().map(|c| {
+        rsx! {
+            div {
+                transform_style: "preserve-3d",
+                width: "{card_size.0}px",
+                height: "{card_size.1}px",
+                class: "mx-0.5 mt-2",
+                Card { key: "{c}", mat, card: c }
+            }
+        }
+    });
+
+    rsx! {
+        div {
+            transform_style: "preserve-3d",
+            height: "{card_size.1 + card_size.1 / 2}px",
+            class: "flex justify-center",
             {cards}
         }
     }
