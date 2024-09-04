@@ -2270,10 +2270,10 @@ impl GameState {
                 if *v == 0 {
                     required.remove(&at_cheer.color);
                 }
-            } else if let Some(v) = required.get_mut(&Color::ColorLess) {
+            } else if let Some(v) = required.get_mut(&Color::Colorless) {
                 *v -= 1;
                 if *v == 0 {
-                    required.remove(&Color::ColorLess);
+                    required.remove(&Color::Colorless);
                 }
             }
         }

@@ -551,6 +551,10 @@ where
     crate::card_effects::parse::ParseTokens::from_str(&s).map_err(serde::de::Error::custom)
 }
 
+pub fn skip_default_actions(actions: &Vec<Action>) -> bool {
+    actions == &[Action::Noop]
+}
+
 pub fn serialize_conditions<S>(
     conditions: &[Condition],
     serializer: S,
@@ -586,4 +590,8 @@ where
 {
     let s = String::deserialize(deserializer)?;
     crate::card_effects::parse::ParseTokens::from_str(&s).map_err(serde::de::Error::custom)
+}
+
+pub fn skip_default_conditions(conditions: &Vec<Condition>) -> bool {
+    conditions == &[Condition::True]
 }

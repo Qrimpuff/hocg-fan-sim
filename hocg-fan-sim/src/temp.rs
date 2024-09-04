@@ -174,7 +174,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         abilities: vec![],
                         arts: vec![HoloMemberArt {
                             name: "(๑╹ᆺ╹) Nun nun".into(),
-                            cost: vec![Color::ColorLess],
+                            cost: vec![Color::Colorless],
                             damage: HoloMemberArtDamage::Basic(30),
                             special_damage: None,
                             text: "".into(),
@@ -209,7 +209,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         }],
                         arts: vec![HoloMemberArt {
                             name: "On Stage!".into(),
-                            cost: vec![Color::ColorLess],
+                            cost: vec![Color::Colorless],
                             damage: HoloMemberArtDamage::Basic(20),
                             special_damage: None,
                             text: "".into(),
@@ -245,7 +245,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         },
                         HoloMemberArt {
                             name: "Your Heart... Will Go from Cloudy to Sunny!".into(),
-                            cost: vec![Color::White, Color::ColorLess],
+                            cost: vec![Color::White, Color::Colorless],
                             damage: HoloMemberArtDamage::Basic(50),
                             special_damage: None,
                             text: "".into(),
@@ -272,7 +272,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         abilities: vec![],
                         arts: vec![HoloMemberArt {
                             name: "Dream Live".into(),
-                            cost: vec![Color::White, Color::ColorLess],
+                            cost: vec![Color::White, Color::Colorless],
                             damage: HoloMemberArtDamage::Basic(50),
                             special_damage: None,
                             text: "".into(),
@@ -281,7 +281,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         },
                         HoloMemberArt {
                             name: "SorAZ Sympathy".into(),
-                            cost: vec![Color::White, Color::Green, Color::ColorLess],
+                            cost: vec![Color::White, Color::Green, Color::Colorless],
                             damage: HoloMemberArtDamage::Plus(60),
                             special_damage: None,
                             text: "If a [AZKi] holomem is on your Stage, this Art deals 50 additional damage.".into(),
@@ -353,7 +353,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         abilities: vec![],
                         arts: vec![HoloMemberArt {
                             name: "You're Great for Being Able to Do Your Best!".into(),
-                            cost: vec![Color::ColorLess],
+                            cost: vec![Color::Colorless],
                             damage: HoloMemberArtDamage::Basic(20),
                             special_damage: None,
                             text: "".into(),
@@ -400,7 +400,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         }],
                         arts: vec![HoloMemberArt {
                             name: "Where Next, Where Next?".into(),
-                            cost: vec![Color::ColorLess],
+                            cost: vec![Color::Colorless],
                             damage: HoloMemberArtDamage::Basic(10),
                             special_damage: None,
                             text: "".into(),
@@ -427,7 +427,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         abilities: vec![],
                         arts: vec![HoloMemberArt {
                             name: "An Aimless Journey with You".into(),
-                            cost: vec![Color::Green, Color::ColorLess],
+                            cost: vec![Color::Green, Color::Colorless],
                             damage: HoloMemberArtDamage::Basic(50),
                             special_damage: None,
                             text: "".into(),
@@ -470,7 +470,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         },
                         HoloMemberArt {
                             name: "Destiny Song".into(),
-                            cost: vec![Color::Green, Color::Green, Color::ColorLess],
+                            cost: vec![Color::Green, Color::Green, Color::Colorless],
                             damage: HoloMemberArtDamage::Plus(100),
                             special_damage: Some((Color::Blue, 50)),
                             text: "Roll a six-sided die: If the result is odd, this Art gains +50 damage. If the result is 1, this Art gains an additional +50 damage.".into(),
@@ -544,7 +544,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         abilities: vec![],
                         arts: vec![HoloMemberArt {
                             name: "The Future We Want to Overcome".into(),
-                            cost: vec![Color::ColorLess, Color::ColorLess],
+                            cost: vec![Color::Colorless, Color::Colorless],
                             damage: HoloMemberArtDamage::Basic(50),
                             special_damage: None,
                             text: "Roll a six-sided die: If the result is odd, attach one Cheer card from the top of your Cheer Deck to this holomem. If the result is even, draw a card.".into(),
@@ -576,7 +576,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                     Card::HoloMember(HoloMemberCard {
                         card_number: "hSD01-014".into(),
                         name: "Amane Kanata".into(),
-                        colors: vec![Color::ColorLess],
+                        colors: vec![Color::Colorless],
                         hp: 150,
                         level: HoloMemberLevel::Spot,
                         hash_tags: vec![JP, Gen4, Song],
@@ -603,7 +603,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                     Card::HoloMember(HoloMemberCard {
                         card_number: "hSD01-015".into(),
                         name: "Hakui Koyori".into(),
-                        colors: vec![Color::ColorLess],
+                        colors: vec![Color::Colorless],
                         hp: 50,
                         level: HoloMemberLevel::Spot,
                         hash_tags: vec![JP, SecretSocietyholoX, AnimalEars],
@@ -627,7 +627,7 @@ pub fn test_library() -> &'static Arc<GlobalLibrary> {
                         }],
                         arts: vec![HoloMemberArt {
                             name: "Pure, Pure, Pure!".into(),
-                            cost: vec![Color::ColorLess],
+                            cost: vec![Color::Colorless],
                             damage: HoloMemberArtDamage::Basic(10),
                             special_damage: None,
                             text: "".into(),

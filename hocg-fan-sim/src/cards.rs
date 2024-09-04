@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, num::ParseIntError};
 
 use evaluate::EvaluateEffect;
 use get_size::GetSize;
@@ -9,6 +9,7 @@ use tracing::error;
 use crate::card_effects::{
     effects::{
         deserialize_actions, deserialize_conditions, serialize_actions, serialize_conditions,
+        skip_default_actions, skip_default_conditions,
     },
     *,
 };
@@ -119,7 +120,8 @@ impl GlobalLibrary {
         let default_trigger = Trigger::ActivateInMainStep;
         let default_condition = Condition::True;
         let default_action = Action::Noop;
-        let default_url = "https://qrimpuff.github.io/hocg-fan-sim-assets/img/card-back.webp".to_string();
+        let default_url =
+            "https://qrimpuff.github.io/hocg-fan-sim-assets/img/card-back.webp".to_string();
         // let default_damage_mod = DamageModifier::None;
         for card in self.cards.values_mut() {
             match card {
@@ -270,6 +272,7 @@ impl GlobalLibrary {
 
 #[derive(Serialize, Deserialize, Debug, Clone, GetSize)]
 #[serde(rename_all = "snake_case")]
+#[serde(tag = "card_type")]
 pub enum Card {
     OshiHoloMember(OshiHoloMemberCard),
     HoloMember(HoloMemberCard),
@@ -344,14 +347,22 @@ impl Card {
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, GetSize)]
 #[serde(rename_all = "snake_case")]
 pub enum Rarity {
+    #[serde(rename = "osr")]
     OshiSuperRare, // OSR
-    DoubleRare,    // RR
-    Rare,          // R
-    Uncommon,      // U
-    Common,        // C
-    Secret,        // SEC
+    #[serde(rename = "rr")]
+    DoubleRare, // RR
+    #[serde(rename = "r")]
+    Rare, // R
+    #[serde(rename = "u")]
+    Uncommon, // U
+    #[serde(rename = "c")]
+    Common, // C
+    #[serde(rename = "sec")]
+    Secret, // SEC
+    #[serde(rename = "our")]
     OshiUltraRare, // OUR
-    UltraRare,     // UR
+    #[serde(rename = "ur")]
+    UltraRare, // UR
 }
 
 #[derive(
@@ -366,7 +377,7 @@ pub enum Color {
     Blue,
     Purple,
     Yellow,
-    ColorLess,
+    Colorless,
 }
 
 pub type CardNumber = String;
@@ -431,9 +442,11 @@ pub struct OshiSkill {
     pub triggers: CardEffectTrigger,
     #[serde(serialize_with = "serialize_conditions")]
     #[serde(deserialize_with = "deserialize_conditions")]
+    #[serde(skip_serializing_if = "skip_default_conditions")]
     pub condition: CardEffectCondition,
     #[serde(serialize_with = "serialize_actions")]
     #[serde(deserialize_with = "deserialize_actions")]
+    #[serde(skip_serializing_if = "skip_default_actions")]
     pub effect: CardEffect,
 }
 
@@ -496,7 +509,7 @@ impl HoloMemberCard {
         }
 
         // can only baton pass if there is enough cheers attached
-        let cost = std::iter::repeat(Color::ColorLess)
+        let cost = std::iter::repeat(Color::Colorless)
             .take(self.baton_pass_cost as usize)
             .collect_vec();
         if !game.required_attached_cheers(card, &cost) {
@@ -608,7 +621,6 @@ pub enum HoloMemberLevel {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, GetSize)]
-#[serde(rename_all = "snake_case")]
 pub enum HoloMemberHashTag {
     JP,
     ID,
@@ -639,9 +651,11 @@ pub struct HoloMemberAbility {
     pub text: String,
     #[serde(serialize_with = "serialize_conditions")]
     #[serde(deserialize_with = "deserialize_conditions")]
+    #[serde(skip_serializing_if = "skip_default_conditions")]
     pub condition: CardEffectCondition,
     #[serde(serialize_with = "serialize_actions")]
     #[serde(deserialize_with = "deserialize_actions")]
+    #[serde(skip_serializing_if = "skip_default_actions")]
     pub effect: CardEffect,
 }
 
@@ -689,22 +703,58 @@ pub struct HoloMemberArt {
     pub cost: HoloMemberArtCost,
     pub damage: HoloMemberArtDamage,
     pub special_damage: Option<(Color, HoloMemberHp)>,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub text: String,
     #[serde(serialize_with = "serialize_conditions")]
     #[serde(deserialize_with = "deserialize_conditions")]
+    #[serde(skip_serializing_if = "skip_default_conditions")]
     pub condition: CardEffectCondition,
     #[serde(serialize_with = "serialize_actions")]
     #[serde(deserialize_with = "deserialize_actions")]
+    #[serde(skip_serializing_if = "skip_default_actions")]
     pub effect: CardEffect,
 }
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, GetSize)]
 #[serde(rename_all = "snake_case")]
+#[serde(into = "String")]
+#[serde(try_from = "String")]
 pub enum HoloMemberArtDamage {
     Basic(HoloMemberHp),
     Plus(HoloMemberHp),
     Minus(HoloMemberHp),
+    Multiple(HoloMemberHp),
     Uncertain,
+}
+
+impl TryFrom<String> for HoloMemberArtDamage {
+    type Error = ParseIntError;
+
+    fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
+        if value == "?" {
+            Ok(Self::Uncertain)
+        } else if value.ends_with('+') {
+            Ok(Self::Plus(value.trim_end_matches('+').parse()?))
+        } else if value.ends_with('-') {
+            Ok(Self::Minus(value.trim_end_matches('-').parse()?))
+        } else if value.ends_with('x') {
+            Ok(Self::Multiple(value.trim_end_matches('x').parse()?))
+        } else {
+            Ok(Self::Basic(value.parse()?))
+        }
+    }
+}
+
+impl From<HoloMemberArtDamage> for String {
+    fn from(value: HoloMemberArtDamage) -> Self {
+        match value {
+            HoloMemberArtDamage::Basic(dmg) => format!("{dmg}"),
+            HoloMemberArtDamage::Plus(dmg) => format!("{dmg}+"),
+            HoloMemberArtDamage::Minus(dmg) => format!("{dmg}-"),
+            HoloMemberArtDamage::Multiple(dmg) => format!("{dmg}x"),
+            HoloMemberArtDamage::Uncertain => "?".into(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, GetSize)]
@@ -717,13 +767,16 @@ pub struct SupportCard {
     pub text: String,
     #[serde(serialize_with = "serialize_conditions")]
     #[serde(deserialize_with = "deserialize_conditions")]
+    #[serde(skip_serializing_if = "skip_default_conditions")]
     pub attachment_condition: CardEffectCondition, // used by Fan
     pub triggers: CardEffectTrigger,
     #[serde(serialize_with = "serialize_conditions")]
     #[serde(deserialize_with = "deserialize_conditions")]
+    #[serde(skip_serializing_if = "skip_default_conditions")]
     pub condition: CardEffectCondition,
     #[serde(serialize_with = "serialize_actions")]
     #[serde(deserialize_with = "deserialize_actions")]
+    #[serde(skip_serializing_if = "skip_default_actions")]
     pub effect: CardEffect,
     pub rarity: Rarity,
     pub illustration_url: IllustrationUrl,
@@ -775,6 +828,7 @@ pub struct CheerCard {
     pub card_number: CardNumber,
     pub name: String,
     pub color: Color,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub text: String,
     pub rarity: Rarity,
     pub illustration_url: IllustrationUrl,

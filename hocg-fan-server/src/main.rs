@@ -46,13 +46,15 @@ async fn main() {
     ";
 
     // let c = dbg!(_cond.parse_effect::<Vec<Action>>().expect("IN MAIN"));
-    let toml = toml::to_string(
-        &test_library()
-            .lookup_card(&"hSD01-002".to_string())
-            .unwrap(),
-    )
-    .unwrap();
-    info!("{toml}");
+    for i in 1..=21 {
+        let toml = toml::to_string(
+            &test_library()
+                .lookup_card(&format!("hSD01-{i:0>3}"))
+                .unwrap(),
+        )
+        .unwrap();
+        info!("\n\n\n\n{toml}\n\n\n\n");
+    }
 
     let main_deck_hsd01 = Vec::from_iter(
         None.into_iter()
@@ -121,14 +123,14 @@ async fn main() {
     );
     tokio::spawn(p2_client.receive_requests());
 
-    // info!("{:#?}", &game);
-    game.start_game().await.unwrap();
-    // info!("{:#?}", &game);
+    // // info!("{:#?}", &game);
+    // game.start_game().await.unwrap();
+    // // info!("{:#?}", &game);
 
-    while game.next_step().await.is_ok() {}
-    info!("{:#?}", &game);
-    info!("{:#?}", game.state.get_heap_size());
-    info!("{:#?}", game.state.clone().get_heap_size());
-    info!("{:#?}", test_library().cards.get_heap_size());
-    info!("{:#?}", test_library().cards.clone().get_heap_size());
+    // while game.next_step().await.is_ok() {}
+    // info!("{:#?}", &game);
+    // info!("{:#?}", game.state.get_heap_size());
+    // info!("{:#?}", game.state.clone().get_heap_size());
+    // info!("{:#?}", test_library().cards.get_heap_size());
+    // info!("{:#?}", test_library().cards.clone().get_heap_size());
 }

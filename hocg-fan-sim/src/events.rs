@@ -3027,6 +3027,7 @@ impl EvaluateEvent for PerformArt {
             HoloMemberArtDamage::Basic(dmg) => DamageMarkers::from_hp(dmg),
             HoloMemberArtDamage::Plus(dmg) => DamageMarkers::from_hp(dmg), // TODO
             HoloMemberArtDamage::Minus(dmg) => DamageMarkers::from_hp(dmg), // TODO
+            HoloMemberArtDamage::Multiple(dmg) => DamageMarkers::from_hp(dmg), // TODO
             HoloMemberArtDamage::Uncertain => unimplemented!(),
         };
         // apply damage modifiers
