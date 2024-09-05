@@ -10,6 +10,7 @@ async-channel = { workspace = true }
 dioxus = { version = "0.5", features = ["web", "router"] }
 gloo-timers = { version = "0.3.0", features = ["futures"] }
 async-oneshot = "0.5.9"
+futures = "0.3.30"
 
 # Debug
 dioxus-logger = "0.5.1"

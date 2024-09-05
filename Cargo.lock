@@ -1356,6 +1356,7 @@ dependencies = [
  "async-oneshot",
  "dioxus",
  "dioxus-logger",
+ "futures",
  "gloo-timers 0.3.0",
  "hocg-fan-sim",
 ]

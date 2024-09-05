@@ -5,6 +5,7 @@ use std::iter;
 use async_oneshot::oneshot;
 use dioxus::prelude::*;
 use dioxus_logger::tracing::{info, Level};
+use futures::future;
 use gloo_timers::future::TimeoutFuture;
 use hocg_fan_sim::{
     cards::{Card, Loadout},
@@ -148,7 +149,10 @@ impl EventHandler for WebGameEventHandler {
         if matches!(event, Event::Shuffle(_),) {
             let (s, r) = oneshot::<()>();
             *ANIM_LOCK.write() = Some(s);
-            r.await.unwrap();
+            *ANIM_COUNT.write() = 0;
+            // timeout animation after 5 seconds
+            future::select(r, TimeoutFuture::new(5000)).await;
+            *ANIM_LOCK.write() = None;
         }
 
         // yield
@@ -291,7 +295,9 @@ fn Home() -> Element {
             onanimationend: move |_event| {
                 *ANIM_COUNT.write() -= 1;
                 if *ANIM_COUNT.read() == 0 {
-                    ANIM_LOCK.write().as_mut().unwrap().send(()).unwrap();
+                    if let Some(lock) = ANIM_LOCK.write().as_mut() {
+                        lock.send(()).unwrap();
+                    }
                 }
             },
             div {
@@ -465,6 +471,7 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
                     img {
                         width: "{card_size.0}px",
                         height: "{card_size.1}px",
+                        border_radius: "3.7%",
                         src: "{img}"
                     }
                 }
@@ -490,6 +497,7 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
                     img {
                         width: "{card_size.0}px",
                         height: "{card_size.1}px",
+                        border_radius: "3.7%",
                         src: "{img}"
                     }
                 }
@@ -565,6 +573,7 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
                         img {
                             width: "{card_size.0}px",
                             height: "{card_size.1}px",
+                            border_radius: "3.7%",
                             src: "{front_img}"
                         }
                     }
@@ -579,6 +588,7 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
                         img {
                             width: "{card_size.0}px",
                             height: "{card_size.1}px",
+                            border_radius: "3.7%",
                             src: "{back_img}"
                         }
                     }
@@ -663,6 +673,7 @@ fn Deck(mat: Signal<Mat>, player: Player, zone: Zone) -> Element {
                         position: "absolute",
                         width: "{card_size.0}px",
                         height: "{card_size.1}px",
+                        border_radius: "3.7%",
                         src: "{img}"
                     }
                     if i + 1 == size() {
