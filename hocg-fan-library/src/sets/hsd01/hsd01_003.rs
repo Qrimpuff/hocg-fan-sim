@@ -22,7 +22,7 @@ pub fn card() -> Card {
         extra: None,
         attributes: vec![],
         rarity: Rarity::Common,
-        illustration_url: "/hocg-fan-sim-assets/img/hSD01/hSD01-003.webp".into(),
+        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-003.webp".into(),
         artist: "はこに".into(),
     })
 }

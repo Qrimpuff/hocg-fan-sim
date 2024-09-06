@@ -121,7 +121,7 @@ impl GlobalLibrary {
         let default_trigger = Trigger::ActivateInMainStep;
         let default_condition = Condition::True;
         let default_action = Action::Noop;
-        let default_url = "/hocg-fan-sim-assets/img/card-back.webp".to_string();
+        let default_url = "https://qrimpuff.github.io/hocg-fan-sim-assets/img/card-back.webp".to_string();
         // let default_damage_mod = DamageModifier::None;
         for card in self.cards.values_mut() {
             match card {

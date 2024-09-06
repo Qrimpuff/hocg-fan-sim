@@ -19,7 +19,7 @@ pub fn card() -> Card {
                 draw 5
             ").parse_effect().expect("hSD01-017"),
         rarity: Rarity::Common,
-        illustration_url: "/hocg-fan-sim-assets/img/hSD01/hSD01-017.webp".into(),
+        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-017.webp".into(),
         artist: "株式会社 HIKE / Trigono".into(),
     })
 }

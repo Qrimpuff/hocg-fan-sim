@@ -38,7 +38,7 @@ pub fn card() -> Card {
             HoloMemberExtraAttribute::Name("AZKi".into())
         ],
         rarity: Rarity::Rare,
-        illustration_url: "/hocg-fan-sim-assets/img/hSD01/hSD01-013.webp".into(),
+        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-013.webp".into(),
         artist: "©2023 Victor Entertainment".into(),
     })
 }

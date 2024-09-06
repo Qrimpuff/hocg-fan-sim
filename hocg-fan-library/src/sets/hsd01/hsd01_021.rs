@@ -20,7 +20,7 @@ pub fn card() -> Card {
                 send_to_bottom main_deck leftovers
             ").parse_effect().expect("hSD01-021"),
         rarity: Rarity::Common,
-        illustration_url: "/hocg-fan-sim-assets/img/hSD01/hSD01-021.webp".into(),
+        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-021.webp".into(),
         artist: "".into(),
     })
 }
