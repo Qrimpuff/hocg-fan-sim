@@ -6,3 +6,4 @@ pub mod gameplay;
 pub mod modifiers;
 pub mod prompters;
 pub mod temp;
+pub mod tests;

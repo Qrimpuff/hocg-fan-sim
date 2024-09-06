@@ -1,0 +1,13 @@
+[package]
+name = "hocg-fan-library"
+edition = "2021"
+version.workspace = true
+
+[dependencies]
+hocg-fan-sim = { workspace = true }
+bincode = { workspace = true }
+flate2 = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+tokio = { workspace = true }

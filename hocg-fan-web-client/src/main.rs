@@ -442,12 +442,8 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
 
     let front_img = illustration_url;
     let back_img = match card_lookup {
-        Card::OshiHoloMember(_) | Card::Cheer(_) => {
-            "https://qrimpuff.github.io/hocg-fan-sim-assets/img/cheer-back.webp"
-        }
-        Card::HoloMember(_) | Card::Support(_) => {
-            "https://qrimpuff.github.io/hocg-fan-sim-assets/img/card-back.webp"
-        }
+        Card::OshiHoloMember(_) | Card::Cheer(_) => "/hocg-fan-sim-assets/img/cheer-back.webp",
+        Card::HoloMember(_) | Card::Support(_) => "/hocg-fan-sim-assets/img/card-back.webp",
     };
 
     let attachments_count = game.attachments(card).count();
@@ -627,10 +623,10 @@ fn Deck(mat: Signal<Mat>, player: Player, zone: Zone) -> Element {
 
     let mut img = match zone {
         Zone::MainDeck | Zone::CenterStage | Zone::Collab | Zone::BackStage | Zone::HoloPower => {
-            "https://qrimpuff.github.io/hocg-fan-sim-assets/img/card-back.webp".into()
+            "/hocg-fan-sim-assets/img/card-back.webp".into()
         }
         Zone::Oshi | Zone::Life | Zone::CheerDeck => {
-            "https://qrimpuff.github.io/hocg-fan-sim-assets/img/cheer-back.webp".into()
+            "/hocg-fan-sim-assets/img/cheer-back.webp".into()
         }
         Zone::Archive => "".into(),
         _ => unimplemented!(),

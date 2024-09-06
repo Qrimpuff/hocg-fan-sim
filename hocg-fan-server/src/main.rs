@@ -6,7 +6,6 @@ use std::{env, iter};
 use bincode::config;
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use get_size::GetSize;
 use hocg_fan_sim::client::DefaultEventHandler;
 use hocg_fan_sim::gameplay::Game;
 use hocg_fan_sim::prompters::RandomPrompter;
@@ -138,7 +137,6 @@ async fn main() {
     // info!("{:#?}", test_library().cards.get_heap_size());
     // info!("{:#?}", test_library().cards.clone().get_heap_size());
 
-    
     let config = config::standard();
     let bin = bincode::encode_to_vec(test_library(), config).unwrap();
     tokio::fs::write("some_file.bin", &bin).await.unwrap();

@@ -11,10 +11,10 @@ use crate::temp::test_library;
 use super::cards::*;
 use super::modifiers::*;
 use async_channel::{Receiver, Sender};
+use bincode::{Decode, Encode};
 use debug_ignore::DebugIgnore;
 use get_size::GetSize;
 use iter_tools::Itertools;
-use bincode::{Decode, Encode};
 use rand::seq::SliceRandom;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
@@ -1889,7 +1889,9 @@ pub enum ZoneAddLocation {
     Bottom,
 }
 
-#[derive(Encode, Decode, Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Default, GetSize)]
+#[derive(
+    Encode, Decode, Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Default, GetSize,
+)]
 pub enum Step {
     #[default]
     Setup,
