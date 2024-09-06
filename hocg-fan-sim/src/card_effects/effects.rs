@@ -29,6 +29,7 @@
 
 use std::fmt::Debug;
 
+use bincode::{Decode, Encode};
 use get_size::GetSize;
 use hocg_fan_sim_derive::HocgFanSimCardEffect;
 use iter_tools::Itertools;
@@ -43,7 +44,7 @@ use super::*;
 
 // TODO clean up this file after the list of effect is finalized
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct Var(pub String);
 
 impl From<Var> for Tokens {
@@ -70,7 +71,7 @@ impl ParseTokens for Var {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct NumberLiteral(pub usize);
 
 impl From<NumberLiteral> for Tokens {
@@ -97,7 +98,7 @@ impl ParseTokens for NumberLiteral {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 /// let <var> = <value> | <player> | <target>
 pub struct Let<T>(pub Var, pub T);
 
@@ -140,7 +141,7 @@ impl<T: ParseTokens + Debug> ParseTokens for Let<T> {
 
 /////////////////////////////////////
 
-#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub enum Action {
     // add_global_mod <mod> <life_time> -> action
     #[hocg_fan_sim(token = "add_global_mod")]
@@ -192,7 +193,7 @@ pub enum Action {
     Shuffle(Zone),
 }
 
-#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub enum CardReference {
     // TODO figure out the conversion with CardReferences, could panic
     // event_origin -> <card_ref>
@@ -206,7 +207,7 @@ pub enum CardReference {
     Var(Var),
 }
 
-#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub enum CardReferences {
     // attached <card_ref> -> <[card_ref]>
     #[hocg_fan_sim(token = "attached")]
@@ -243,7 +244,7 @@ impl From<bool> for Condition {
     }
 }
 
-#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub enum Condition {
     // all <[card_ref]> <condition> -> <condition>
     #[hocg_fan_sim(token = "all")]
@@ -331,7 +332,7 @@ pub enum Condition {
     Yours,
 }
 
-#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub enum LetValue {
     // optional_activate -> <condition>
     #[hocg_fan_sim(token = "optional_activate")]
@@ -353,7 +354,7 @@ pub enum LetValue {
     SelectUpTo(Box<Number>, Box<CardReferences>, Box<Condition>),
 }
 
-#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub enum LifeTime {
     // this_game -> <life_time>
     #[hocg_fan_sim(token = "this_game")]
@@ -378,7 +379,7 @@ pub enum LifeTime {
     UntilRemoved,
 }
 
-#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub enum Modifier {
     // more_dmg <value> -> <mod>
     #[hocg_fan_sim(token = "more_dmg")]
@@ -391,7 +392,7 @@ pub enum Modifier {
     When(Condition, Box<Modifier>),
 }
 
-#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub enum Player {
     // you -> <player>
     #[hocg_fan_sim(token = "you")]
@@ -401,7 +402,7 @@ pub enum Player {
     Opponent,
 }
 
-#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub enum Number {
     // count <[card_ref]> -> <value>
     #[hocg_fan_sim(token = "count")]
@@ -414,7 +415,7 @@ pub enum Number {
     Var(Var),
 }
 
-#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub enum Zone {
     // archive -> <zone>
     #[hocg_fan_sim(token = "archive")]
@@ -453,7 +454,7 @@ pub enum Zone {
 
 //////////////////////////////////////
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, GetSize)]
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, GetSize)]
 #[serde(rename_all = "snake_case")]
 pub enum Trigger {
     ActivateInMainStep,

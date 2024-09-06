@@ -1,5 +1,6 @@
 use std::{collections::HashMap, num::ParseIntError};
 
+use bincode::{Decode, Encode};
 use evaluate::EvaluateEffect;
 use get_size::GetSize;
 use iter_tools::Itertools;
@@ -18,7 +19,7 @@ use crate::gameplay::Zone;
 use crate::gameplay::{CardRef, Game};
 use crate::modifiers::ModifierKind::*;
 
-/**
+/*
  * Cards:
 - oshi:
   - set id
@@ -82,7 +83,7 @@ use crate::modifiers::ModifierKind::*;
   - text
  */
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Encode, Decode, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 pub struct Set {
     number: String,
@@ -90,7 +91,7 @@ pub struct Set {
     // maybe preset decks
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Loadout {
     pub oshi: CardNumber,
     pub main_deck: Vec<CardNumber>,
@@ -98,7 +99,7 @@ pub struct Loadout {
     // cosmetic...
 }
 
-#[derive(Debug, Clone, Default, GetSize)]
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, Default, GetSize)]
 pub struct GlobalLibrary {
     // TODO use a different key because rarity is not include in card number
     pub cards: HashMap<CardNumber, Card>,
@@ -270,7 +271,7 @@ impl GlobalLibrary {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, GetSize)]
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, GetSize)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "card_type")]
 pub enum Card {
@@ -344,7 +345,7 @@ impl Card {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, GetSize)]
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, GetSize)]
 #[serde(rename_all = "snake_case")]
 pub enum Rarity {
     #[serde(rename = "osr")]
@@ -366,7 +367,19 @@ pub enum Rarity {
 }
 
 #[derive(
-    Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, GetSize,
+    Encode,
+    Decode,
+    Serialize,
+    Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    GetSize,
 )]
 #[serde(rename_all = "snake_case")]
 #[allow(clippy::enum_variant_names)]
@@ -391,7 +404,7 @@ pub type CardEffectCondition = Vec<Condition>;
 pub type CardEffect = Vec<Action>;
 pub type HoloMemberBatonPassCost = u8;
 
-#[derive(Serialize, Deserialize, Debug, Clone, GetSize)]
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, GetSize)]
 #[serde(rename_all = "snake_case")]
 pub struct OshiHoloMemberCard {
     pub card_number: CardNumber,
@@ -432,7 +445,7 @@ impl OshiHoloMemberCard {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, GetSize)]
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, GetSize)]
 #[serde(rename_all = "snake_case")]
 pub struct OshiSkill {
     pub kind: OshiSkillKind,
@@ -450,14 +463,14 @@ pub struct OshiSkill {
     pub effect: CardEffect,
 }
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, GetSize)]
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, GetSize)]
 #[serde(rename_all = "snake_case")]
 pub enum OshiSkillKind {
     Normal,
     Special,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, GetSize)]
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, GetSize)]
 #[serde(rename_all = "snake_case")]
 pub struct HoloMemberCard {
     pub card_number: CardNumber,
@@ -611,7 +624,20 @@ impl HoloMemberCard {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, GetSize)]
+#[derive(
+    Encode,
+    Decode,
+    Serialize,
+    Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    GetSize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum HoloMemberLevel {
     Spot,
@@ -620,7 +646,7 @@ pub enum HoloMemberLevel {
     Second,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, GetSize)]
 pub enum HoloMemberHashTag {
     JP,
     ID,
@@ -635,7 +661,7 @@ pub enum HoloMemberHashTag {
     AnimalEars,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, GetSize)]
 #[serde(rename_all = "snake_case")]
 pub enum HoloMemberExtraAttribute {
     Buzz,
@@ -643,7 +669,7 @@ pub enum HoloMemberExtraAttribute {
     Unknown,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, GetSize)]
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, GetSize)]
 #[serde(rename_all = "snake_case")]
 pub struct HoloMemberAbility {
     pub kind: MemberAbilityKind,
@@ -688,7 +714,7 @@ impl HoloMemberAbility {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, GetSize)]
 #[serde(rename_all = "snake_case")]
 pub enum MemberAbilityKind {
     CollabEffect,
@@ -696,7 +722,7 @@ pub enum MemberAbilityKind {
     Gift(CardEffectTrigger), // TODO verify if gift is correct. what kind of effect they have?
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, GetSize)]
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, GetSize)]
 #[serde(rename_all = "snake_case")]
 pub struct HoloMemberArt {
     pub name: String,
@@ -715,7 +741,7 @@ pub struct HoloMemberArt {
     pub effect: CardEffect,
 }
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, GetSize)]
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, GetSize)]
 #[serde(rename_all = "snake_case")]
 #[serde(into = "String")]
 #[serde(try_from = "String")]
@@ -757,7 +783,7 @@ impl From<HoloMemberArtDamage> for String {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, GetSize)]
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, GetSize)]
 #[serde(rename_all = "snake_case")]
 pub struct SupportCard {
     pub card_number: CardNumber,
@@ -813,7 +839,7 @@ impl SupportCard {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, GetSize)]
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, GetSize)]
 #[serde(rename_all = "snake_case")]
 pub enum SupportKind {
     Staff,
@@ -822,7 +848,7 @@ pub enum SupportKind {
     Fan,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, GetSize)]
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, GetSize)]
 #[serde(rename_all = "snake_case")]
 pub struct CheerCard {
     pub card_number: CardNumber,

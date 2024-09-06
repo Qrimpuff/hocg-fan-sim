@@ -14,6 +14,7 @@ use async_channel::{Receiver, Sender};
 use debug_ignore::DebugIgnore;
 use get_size::GetSize;
 use iter_tools::Itertools;
+use bincode::{Decode, Encode};
 use rand::seq::SliceRandom;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
@@ -25,7 +26,7 @@ pub const MAX_MEMBERS_ON_STAGE: usize = 6;
 
 pub static PRIVATE_CARD: CardRef = CardRef(NonZeroU16::MAX);
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, GetSize)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, GetSize, Encode, Decode)]
 pub struct CardRef(pub(crate) NonZeroU16);
 
 impl Debug for CardRef {
@@ -63,7 +64,7 @@ pub fn register_card(
     card
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default, GetSize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default, GetSize, Encode, Decode)]
 pub enum Player {
     #[default]
     One,
@@ -85,13 +86,13 @@ pub type GameResult = Result<GameContinue, GameOutcome>;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct GameContinue;
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, GetSize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, GetSize, Encode, Decode)]
 pub struct GameOutcome {
     pub winning_player: Option<Player>,
     pub reason: GameOverReason,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, GetSize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, GetSize, Encode, Decode)]
 pub enum GameOverReason {
     MulliganToZeroCards,
     EmptyDeckInDrawStep,
@@ -1387,7 +1388,7 @@ impl Game {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct GameBoard {
     pub oshi: Option<CardRef>,
     pub main_deck: VecDeque<CardRef>,
@@ -1827,7 +1828,7 @@ impl ZoneControl for VecDeque<CardRef> {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, GetSize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, GetSize, Encode, Decode)]
 pub enum Zone {
     All,
     MainDeck,
@@ -1882,13 +1883,13 @@ impl Zone {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, GetSize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, GetSize, Encode, Decode)]
 pub enum ZoneAddLocation {
     Top,
     Bottom,
 }
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Default, GetSize)]
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Default, GetSize)]
 pub enum Step {
     #[default]
     Setup,
@@ -1901,14 +1902,14 @@ pub enum Step {
     GameOver,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Encode, Decode)]
 pub enum Rps {
     Rock,
     Paper,
     Scissor,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Encode, Decode)]
 pub enum RpsOutcome {
     Win,
     Lose,
@@ -1937,7 +1938,7 @@ impl Display for Rps {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Encode, Decode)]
 
 pub enum MainStepAction {
     BackStageMember(CardRef),
@@ -2052,7 +2053,7 @@ impl Display for CardDisplay {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Encode, Decode)]
 
 pub enum PerformanceStepAction {
     UseArt {
@@ -2130,7 +2131,7 @@ impl Display for ArtDisplay {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct GameState {
     pub game_outcome: Option<GameOutcome>,
     pub card_map: HashMap<CardRef, (Player, CardNumber)>, // TODO use a different pair because rarity is not include in card number

@@ -1,7 +1,11 @@
 #![allow(dead_code)]
 
+use std::io::Write;
 use std::{env, iter};
 
+use bincode::config;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use get_size::GetSize;
 use hocg_fan_sim::client::DefaultEventHandler;
 use hocg_fan_sim::gameplay::Game;
@@ -123,14 +127,35 @@ async fn main() {
     );
     tokio::spawn(p2_client.receive_requests());
 
-    // // info!("{:#?}", &game);
-    // game.start_game().await.unwrap();
-    // // info!("{:#?}", &game);
+    // info!("{:#?}", &game);
+    game.start_game().await.unwrap();
+    // info!("{:#?}", &game);
 
-    // while game.next_step().await.is_ok() {}
+    while game.next_step().await.is_ok() {}
     // info!("{:#?}", &game);
     // info!("{:#?}", game.state.get_heap_size());
     // info!("{:#?}", game.state.clone().get_heap_size());
     // info!("{:#?}", test_library().cards.get_heap_size());
     // info!("{:#?}", test_library().cards.clone().get_heap_size());
+
+    
+    let config = config::standard();
+    let bin = bincode::encode_to_vec(test_library(), config).unwrap();
+    tokio::fs::write("some_file.bin", &bin).await.unwrap();
+
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(&bin).unwrap();
+    tokio::fs::write("some_file.bin.gz", encoder.finish().unwrap())
+        .await
+        .unwrap();
+
+    let config = config::standard();
+    let bin = bincode::encode_to_vec(&game.state, config).unwrap();
+    tokio::fs::write("some_file2.bin", &bin).await.unwrap();
+
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(&bin).unwrap();
+    tokio::fs::write("some_file2.bin.gz", encoder.finish().unwrap())
+        .await
+        .unwrap();
 }

@@ -10,6 +10,7 @@ use crate::{
     },
     modifiers::{DamageMarkers, LifeTime, Modifier, ModifierKind, ModifierRef},
 };
+use bincode::{Decode, Encode};
 use enum_dispatch::enum_dispatch;
 use get_size::GetSize;
 use iter_tools::Itertools;
@@ -17,13 +18,13 @@ use rand::Rng;
 use tracing::{debug, error, info};
 use ModifierKind::*;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub enum ClientReceive {
     Event(Event),
     IntentRequest(IntentRequest),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub enum ClientSend {
     IntentResponse(IntentResponse),
 }
@@ -51,7 +52,7 @@ pub enum AdjustEventOutcome {
 }
 
 #[enum_dispatch(EvaluateEvent)]
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub enum Event {
     // Basic events
     SyncGameState,
@@ -115,7 +116,7 @@ pub enum Event {
 
 // Basic events
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub enum IntentRequest {
     // basic intents
     Rps {
@@ -217,7 +218,7 @@ pub enum IntentRequest {
 //     Skip,
 // }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub enum IntentResponse {
     // basic intents
     Rps {
@@ -262,7 +263,7 @@ pub enum IntentResponse {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, GetSize, Encode, Decode)]
 pub struct EventSpan {
     pub origin_stack: Vec<Option<CardRef>>,
     pub event_stack: Vec<Event>,
@@ -1641,7 +1642,7 @@ fn verify_cards_attached(game: &Game, player: Player, card: CardRef, attachments
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct SyncGameState {
     pub state: Box<GameState>,
 }
@@ -1670,7 +1671,7 @@ impl EvaluateEvent for SyncGameState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct Setup {
     // send both decks loadout, private, asymmetric
     // TODO not sure what to do with these
@@ -1856,7 +1857,7 @@ impl EvaluateEvent for Setup {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct Shuffle {
     pub player: Player,
     pub zone: Zone,
@@ -1880,7 +1881,7 @@ impl EvaluateEvent for Shuffle {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct RpsOutcome {
     pub winning_player: Option<Player>,
 }
@@ -1896,7 +1897,7 @@ impl EvaluateEvent for RpsOutcome {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct PlayerGoingFirst {
     pub first_player: Player,
 }
@@ -1912,7 +1913,7 @@ impl EvaluateEvent for PlayerGoingFirst {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct Reveal {
     pub player: Player,
     pub zone: Zone,
@@ -1941,7 +1942,7 @@ impl EvaluateEvent for Reveal {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct GameStart {
     pub active_player: Player,
 }
@@ -1958,7 +1959,7 @@ impl EvaluateEvent for GameStart {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct GameOver {
     pub game_outcome: GameOutcome,
     pub turn_number: u8,
@@ -1976,7 +1977,7 @@ impl EvaluateEvent for GameOver {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct StartTurn {
     pub active_player: Player,
     pub turn_number: u8,
@@ -1996,7 +1997,7 @@ impl EvaluateEvent for StartTurn {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct EndTurn {
     pub active_player: Player,
     pub turn_number: u8,
@@ -2020,7 +2021,7 @@ impl EvaluateEvent for EndTurn {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct EnterStep {
     pub active_player: Player,
     pub active_step: Step,
@@ -2039,7 +2040,7 @@ impl EvaluateEvent for EnterStep {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct ExitStep {
     pub active_player: Player,
     pub active_step: Step,
@@ -2061,7 +2062,7 @@ impl EvaluateEvent for ExitStep {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct AddCardModifiers {
     pub player: Player,
     pub zone: Zone,
@@ -2092,7 +2093,7 @@ impl EvaluateEvent for AddCardModifiers {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct RemoveCardModifiers {
     pub player: Player,
     pub zone: Zone,
@@ -2138,7 +2139,7 @@ impl EvaluateEvent for RemoveCardModifiers {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct ClearCardModifiers {
     pub player: Player,
     pub zone: Zone,
@@ -2164,7 +2165,7 @@ impl EvaluateEvent for ClearCardModifiers {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct AddZoneModifiers {
     pub player: Player,
     pub zone: Zone,
@@ -2191,7 +2192,7 @@ impl EvaluateEvent for AddZoneModifiers {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct RemoveZoneModifiers {
     pub player: Player,
     pub zone: Zone,
@@ -2236,7 +2237,7 @@ impl EvaluateEvent for RemoveZoneModifiers {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct AddDamageMarkers {
     pub player: Player,
     pub zone: Zone,
@@ -2300,7 +2301,7 @@ impl EvaluateEvent for AddDamageMarkers {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct RemoveDamageMarkers {
     pub player: Player,
     pub zone: Zone,
@@ -2327,7 +2328,7 @@ impl EvaluateEvent for RemoveDamageMarkers {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct ClearDamageMarkers {
     pub player: Player,
     pub zone: Zone,
@@ -2353,7 +2354,7 @@ impl EvaluateEvent for ClearDamageMarkers {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct LookAndSelect {
     pub player: Player,
     pub zone: Zone,
@@ -2376,7 +2377,7 @@ impl EvaluateEvent for LookAndSelect {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct ZoneToZone {
     pub player: Player,
     pub from_zone: Zone,
@@ -2441,7 +2442,7 @@ impl EvaluateEvent for ZoneToZone {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct ZoneToAttach {
     pub player: Player,
     pub from_zone: Zone,
@@ -2471,7 +2472,7 @@ impl EvaluateEvent for ZoneToAttach {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct AttachToAttach {
     pub player: Player,
     pub from_card: (Zone, CardRef),
@@ -2503,7 +2504,7 @@ impl EvaluateEvent for AttachToAttach {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct AttachToZone {
     pub player: Player,
     pub from_card: (Zone, CardRef),
@@ -2535,7 +2536,7 @@ impl EvaluateEvent for AttachToZone {
 }
 
 /// marker event after zone to zone (deck -> hand)
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct Draw {
     pub player: Player,
     pub amount: usize,
@@ -2568,7 +2569,7 @@ impl EvaluateEvent for Draw {
 }
 
 /// marker event after zone to zone (back stage -> collab stage)
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct Collab {
     pub player: Player,
     pub card: (Zone, CardRef),
@@ -2620,7 +2621,7 @@ impl EvaluateEvent for Collab {
 }
 
 /// marker event before zone to attach (life -> temp zone -> attach)
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct LoseLives {
     pub player: Player,
     pub amount: usize,
@@ -2660,7 +2661,7 @@ impl EvaluateEvent for LoseLives {
 }
 
 /// marker event before zone to zone (deck -> hand)
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct Bloom {
     pub player: Player,
     pub from_card: (Zone, CardRef),
@@ -2708,7 +2709,7 @@ impl EvaluateEvent for Bloom {
 }
 
 /// marker event after zone to zone (back stage -> collab stage)
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct BatonPass {
     pub player: Player,
     pub from_card: (Zone, CardRef),
@@ -2762,7 +2763,7 @@ impl EvaluateEvent for BatonPass {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct ActivateSupportCard {
     pub player: Player,
     pub card: (Zone, CardRef),
@@ -2829,7 +2830,7 @@ impl EvaluateEvent for ActivateSupportCard {
 }
 
 /// used by Lui oshi skill
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct ActivateSupportAbility {
     pub player: Player,
     pub card: (Zone, CardRef),
@@ -2863,7 +2864,7 @@ impl EvaluateEvent for ActivateSupportAbility {
 }
 
 /// used by Lui oshi skill
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct ActivateOshiSkill {
     pub player: Player,
     pub card: (Zone, CardRef),
@@ -2923,7 +2924,7 @@ impl EvaluateEvent for ActivateOshiSkill {
 }
 
 /// used by Lui oshi skill
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct ActivateHoloMemberAbility {
     pub player: Player,
     pub card: (Zone, CardRef),
@@ -2959,7 +2960,7 @@ impl EvaluateEvent for ActivateHoloMemberAbility {
 }
 
 /// used by Lui oshi skill
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct ActivateHoloMemberArtEffect {
     pub player: Player,
     pub card: (Zone, CardRef),
@@ -2977,7 +2978,7 @@ impl EvaluateEvent for ActivateHoloMemberArtEffect {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct PerformArt {
     pub player: Player,
     pub card: (Zone, CardRef),
@@ -3054,7 +3055,7 @@ impl EvaluateEvent for PerformArt {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct WaitingForPlayerIntent {
     pub player: Player,
     // reason?
@@ -3072,7 +3073,7 @@ impl EvaluateEvent for WaitingForPlayerIntent {
 // Card effect events
 //...
 /// used by Pekora oshi skill, marker event before zone to zone
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct HoloMemberDefeated {
     pub player: Player,
     pub card: (Zone, CardRef),
@@ -3092,7 +3093,7 @@ impl EvaluateEvent for HoloMemberDefeated {
     }
 }
 /// used by Suisei oshi skill
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct DealDamage {
     pub player: Player,
     pub card: (Zone, CardRef),
@@ -3116,7 +3117,7 @@ impl EvaluateEvent for DealDamage {
 }
 
 /// used by AZKi oshi skill
-#[derive(Debug, Clone, PartialEq, Eq, GetSize)]
+#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct RollDice {
     pub player: Player,
     pub number: u8,

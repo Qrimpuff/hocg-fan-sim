@@ -20,6 +20,7 @@ serde = { workspace = true }
 toml = { workspace = true }
 async-channel = { workspace = true }
 get-size = { workspace = true }
+bincode = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

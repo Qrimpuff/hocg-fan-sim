@@ -13,3 +13,5 @@ toml = { workspace = true }
 async-channel = { workspace = true }
 tokio = { workspace = true }
 get-size = { workspace = true }
+bincode = { workspace = true }
+flate2 = { workspace = true }
