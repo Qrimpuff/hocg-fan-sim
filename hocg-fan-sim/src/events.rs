@@ -2398,7 +2398,7 @@ impl EvaluateEvent for ZoneToZone {
             let count = game
                 .board(self.player)
                 .stage()
-                .filter_map(|c| game.lookup_holo_member(c))
+                .filter(|c| game.game.is_holo_member(*c))
                 .count();
             if count >= MAX_MEMBERS_ON_STAGE {
                 panic!("cannot send to stage. stage is full");

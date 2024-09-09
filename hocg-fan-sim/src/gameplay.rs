@@ -855,7 +855,7 @@ impl GameDirector {
             .iter()
             .copied()
             .filter(|b| !self.has_modifier(*b, Resting))
-            .filter_map(|c| self.lookup_holo_member(c).map(|_m| c))
+            .filter(|c| self.game.is_holo_member(*c))
             .collect_vec();
 
         // if there are only resting members, select one of them
@@ -864,7 +864,7 @@ impl GameDirector {
             not_resting = self
                 .board(player)
                 .back_stage()
-                .filter_map(|c| self.lookup_holo_member(c).map(|_m| c))
+                .filter(|c| self.game.is_holo_member(*c))
                 .collect_vec();
         }
 
@@ -916,8 +916,7 @@ impl GameDirector {
         let mems: Vec<_> = self
             .board(player)
             .stage()
-            .filter_map(|c| self.lookup_holo_member(c).map(|_m| c))
-            // .map(|(c, _)| CardDisplay::new(c, self))
+            .filter(|c| self.game.is_holo_member(*c))
             .collect();
 
         if !mems.is_empty() {
@@ -971,7 +970,7 @@ impl GameDirector {
                         let count = self
                             .board(player)
                             .stage()
-                            .filter_map(|c| self.lookup_holo_member(c))
+                            .filter(|c| self.game.is_holo_member(*c))
                             .count();
                         (count < MAX_MEMBERS_ON_STAGE).then_some(MainStepAction::BackStageMember(c))
                     }
@@ -2338,8 +2337,7 @@ impl Game {
     }
 
     pub fn attached_cheers(&self, card: CardRef) -> impl Iterator<Item = CardRef> + '_ {
-        self.attachments(card)
-            .filter(|a| self.lookup_cheer(*a).is_some())
+        self.attachments(card).filter(|a| self.is_cheer(*a))
     }
 
     pub fn required_attached_cheers(&self, card: CardRef, cheers: &[Color]) -> bool {
