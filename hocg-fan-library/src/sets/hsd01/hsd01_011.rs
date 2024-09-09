@@ -101,7 +101,7 @@ mod tests {
         game.next_step().await.unwrap();
 
         // to check the changes, and apply them as checks below
-        // assert_eq!(state, game.state);
+        // assert_eq!(state, game.game.state);
 
         let mut expected_state = state.clone();
         expected_state.active_step = Step::Performance;
@@ -151,7 +151,6 @@ mod tests {
                 0,
                 ["hY02-001".into(), "hY02-001".into(), "hY02-001".into()].into(),
             )
-            .with_zone_modifiers([(Player::One, vec![])].into())
             .with_player_2(p2)
             .build();
 
@@ -173,7 +172,7 @@ mod tests {
         let _ = game.next_step().await;
 
         // to check the changes, and apply them as checks below
-        // assert_eq!(state, game.state);
+        // assert_eq!(state, game.game.state);
 
         let mut expected_state = state.clone();
         expected_state.active_step = Step::Performance;

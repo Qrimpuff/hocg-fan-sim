@@ -25,7 +25,7 @@ pub fn card() -> Card {
         attributes: vec![Unlimited],
         rarity: Common,
         illustration_url: "".into(),
-        artist: "".into(),
+        artist: "TODO".into(),
     })
 }
 

@@ -92,6 +92,7 @@ impl TestGameBoard {
 
 #[derive(Default)]
 pub struct GameStateBuilder {
+    next_modifier_ref: u16,
     next_p1_card_ref: u8,
     next_p2_card_ref: u8,
     state: GameState,
@@ -99,13 +100,19 @@ pub struct GameStateBuilder {
 impl GameStateBuilder {
     pub fn new() -> Self {
         Self {
+            // add modifiers at the end, to avoid conflicts
+            next_modifier_ref: u16::MAX - 100,
             next_p1_card_ref: 1,
             next_p2_card_ref: 1,
             ..Default::default()
         }
     }
 
-    pub fn build(self) -> GameState {
+    pub fn build(mut self) -> GameState {
+        // and the empty zone modifiers, for test that needs them
+        self.state.zone_modifiers.entry(Player::One).or_default();
+        self.state.zone_modifiers.entry(Player::Two).or_default();
+
         self.state
     }
 
@@ -154,9 +161,15 @@ impl GameStateBuilder {
     }
     pub fn with_zone_modifiers(
         mut self,
-        zone_modifiers: HashMap<Player, Vec<(Zone, Modifier)>>,
+        player: Player,
+        zone: Zone,
+        kind: ModifierKind,
+        life_time: LifeTime,
     ) -> Self {
-        self.state.zone_modifiers = zone_modifiers;
+        self.state.zone_modifiers.entry(player).or_default().push((
+            zone,
+            Modifier::for_zone(player, zone, kind, life_time, &mut self.next_modifier_ref),
+        ));
         self
     }
     pub fn with_card_modifiers(mut self, card_modifiers: HashMap<CardRef, Vec<Modifier>>) -> Self {

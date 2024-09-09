@@ -1,45 +1,39 @@
 use hocg_fan_sim::{
     card_effects::ParseEffect,
     cards::{
-        Color::*, HoloMemberArtDamage::*, HoloMemberHashTag::*, HoloMemberLevel::*, Rarity::*, *,
+        Color::*, HoloMemberArtDamage::*, HoloMemberExtraAttribute::*, HoloMemberHashTag::*,
+        HoloMemberLevel::*, Rarity::*, *,
     },
 };
 
 pub fn card() -> Card {
     Card::HoloMember(HoloMemberCard {
-        card_number: "hBP01-042".into(),
+        card_number: "hBP01-038".into(),
         name: "Usada Pekora".into(),
         colors: vec![Green],
-        hp: 120,
-        level: First,
+        hp: 90,
+        level: Debut,
         hash_tags: vec![JP, Gen3, AnimalEars],
         baton_pass_cost: 1,
         abilities: vec![],
-        arts: vec![
-            HoloMemberArt {
-                name: "The White Beach and the Rabbit Girl".into(),
-                cost: vec![Green],
-                damage: Basic(40),
-                special_damage: None,
-                text: "".into(),
-                condition: vec![],
-                effect: vec![],
-            },
-            HoloMemberArt {
-                name: "It'a Hereee".into(),
-                cost: vec![Green, Green],
-                damage: Plus(50),
-                special_damage: None,
-                text: "Roll a six-sided die: This Art deals additional damage equal to the number you rolled times 10.".into(),
-                condition: vec![],
-                effect: (r"
-                    let $roll = roll_dice
-                    add_mod this_card more_dmg ($roll * 10) this_art
-                ").parse_effect().expect("hBP01-042"),
-            },
-        ],
-        attributes: vec![],
-        rarity: Rare,
+        arts: vec![HoloMemberArt {
+            name: "Konpeko!".into(),
+            cost: vec![Green],
+            damage: Plus(20),
+            special_damage: None,
+            text: "Roll a six-sided die: If the result is even, this Art gains +20 damage.".into(),
+            condition: vec![],
+            effect: (r"
+                let $roll = roll_dice
+                if is_even $roll (
+                    add_mod this_card more_dmg 20 this_art
+                )
+            ")
+            .parse_effect()
+            .expect("hBP01-038"),
+        }],
+        attributes: vec![Unlimited],
+        rarity: Common,
         illustration_url: "".into(),
         artist: "TODO".into(),
     })
@@ -51,12 +45,12 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[tokio::test]
-    async fn hbp01_042_roll_6() {
+    async fn hbp01_038_odd() {
         // let _guard = setup_test_logs();
 
         let p1 = TestGameBoard {
             oshi: Some("hSD01-002".into()),
-            center_stage: Some("hBP01-042".into()),
+            center_stage: Some("hBP01-038".into()),
             back_stage: ["hSD01-006".into()].into(),
             holo_power: ["hY02-001".into(), "hY02-001".into(), "hY02-001".into()].into(),
             life: ["hY01-001".into()].into(),
@@ -79,10 +73,10 @@ mod tests {
             .build();
 
         let p1_p = BufferedPrompter::new(&[
-            // It'a Hereee
-            &[1],
+            // Konpeko!
             &[0],
-            &[5],
+            &[0],
+            &[0],
             // done
             &[0],
         ]);
@@ -117,25 +111,25 @@ mod tests {
             .entry("c_0211".into())
             .or_default()
             .extend([Modifier {
-                id: "m_0004".into(),
+                id: "m_0003".into(),
                 kind: ModifierKind::PreventAllArts,
                 life_time: LifeTime::ThisTurn,
             }]);
         expected_state
             .card_damage_markers
-            .insert("c_0212".into(), DamageMarkers::from_hp(110));
+            .insert("c_0212".into(), DamageMarkers::from_hp(20));
         // expected_state.card_damage_markers
 
         assert_eq!(expected_state, game.game.state);
     }
 
     #[tokio::test]
-    async fn hbp01_042_roll_3() {
+    async fn hbp01_038_even() {
         // let _guard = setup_test_logs();
 
         let p1 = TestGameBoard {
             oshi: Some("hSD01-002".into()),
-            center_stage: Some("hBP01-042".into()),
+            center_stage: Some("hBP01-038".into()),
             back_stage: ["hSD01-006".into()].into(),
             holo_power: ["hY02-001".into(), "hY02-001".into(), "hY02-001".into()].into(),
             life: ["hY01-001".into()].into(),
@@ -158,10 +152,10 @@ mod tests {
             .build();
 
         let p1_p = BufferedPrompter::new(&[
-            // It'a Hereee
-            &[1],
+            // Konpeko!
             &[0],
-            &[2],
+            &[0],
+            &[1],
             // done
             &[0],
         ]);
@@ -202,7 +196,7 @@ mod tests {
             }]);
         expected_state
             .card_damage_markers
-            .insert("c_0212".into(), DamageMarkers::from_hp(80));
+            .insert("c_0212".into(), DamageMarkers::from_hp(40));
         // expected_state.card_damage_markers
 
         assert_eq!(expected_state, game.game.state);

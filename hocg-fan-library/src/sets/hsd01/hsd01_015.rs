@@ -41,7 +41,7 @@ pub fn card() -> Card {
         attributes: vec![],
         rarity: Rarity::Uncommon,
         illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-015.webp".into(),
-        artist: "".into(),
+        artist: "TODO".into(),
     })
 }
 
@@ -87,7 +87,7 @@ mod tests {
         game.next_step().await.unwrap();
 
         // to check the changes, and apply them as checks below
-        // assert_eq!(state, game.state);
+        // assert_eq!(state, game.game.state);
 
         let mut expected_state = state.clone();
         expected_state.active_step = Step::Main;
@@ -149,7 +149,7 @@ mod tests {
         game.next_step().await.unwrap();
 
         // to check the changes, and apply them as checks below
-        // assert_eq!(state, game.state);
+        // assert_eq!(state, game.game.state);
 
         let mut expected_state = state.clone();
         expected_state.active_step = Step::Main;
@@ -214,7 +214,7 @@ mod tests {
         game.next_step().await.unwrap();
 
         // to check the changes, and apply them as checks below
-        // assert_eq!(state, game.state);
+        // assert_eq!(state, game.game.state);
 
         let mut expected_state = state.clone();
         expected_state.active_step = Step::Main;
