@@ -410,6 +410,15 @@ pub enum Number {
     // 123 -> <value>
     #[hocg_fan_sim(transparent)]
     Literal(NumberLiteral),
+    // <value> - <value> -> <value>
+    #[hocg_fan_sim(infix = "-")]
+    Minus(Box<Number>, Box<Number>),
+    // <value> * <value> -> <value>
+    #[hocg_fan_sim(infix = "*")]
+    Multiply(Box<Number>, Box<Number>),
+    // <value> + <value> -> <value>
+    #[hocg_fan_sim(infix = "+")]
+    Plus(Box<Number>, Box<Number>),
     // <$var> -> <value>
     #[hocg_fan_sim(transparent)]
     Var(Var),

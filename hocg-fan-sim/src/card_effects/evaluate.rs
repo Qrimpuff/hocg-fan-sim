@@ -708,6 +708,21 @@ impl EvaluateEffect for Number {
                 cards.len()
             }
             Number::Literal(number) => number.0,
+            Number::Minus(a, b) => {
+                let a = a.evaluate_with_context(ctx, game);
+                let b = b.evaluate_with_context(ctx, game);
+                a - b
+            }
+            Number::Multiply(a, b) => {
+                let a = a.evaluate_with_context(ctx, game);
+                let b = b.evaluate_with_context(ctx, game);
+                a * b
+            }
+            Number::Plus(a, b) => {
+                let a = a.evaluate_with_context(ctx, game);
+                let b = b.evaluate_with_context(ctx, game);
+                a + b
+            }
             Number::Var(var) => {
                 match ctx.variables.get(&var.0).unwrap_or_else(|| {
                     panic!("the variable should exist: {:?} - ctx: {:?}", var, ctx)

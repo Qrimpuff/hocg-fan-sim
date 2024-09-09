@@ -38,7 +38,6 @@ pub fn card() -> Card {
             condition: vec![],
             effect: vec![],
         }],
-        extra: Some("This holomem cannot Bloom.".into()),
         attributes: vec![],
         rarity: Rarity::Uncommon,
         illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-015.webp".into(),

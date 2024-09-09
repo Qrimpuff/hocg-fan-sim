@@ -40,7 +40,6 @@ pub fn card() -> Card {
                 .expect("hSD01-006"),
             },
         ],
-        extra: Some("When this holomem is Knocked Out, you lose 2 Life.".into()),
         attributes: vec![HoloMemberExtraAttribute::Buzz],
         rarity: Rarity::DoubleRare,
         illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-006.webp"

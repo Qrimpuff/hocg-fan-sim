@@ -32,7 +32,6 @@ pub fn card() -> Card {
                 )
             ").parse_effect().expect("hSD01-013"),
         }],
-        extra: Some("This card is treated as both [Tokino Sora] and [AZKi].".into()),
         attributes: vec![
             HoloMemberExtraAttribute::Name("Tokino Sora".into()),
             HoloMemberExtraAttribute::Name("AZKi".into())

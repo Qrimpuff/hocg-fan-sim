@@ -293,7 +293,6 @@ pub struct HoloMemberCard {
     pub baton_pass_cost: HoloMemberBatonPassCost,
     pub abilities: Vec<HoloMemberAbility>,
     pub arts: Vec<HoloMemberArt>,
-    pub extra: Option<String>, // TODO will probably be an enum
     pub attributes: Vec<HoloMemberExtraAttribute>,
     pub rarity: Rarity,
     pub illustration_url: IllustrationUrl,
@@ -452,6 +451,7 @@ impl HoloMemberCard {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum HoloMemberLevel {
+    /// This holomem cannot Bloom.
     Spot,
     Debut,
     First,
@@ -460,24 +460,33 @@ pub enum HoloMemberLevel {
 
 #[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, GetSize)]
 pub enum HoloMemberHashTag {
+    // generations
     JP,
     ID,
     EN,
     Gen0,
+    Gen3,
     Gen4,
+    Gen5,
     SecretSocietyholoX,
     IDGen1,
     Promise,
-    Song,
-    Drawing,
+    // misc
+    Alcohol,
     AnimalEars,
+    Drawing,
+    Song,
 }
 
 #[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, GetSize)]
 #[serde(rename_all = "snake_case")]
 pub enum HoloMemberExtraAttribute {
+    /// When this holomem is Knocked Out, you lose 2 Life.
     Buzz,
+    // This card is treated as [<name>].
     Name(String),
+    /// You may include any number of this holomem in your deck.
+    Unlimited,
     Unknown,
 }
 

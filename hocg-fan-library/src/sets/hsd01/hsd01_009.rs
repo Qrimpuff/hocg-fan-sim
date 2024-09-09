@@ -42,7 +42,6 @@ pub fn card() -> Card {
             condition: vec![],
             effect: vec![],
         }],
-        extra: None,
         attributes: vec![],
         rarity: Rarity::Rare,
         illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-009.webp".into(),

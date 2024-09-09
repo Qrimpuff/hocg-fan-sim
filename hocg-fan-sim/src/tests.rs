@@ -1,10 +1,12 @@
-use std::{collections::HashMap, sync::OnceLock};
+use std::{collections::HashMap, env, sync::OnceLock};
 
 use crate::{
     cards::CardNumber, client::*, gameplay::*, library::load_library, modifiers::*,
     prompters::BufferedPrompter,
 };
 use rand::{rngs::StdRng, SeedableRng};
+use time::macros::format_description;
+use tracing_subscriber::{fmt::time::LocalTime, EnvFilter};
 
 pub fn rng<'a>() -> &'a StdRng {
     static RNG: OnceLock<StdRng> = OnceLock::new();
@@ -226,4 +228,25 @@ pub async fn setup_test_game(
     // tokio::spawn(p2_client.receive_requests());
 
     (game, p1_client, p2_client)
+}
+
+pub fn setup_test_logs() -> tracing_appender::non_blocking::WorkerGuard {
+    // --------------- setup logs ---------------------
+    env::set_var("RUST_BACKTRACE", "1");
+    env::set_var("RUST_LOG", "DEBUG");
+
+    let file_appender = tracing_appender::rolling::daily("logs", "hocg-fan-sim.log");
+    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+    tracing_subscriber::fmt()
+        .with_timer(LocalTime::new(format_description!(
+            "[year]-[month]-[day] [hour repr:24]:[minute]:[second].[subsecond digits:4]"
+        )))
+        .with_writer(non_blocking)
+        .with_ansi(false)
+        // enable thread id to be emitted
+        .with_thread_ids(true)
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+    // -------------- end setup logs -------------------
+    guard
 }
