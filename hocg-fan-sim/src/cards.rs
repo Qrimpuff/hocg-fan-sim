@@ -1,11 +1,10 @@
-use std::{collections::HashMap, num::ParseIntError};
+use std::num::ParseIntError;
 
 use bincode::{Decode, Encode};
 use evaluate::EvaluateEffect;
 use get_size::GetSize;
 use iter_tools::Itertools;
 use serde::{Deserialize, Serialize};
-use tracing::error;
 
 use crate::card_effects::{
     effects::{
@@ -16,7 +15,7 @@ use crate::card_effects::{
 };
 use crate::events::{Bloom, Collab, Event, TriggeredEvent};
 use crate::gameplay::Zone;
-use crate::gameplay::{CardRef, Game};
+use crate::gameplay::{CardRef, GameDirector};
 use crate::modifiers::ModifierKind::*;
 
 /*
@@ -82,193 +81,6 @@ use crate::modifiers::ModifierKind::*;
   - color
   - text
  */
-
-#[derive(Encode, Decode, Serialize, Deserialize, Debug)]
-#[serde(rename_all = "snake_case")]
-pub struct Set {
-    number: String,
-    name: String,
-    // maybe preset decks
-}
-
-#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct Loadout {
-    pub oshi: CardNumber,
-    pub main_deck: Vec<CardNumber>,
-    pub cheer_deck: Vec<CardNumber>,
-    // cosmetic...
-}
-
-#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, Default, GetSize)]
-pub struct GlobalLibrary {
-    // TODO use a different key because rarity is not include in card number
-    pub cards: HashMap<CardNumber, Card>,
-}
-
-impl GlobalLibrary {
-    /// Any pre-processing of cards that could make my life easier later
-    pub fn pre_process(&mut self) {
-        // not sure if these are good ideas. might be better to be explicit
-        // TODO oshi skill once turn
-        // TODO special oshi skill once per game
-        // TODO enough holo power to pay the cost for oshi skill
-        // TODO enough cheers to perform art for members
-        // TODO limited support
-        // TODO if you can't select something, it should check that it's there first in condition
-
-        // DON'T REMOVE YET. NOT BEFORE THE FILES ARE MADE
-        // default condition to always
-        let default_trigger = Trigger::ActivateInMainStep;
-        let default_condition = Condition::True;
-        let default_action = Action::Noop;
-        let default_url = "https://qrimpuff.github.io/hocg-fan-sim-assets/img/card-back.webp".to_string();
-        // let default_damage_mod = DamageModifier::None;
-        for card in self.cards.values_mut() {
-            match card {
-                Card::OshiHoloMember(o) => {
-                    if o.illustration_url.is_empty() {
-                        o.illustration_url.clone_from(&default_url);
-                    };
-                    o.skills.iter_mut().for_each(|s| {
-                        if s.triggers.is_empty() {
-                            s.triggers.push(default_trigger)
-                        }
-                        if s.condition.is_empty() {
-                            s.condition.push(default_condition.clone())
-                        }
-                        if s.effect.is_empty() {
-                            s.effect.push(default_action.clone())
-                        }
-                    });
-                }
-                Card::HoloMember(m) => {
-                    if m.illustration_url.is_empty() {
-                        m.illustration_url.clone_from(&default_url);
-                    };
-                    m.abilities.iter_mut().for_each(|a| {
-                        if a.condition.is_empty() {
-                            a.condition.push(default_condition.clone())
-                        }
-                        if a.effect.is_empty() {
-                            a.effect.push(default_action.clone())
-                        }
-                    });
-                    m.arts.iter_mut().for_each(|a| {
-                        if a.condition.is_empty() {
-                            a.condition.push(default_condition.clone())
-                        }
-                        if a.effect.is_empty() {
-                            a.effect.push(default_action.clone())
-                        }
-                    })
-                }
-                Card::Support(s) => {
-                    if s.illustration_url.is_empty() {
-                        s.illustration_url.clone_from(&default_url);
-                    };
-                    if s.attachment_condition.is_empty() {
-                        s.attachment_condition.push(default_condition.clone())
-                    }
-                    if s.triggers.is_empty() {
-                        s.triggers.push(default_trigger)
-                    }
-                    if s.condition.is_empty() {
-                        s.condition.push(default_condition.clone())
-                    }
-                    if s.effect.is_empty() {
-                        s.effect.push(default_action.clone())
-                    }
-                }
-                Card::Cheer(c) => {
-                    if c.illustration_url.is_empty() {
-                        c.illustration_url.clone_from(&default_url);
-                    };
-                    // cheers do not have conditions
-                }
-            }
-        }
-        // end of: DON'T REMOVE YET. NOT BEFORE THE FILES ARE MADE
-
-        // verify effect serialization consistency (de -> ser -> de)
-        fn serialization_round_trip<T>(effect: T) -> crate::card_effects::Result<()>
-        where
-            T: SerializeEffect + ParseTokens + PartialEq + Clone,
-        {
-            let string = effect.clone().serialize_effect();
-            let de_effect = string.parse_effect::<T>()?;
-
-            if effect != de_effect && Some(de_effect) != T::default_effect() {
-                Err(Error::Message(
-                    "effect could not do serialization round trip".into(),
-                ))
-            } else {
-                Ok(())
-            }
-        }
-        let mut has_errors = false;
-        for card in self.cards.values_mut() {
-            match card {
-                Card::OshiHoloMember(o) => o.skills.iter_mut().for_each(|s| {
-                    if let Err(e) = serialization_round_trip(s.condition.clone()) {
-                        error!("{}: {} - condition - {}", o.card_number, s.name, e);
-                        has_errors = true;
-                    }
-                    if let Err(e) = serialization_round_trip(s.effect.clone()) {
-                        error!("{}: {} - effect - {}", o.card_number, s.name, e);
-                        has_errors = true;
-                    }
-                }),
-                Card::HoloMember(m) => {
-                    m.abilities.iter_mut().for_each(|a| {
-                        if let Err(e) = serialization_round_trip(a.condition.clone()) {
-                            error!("{}: {} - condition - {}", m.card_number, a.name, e);
-                            has_errors = true;
-                        }
-                        if let Err(e) = serialization_round_trip(a.effect.clone()) {
-                            error!("{}: {} - effect - {}", m.card_number, a.name, e);
-                            has_errors = true;
-                        }
-                    });
-                    m.arts.iter_mut().for_each(|a| {
-                        if let Err(e) = serialization_round_trip(a.condition.clone()) {
-                            error!("{}: {} - condition - {}", m.card_number, a.name, e);
-                            has_errors = true;
-                        }
-                        if let Err(e) = serialization_round_trip(a.effect.clone()) {
-                            error!("{}: {} - effect - {}", m.card_number, a.name, e);
-                            has_errors = true;
-                        }
-                    })
-                }
-                Card::Support(s) => {
-                    if let Err(e) = serialization_round_trip(s.attachment_condition.clone()) {
-                        error!(
-                            "{}: {} - attachment_condition - {}",
-                            s.card_number, s.name, e
-                        );
-                        has_errors = true;
-                    }
-                    if let Err(e) = serialization_round_trip(s.condition.clone()) {
-                        error!("{}: {} - condition - {}", s.card_number, s.name, e);
-                        has_errors = true;
-                    }
-                    if let Err(e) = serialization_round_trip(s.effect.clone()) {
-                        error!("{}: {} - effect - {}", s.card_number, s.name, e);
-                        has_errors = true;
-                    }
-                }
-                Card::Cheer(_) => {} // cheers do not have effects
-            }
-        }
-        if has_errors {
-            panic!("effect serialization is not consistent")
-        }
-    }
-
-    pub fn lookup_card(&self, card_number: &CardNumber) -> Option<&Card> {
-        self.cards.get(card_number)
-    }
-}
 
 #[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, GetSize)]
 #[serde(rename_all = "snake_case")]
@@ -421,7 +233,7 @@ impl OshiHoloMemberCard {
         &self,
         card: CardRef,
         skill_idx: usize,
-        game: &Game,
+        game: &GameDirector,
         is_triggered: bool,
     ) -> bool {
         let player = game.player_for_card(card);
@@ -440,7 +252,7 @@ impl OshiHoloMemberCard {
 
         self.skills[skill_idx]
             .condition
-            .evaluate_with_card(&game.state, card, is_triggered)
+            .evaluate_with_card(&game.game, card, is_triggered)
     }
 }
 
@@ -498,7 +310,7 @@ impl HoloMemberCard {
             }))
     }
 
-    pub fn can_baton_pass(&self, card: CardRef, game: &Game) -> bool {
+    pub fn can_baton_pass(&self, card: CardRef, game: &GameDirector) -> bool {
         let player = game.player_for_card(card);
 
         // can only baton pass once per turn
@@ -534,7 +346,7 @@ impl HoloMemberCard {
     pub fn can_bloom_target(
         &self,
         _card: CardRef,
-        game: &Game,
+        game: &GameDirector,
         target: (CardRef, &HoloMemberCard),
     ) -> bool {
         // debut and spot members cannot bloom anything
@@ -575,16 +387,17 @@ impl HoloMemberCard {
                     .map(|m| m.names()),
             );
 
-        names
+        let can_bloom = names
             .multi_cartesian_product()
-            .any(|ns| ns.into_iter().all_equal())
+            .any(|ns| ns.into_iter().all_equal());
+        can_bloom
     }
 
     pub fn can_use_ability(
         &self,
         card: CardRef,
         ability_idx: usize,
-        game: &Game,
+        game: &GameDirector,
         is_triggered: bool,
     ) -> bool {
         //  could prevent art by effect
@@ -597,10 +410,10 @@ impl HoloMemberCard {
 
         self.abilities[ability_idx]
             .condition
-            .evaluate_with_card(&game.state, card, is_triggered)
+            .evaluate_with_card(&game.game, card, is_triggered)
     }
 
-    pub fn can_use_art(&self, card: CardRef, art_idx: usize, game: &Game) -> bool {
+    pub fn can_use_art(&self, card: CardRef, art_idx: usize, game: &GameDirector) -> bool {
         //  could prevent art by effect
         if game.has_modifier(card, PreventArt(art_idx)) {
             return false;
@@ -619,7 +432,7 @@ impl HoloMemberCard {
 
         self.arts[art_idx]
             .condition
-            .evaluate_with_card(&game.state, card, false)
+            .evaluate_with_card(&game.game, card, false)
     }
 }
 
@@ -809,32 +622,32 @@ pub struct SupportCard {
 }
 
 impl SupportCard {
-    pub fn can_use_support(&self, card: CardRef, game: &Game) -> bool {
+    pub fn can_use_support(&self, card: CardRef, game: &GameDirector) -> bool {
         if self.limited && game.has_modifier(card, PreventLimitedSupport) {
             return false;
         }
 
-        self.condition.evaluate_with_card(&game.state, card, false)
+        self.condition.evaluate_with_card(&game.game, card, false)
     }
 
     pub fn can_attach_target(
         &self,
         _card: CardRef,
-        _game: &Game,
+        _game: &GameDirector,
         _target: (CardRef, &HoloMemberCard),
     ) -> bool {
         // TODO fan can be attached. how to send the target card in the condition?
         unimplemented!()
     }
 
-    pub fn can_use_ability(&self, card: CardRef, game: &Game, is_triggered: bool) -> bool {
+    pub fn can_use_ability(&self, card: CardRef, game: &GameDirector, is_triggered: bool) -> bool {
         //  could prevent art by effect
         if game.has_modifier(card, PreventAbilities) {
             return false;
         }
 
         self.condition
-            .evaluate_with_card(&game.state, card, is_triggered)
+            .evaluate_with_card(&game.game, card, is_triggered)
     }
 }
 

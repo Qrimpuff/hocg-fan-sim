@@ -112,7 +112,7 @@ mod tests {
         ]);
         let p2_p = BufferedPrompter::new(&[]);
 
-        let (mut game, p1_client, p2_client) = setup_test_game(state.clone(), p1_p, p2_p);
+        let (mut game, p1_client, p2_client) = setup_test_game(state.clone(), p1_p, p2_p).await;
         tokio::spawn(p1_client.receive_requests());
         tokio::spawn(p2_client.receive_requests());
 
@@ -178,6 +178,6 @@ mod tests {
         // expected_state.card_damage_markers
         // expected_state.event_span
 
-        assert_eq!(expected_state, game.state);
+        assert_eq!(expected_state, game.game.state);
     }
 }

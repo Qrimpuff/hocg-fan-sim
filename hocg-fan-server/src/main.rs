@@ -1,16 +1,12 @@
 #![allow(dead_code)]
 
-use std::io::Write;
 use std::{env, iter};
 
-use bincode::config;
-use flate2::write::GzEncoder;
-use flate2::Compression;
+use hocg_fan_sim::client::Client;
 use hocg_fan_sim::client::DefaultEventHandler;
-use hocg_fan_sim::gameplay::Game;
+use hocg_fan_sim::gameplay::GameDirector;
+use hocg_fan_sim::library::{load_library, Loadout};
 use hocg_fan_sim::prompters::RandomPrompter;
-use hocg_fan_sim::temp::test_library;
-use hocg_fan_sim::{cards::*, client::Client};
 use time::macros::format_description;
 use tracing::info;
 use tracing_subscriber::{fmt::time::LocalTime, EnvFilter};
@@ -36,28 +32,6 @@ async fn main() {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
     info!("\n\n\n\n\n\n\n-- hololive OCG - Fan Simulator is running --");
-
-    let _cond = r"
-        let $mem = select_one from stage is_member and has_cheers
-        let $cheer = select_one attached $mem is_cheer
-        send_to archive $cheer
-        let $cond = ((is_level_first or is_level_second) and not is_attribute_buzz) 
-        let $choice = select_one from main_deck $cond
-        reveal $choice
-        send_to hand $choice
-        shuffle main_deck
-    ";
-
-    // let c = dbg!(_cond.parse_effect::<Vec<Action>>().expect("IN MAIN"));
-    for i in 1..=21 {
-        let toml = toml::to_string(
-            &test_library()
-                .lookup_card(&format!("hSD01-{i:0>3}"))
-                .unwrap(),
-        )
-        .unwrap();
-        info!("\n\n\n\n{toml}\n\n\n\n");
-    }
 
     let main_deck_hsd01 = Vec::from_iter(
         None.into_iter()
@@ -103,19 +77,23 @@ async fn main() {
     let p2_channel_1 = async_channel::bounded(10);
     let p2_channel_2 = async_channel::bounded(10);
 
-    let mut game = Game::setup(
+    load_library(&include_bytes!("../../hocg-fan-lib.gz")[..]).await;
+
+    let mut game = GameDirector::setup(
         &player_1,
         &player_2,
         (p1_channel_1.0, p1_channel_2.1),
         (p2_channel_1.0, p2_channel_2.1),
-    );
+    )
+    .await;
 
     // Player 1
     let p1_client = Client::new(
         (p1_channel_2.0, p1_channel_1.1),
         DefaultEventHandler::new(),
         RandomPrompter::new(),
-    );
+    )
+    .await;
     tokio::spawn(p1_client.receive_requests());
 
     // Player 2
@@ -123,7 +101,8 @@ async fn main() {
         (p2_channel_2.0, p2_channel_1.1),
         DefaultEventHandler::new(),
         RandomPrompter::new(),
-    );
+    )
+    .await;
     tokio::spawn(p2_client.receive_requests());
 
     // info!("{:#?}", &game);
@@ -136,24 +115,4 @@ async fn main() {
     // info!("{:#?}", game.state.clone().get_heap_size());
     // info!("{:#?}", test_library().cards.get_heap_size());
     // info!("{:#?}", test_library().cards.clone().get_heap_size());
-
-    let config = config::standard();
-    let bin = bincode::encode_to_vec(test_library(), config).unwrap();
-    tokio::fs::write("some_file.bin", &bin).await.unwrap();
-
-    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(&bin).unwrap();
-    tokio::fs::write("some_file.bin.gz", encoder.finish().unwrap())
-        .await
-        .unwrap();
-
-    let config = config::standard();
-    let bin = bincode::encode_to_vec(&game.state, config).unwrap();
-    tokio::fs::write("some_file2.bin", &bin).await.unwrap();
-
-    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(&bin).unwrap();
-    tokio::fs::write("some_file2.bin.gz", encoder.finish().unwrap())
-        .await
-        .unwrap();
 }

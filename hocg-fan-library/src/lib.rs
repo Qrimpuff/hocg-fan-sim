@@ -1,4 +1,4 @@
-use hocg_fan_sim::cards::GlobalLibrary;
+use hocg_fan_sim::library::GlobalLibrary;
 
 mod sets;
 

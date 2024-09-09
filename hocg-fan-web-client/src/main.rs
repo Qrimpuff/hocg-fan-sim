@@ -8,10 +8,11 @@ use dioxus_logger::tracing::{info, Level};
 use futures::future;
 use gloo_timers::future::TimeoutFuture;
 use hocg_fan_sim::{
-    cards::{Card, Loadout},
+    cards::Card,
     client::{Client, DefaultEventHandler, EventHandler},
     events::{Event, Shuffle},
-    gameplay::{CardRef, Game, GameState, Player, Zone},
+    gameplay::{CardRef, Game, GameDirector, Player, Zone},
+    library::{load_library, Loadout},
     modifiers::ModifierKind,
     prompters::PreferFirstPrompter,
 };
@@ -127,7 +128,7 @@ impl Mat {
 }
 
 static COUNT: GlobalSignal<i32> = Signal::global(|| 0);
-static GAME: GlobalSignal<GameState> = Signal::global(GameState::new);
+static GAME: GlobalSignal<Game> = Signal::global(Game::default);
 static EVENT: GlobalSignal<Option<Event>> = Signal::global(|| None);
 static ANIM_LOCK: GlobalSignal<Option<async_oneshot::Sender<()>>> = Signal::global(|| None);
 static ANIM_COUNT: GlobalSignal<u32> = Signal::global(|| 0);
@@ -140,9 +141,16 @@ impl WebGameEventHandler {
     }
 }
 impl EventHandler for WebGameEventHandler {
-    async fn handle_event(&mut self, game: &GameState, event: Event) {
+    async fn handle_event(&mut self, game: &Game, event: Event) {
         info!("it's in web");
-        *GAME.write() = game.clone();
+
+        // TODO there might be a better way
+        // load library on first entry
+        if GAME.read().library.is_none() {
+            *GAME.write() = Game::new().await;
+        }
+
+        GAME.write().state = game.state.clone();
         *EVENT.write() = Some(event.clone());
         *COUNT.write() += 1;
 
@@ -211,12 +219,16 @@ fn Home() -> Element {
             cheer_deck: cheer_deck_hsd01,
         };
 
-        let mut game = Game::setup(
+        // TODO will be replaced by file loading from GitHub
+        load_library(&include_bytes!("../../hocg-fan-lib.gz")[..]).await;
+
+        let mut game = GameDirector::setup(
             &player_1,
             &player_2,
             (p1_channel_1.0, p1_channel_2.1),
             (p2_channel_1.0, p2_channel_2.1),
-        );
+        )
+        .await;
 
         // wait for the page to load
         TimeoutFuture::new(1000).await;
@@ -232,22 +244,26 @@ fn Home() -> Element {
     });
 
     // Player 1
-    let p1_client = Client::new(
-        (p1_channel_2.0, p1_channel_1.1),
-        WebGameEventHandler::new(),
-        PreferFirstPrompter::new(),
-    );
     let _p1_c: Coroutine<()> = use_coroutine(|_rx| async move {
+        let p1_client = Client::new(
+            (p1_channel_2.0, p1_channel_1.1),
+            WebGameEventHandler::new(),
+            PreferFirstPrompter::new(),
+        )
+        .await;
+
         p1_client.receive_requests().await;
     });
 
     // Player 2
-    let p2_client = Client::new(
-        (p2_channel_2.0, p2_channel_1.1),
-        DefaultEventHandler::new(),
-        PreferFirstPrompter::new(),
-    );
     let _p2_c: Coroutine<()> = use_coroutine(|_rx| async move {
+        let p2_client = Client::new(
+            (p2_channel_2.0, p2_channel_1.1),
+            DefaultEventHandler::new(),
+            PreferFirstPrompter::new(),
+        )
+        .await;
+
         p2_client.receive_requests().await;
     });
 
@@ -400,13 +416,18 @@ fn Board(mat: Signal<Mat>, player: Player) -> Element {
 
 #[component]
 fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
-    let zone = use_memo(move || GAME().board_for_card(card).find_card_zone(card).unwrap());
+    let zone = use_memo(move || {
+        GAME.read()
+            .board_for_card(card)
+            .find_card_zone(card)
+            .unwrap()
+    });
     let mut moving = use_signal(|| false);
-    let rested = use_memo(move || GAME().has_modifier(card, ModifierKind::Resting));
+    let rested = use_memo(move || GAME.read().has_modifier(card, ModifierKind::Resting));
     let mut flipped = use_signal(|| zone() == Zone::Life);
     let mut flipping = use_signal(|| false);
 
-    let game = GAME();
+    let game = GAME.read();
     let card_lookup = game.lookup_card(card);
     // let card_number = card_lookup.card_number().to_owned();
     let illustration_url = card_lookup.illustration_url().to_owned();
@@ -442,8 +463,12 @@ fn Card(mat: Signal<Mat>, card: CardRef, num: Option<(u32, u32)>) -> Element {
 
     let front_img = illustration_url;
     let back_img = match card_lookup {
-        Card::OshiHoloMember(_) | Card::Cheer(_) => "https://qrimpuff.github.io/hocg-fan-sim-assets/img/cheer-back.webp",
-        Card::HoloMember(_) | Card::Support(_) => "https://qrimpuff.github.io/hocg-fan-sim-assets/img/card-back.webp",
+        Card::OshiHoloMember(_) | Card::Cheer(_) => {
+            "https://qrimpuff.github.io/hocg-fan-sim-assets/img/cheer-back.webp"
+        }
+        Card::HoloMember(_) | Card::Support(_) => {
+            "https://qrimpuff.github.io/hocg-fan-sim-assets/img/card-back.webp"
+        }
     };
 
     let attachments_count = game.attachments(card).count();

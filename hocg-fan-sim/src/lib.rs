@@ -3,7 +3,8 @@ pub mod cards;
 pub mod client;
 pub mod events;
 pub mod gameplay;
+pub mod library;
 pub mod modifiers;
 pub mod prompters;
-pub mod temp;
+#[cfg(feature = "test")]
 pub mod tests;

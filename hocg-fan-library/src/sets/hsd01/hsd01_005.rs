@@ -36,7 +36,8 @@ pub fn card() -> Card {
         extra: None,
         attributes: vec![],
         rarity: Rarity::Uncommon,
-        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-005.webp".into(),
+        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-005.webp"
+            .into(),
         artist: "おるだん".into(),
     })
 }

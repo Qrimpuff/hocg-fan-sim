@@ -16,7 +16,8 @@ pub fn card() -> Card {
         .parse_effect()
         .expect("hSD01-016"),
         rarity: Rarity::Common,
-        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-016.webp".into(),
+        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-016.webp"
+            .into(),
         artist: "Yoshimo".into(),
     })
 }
@@ -60,7 +61,7 @@ mod tests {
         ]);
         let p2_p = BufferedPrompter::new(&[]);
 
-        let (mut game, p1_client, p2_client) = setup_test_game(state.clone(), p1_p, p2_p);
+        let (mut game, p1_client, p2_client) = setup_test_game(state.clone(), p1_p, p2_p).await;
         tokio::spawn(p1_client.receive_requests());
         tokio::spawn(p2_client.receive_requests());
 
@@ -88,6 +89,6 @@ mod tests {
                 },
             )]);
 
-        assert_eq!(expected_state, game.state);
+        assert_eq!(expected_state, game.game.state);
     }
 }

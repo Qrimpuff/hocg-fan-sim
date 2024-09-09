@@ -7,7 +7,7 @@ use tracing::info;
 use crate::{
     client::IntentRequestHandler,
     events::{IntentRequest, IntentResponse},
-    gameplay::{CardDisplay, GameState, MainStepActionDisplay, PerformanceStepActionDisplay},
+    gameplay::{CardDisplay, Game, MainStepActionDisplay, PerformanceStepActionDisplay},
 };
 
 #[derive(Debug, Default)]
@@ -214,7 +214,7 @@ pub trait Prompter: Debug {
 }
 
 impl<P: Prompter> IntentRequestHandler for P {
-    fn handle_intent_request(&mut self, game: &GameState, req: IntentRequest) -> IntentResponse {
+    fn handle_intent_request(&mut self, game: &Game, req: IntentRequest) -> IntentResponse {
         match req {
             IntentRequest::Rps { player, select_rps } => {
                 let rps = self.prompt_choice("choose rock, paper or scissor:", select_rps);

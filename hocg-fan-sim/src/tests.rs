@@ -1,6 +1,9 @@
 use std::{collections::HashMap, sync::OnceLock};
 
-use crate::{cards::CardNumber, client::*, gameplay::*, modifiers::*, prompters::BufferedPrompter};
+use crate::{
+    cards::CardNumber, client::*, gameplay::*, library::load_library, modifiers::*,
+    prompters::BufferedPrompter,
+};
 use rand::{rngs::StdRng, SeedableRng};
 
 pub fn rng<'a>() -> &'a StdRng {
@@ -168,36 +171,40 @@ impl GameStateBuilder {
 }
 
 // will spawn two threads to handle the client connections
-pub fn setup_test_game(
+pub async fn setup_test_game(
     state: GameState,
     player_1_prompt: BufferedPrompter,
     player_2_prompt: BufferedPrompter,
 ) -> (
-    Game,
+    GameDirector,
     Client<DefaultEventHandler, BufferedPrompter>,
     Client<DefaultEventHandler, BufferedPrompter>,
 ) {
+    load_library(&include_bytes!("../../hocg-fan-lib.gz")[..]).await;
+
     let p1_channel_1 = async_channel::bounded(10);
     let p1_channel_2 = async_channel::bounded(10);
     let p2_channel_1 = async_channel::bounded(10);
     let p2_channel_2 = async_channel::bounded(10);
 
-    let game = Game::with_game_state(
+    let game = GameDirector::with_game_state(
         state.clone(),
         (p1_channel_1.0, p1_channel_2.1),
         (p2_channel_1.0, p2_channel_2.1),
         rng().clone(),
-    );
+    )
+    .await;
 
     // Player 1
     let mut p1_client: Client<DefaultEventHandler, BufferedPrompter> = Client::new(
         (p1_channel_2.0, p1_channel_1.1),
         DefaultEventHandler::new(),
         player_1_prompt,
-    );
-    p1_client.game = state.clone();
+    )
+    .await;
+    p1_client.game.state = state.clone();
     // // for the client to stop gracefully (not sure if it's needed anymore)
-    // p1_client.game.game_outcome = Some(GameOutcome {
+    // p1_client.game.state.game_outcome = Some(GameOutcome {
     //     winning_player: None,
     //     reason: GameOverReason::Draw,
     // });
@@ -208,10 +215,11 @@ pub fn setup_test_game(
         (p2_channel_2.0, p2_channel_1.1),
         DefaultEventHandler::new(),
         player_2_prompt,
-    );
-    p2_client.game = state;
+    )
+    .await;
+    p2_client.game.state = state;
     // // for the client to stop gracefully (not sure if it's needed anymore)
-    // p2_client.game.game_outcome = Some(GameOutcome {
+    // p2_client.game.state.game_outcome = Some(GameOutcome {
     //     winning_player: None,
     //     reason: GameOverReason::Draw,
     // });

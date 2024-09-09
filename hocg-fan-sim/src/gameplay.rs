@@ -6,11 +6,12 @@ use std::{collections::HashMap, fmt::Debug};
 use crate::card_effects::evaluate::{EvaluateContext, EvaluateEffect};
 use crate::card_effects::{Condition, Trigger};
 use crate::events::{ClientReceive, ClientSend, EventSpan, IntentRequest, IntentResponse};
-use crate::temp::test_library;
+use crate::library::{library, GlobalLibrary, Loadout};
 
 use super::cards::*;
 use super::modifiers::*;
 use async_channel::{Receiver, Sender};
+use async_rwlock::RwLockReadGuard;
 use bincode::{Decode, Encode};
 use debug_ignore::DebugIgnore;
 use get_size::GetSize;
@@ -102,54 +103,71 @@ pub enum GameOverReason {
 }
 
 #[derive(Debug)]
-pub struct Game {
+pub struct GameDirector {
     pub rng: DebugIgnore<Box<dyn RngCore>>,
-    pub state: GameState,
+    pub game: Game,
     pub next_modifier_ref: u16,
     pub player_1_channels: (Sender<ClientReceive>, Receiver<ClientSend>),
     pub player_2_channels: (Sender<ClientReceive>, Receiver<ClientSend>),
 }
 
-impl Game {
-    pub fn setup(
+impl GameDirector {
+    pub async fn setup(
         player_1: &Loadout,
         player_2: &Loadout,
         player_1_client: (Sender<ClientReceive>, Receiver<ClientSend>),
         player_2_client: (Sender<ClientReceive>, Receiver<ClientSend>),
-    ) -> Game {
+    ) -> GameDirector {
         let mut next_p1_card_ref = 1;
         let mut next_p2_card_ref = 1;
         let mut card_map = HashMap::new();
-        let state = GameState {
-            game_outcome: None,
-            player_1: GameBoard::setup(Player::One, player_1, &mut next_p1_card_ref, &mut card_map),
-            player_2: GameBoard::setup(Player::Two, player_2, &mut next_p2_card_ref, &mut card_map),
-            card_map,
-            active_player: Player::One,
-            active_step: Step::Setup,
-            turn_number: 0,
-            zone_modifiers: HashMap::new(),
-            card_modifiers: HashMap::new(),
-            card_damage_markers: HashMap::new(),
+        let game = Game {
+            library: Some(library().await),
             event_span: EventSpan::new(),
+            state: GameState {
+                game_outcome: None,
+                player_1: GameBoard::setup(
+                    Player::One,
+                    player_1,
+                    &mut next_p1_card_ref,
+                    &mut card_map,
+                ),
+                player_2: GameBoard::setup(
+                    Player::Two,
+                    player_2,
+                    &mut next_p2_card_ref,
+                    &mut card_map,
+                ),
+                card_map,
+                active_player: Player::One,
+                active_step: Step::Setup,
+                turn_number: 0,
+                zone_modifiers: HashMap::new(),
+                card_modifiers: HashMap::new(),
+                card_damage_markers: HashMap::new(),
+            },
         };
-        Game {
+        GameDirector {
             rng: DebugIgnore(Box::new(rand::thread_rng())),
-            state,
+            game,
             next_modifier_ref: 1,
             player_1_channels: player_1_client,
             player_2_channels: player_2_client,
         }
     }
-    pub fn with_game_state<R: RngCore + 'static>(
+    pub async fn with_game_state<R: RngCore + 'static>(
         state: GameState,
         player_1_client: (Sender<ClientReceive>, Receiver<ClientSend>),
         player_2_client: (Sender<ClientReceive>, Receiver<ClientSend>),
         rng: R,
     ) -> Self {
-        Game {
+        GameDirector {
             rng: DebugIgnore(Box::new(rng)),
-            state,
+            game: Game {
+                library: Some(library().await),
+                event_span: EventSpan::new(),
+                state,
+            },
             next_modifier_ref: 1,
             player_1_channels: player_1_client,
             player_2_channels: player_2_client,
@@ -165,50 +183,50 @@ impl Game {
     }
 
     pub fn active_board(&self) -> &GameBoard {
-        self.state.active_board()
+        self.game.active_board()
     }
     pub fn board(&self, player: Player) -> &GameBoard {
-        self.state.board(player)
+        self.game.board(player)
     }
 
     pub fn player_for_card(&self, card: CardRef) -> Player {
-        self.state.player_for_card(card)
+        self.game.player_for_card(card)
     }
     pub fn board_for_card(&self, card: CardRef) -> &GameBoard {
-        self.state.board_for_card(card)
+        self.game.board_for_card(card)
     }
     pub fn board_for_card_mut(&mut self, card: CardRef) -> &mut GameBoard {
-        self.state.board_for_card_mut(card)
+        self.game.board_for_card_mut(card)
     }
     pub fn group_by_player_and_zone(
         &self,
         cards: Vec<CardRef>,
     ) -> HashMap<(Player, Zone), Vec<CardRef>> {
-        self.state.group_by_player_and_zone(cards)
+        self.game.group_by_player_and_zone(cards)
     }
-    pub fn lookup_card_number(&self, card: CardRef) -> &CardNumber {
-        self.state.lookup_card_number(card)
+    pub fn card_number(&self, card: CardRef) -> &CardNumber {
+        self.game.card_number(card)
     }
     pub fn lookup_card(&self, card: CardRef) -> &Card {
-        self.state.lookup_card(card)
+        self.game.lookup_card(card)
     }
     pub fn lookup_oshi(&self, card: CardRef) -> Option<&OshiHoloMemberCard> {
-        self.state.lookup_oshi(card)
+        self.game.lookup_oshi(card)
     }
     pub fn lookup_holo_member(&self, card: CardRef) -> Option<&HoloMemberCard> {
-        self.state.lookup_holo_member(card)
+        self.game.lookup_holo_member(card)
     }
     pub fn lookup_support(&self, card: CardRef) -> Option<&SupportCard> {
-        self.state.lookup_support(card)
+        self.game.lookup_support(card)
     }
     pub fn lookup_cheer(&self, card: CardRef) -> Option<&CheerCard> {
-        self.state.lookup_cheer(card)
+        self.game.lookup_cheer(card)
     }
     pub fn attached_cheers(&self, card: CardRef) -> impl Iterator<Item = CardRef> + '_ {
-        self.state.attached_cheers(card)
+        self.game.attached_cheers(card)
     }
     pub fn required_attached_cheers(&self, card: CardRef, cheers: &[Color]) -> bool {
-        self.state.required_attached_cheers(card, cheers)
+        self.game.required_attached_cheers(card, cheers)
     }
 
     pub fn need_mulligan(&self, player: &GameBoard) -> bool {
@@ -259,7 +277,7 @@ impl Game {
         }
 
         if player_draw == 0 {
-            self.state.active_player = player;
+            self.game.state.active_player = player;
             info!("player {player:?} cannot draw anymore card");
             self.lose_game(GameOverReason::MulliganToZeroCards).await?;
         }
@@ -268,7 +286,7 @@ impl Game {
     }
 
     pub async fn start_game(&mut self) -> GameResult {
-        debug!("card_map: {:?}", self.state.card_map);
+        debug!("card_map: {:?}", self.game.state.card_map);
 
         // send the first game state
         // TODO need to hide private cards
@@ -278,17 +296,17 @@ impl Game {
         self.setup_game().await?;
 
         // - game start
-        self.report_start_game(self.state.active_player).await?;
+        self.report_start_game(self.game.active_player()).await?;
 
         Ok(GameContinue)
     }
 
     pub async fn next_step(&mut self) -> GameResult {
-        if let Some(game_outcome) = self.state.game_outcome {
+        if let Some(game_outcome) = self.game.game_outcome() {
             return Err(game_outcome);
         }
 
-        self.state.active_step = match self.state.active_step {
+        self.game.state.active_step = match self.game.active_step() {
             Step::Setup => Step::Reset,
             Step::Reset => Step::Draw,
             Step::Draw => Step::Cheer,
@@ -296,7 +314,7 @@ impl Game {
             Step::Main => Step::Performance,
             Step::Performance => Step::End,
             Step::End => {
-                self.state.active_player = match self.state.active_player {
+                self.game.state.active_player = match self.game.active_player() {
                     Player::One => Player::Two,
                     Player::Two => Player::One,
                     _ => unreachable!("both players cannot be active at the same time"),
@@ -305,30 +323,33 @@ impl Game {
             }
             Step::GameOver => {
                 // already returned above
-                return Err(self.state.game_outcome.expect("there should be an outcome"));
+                return Err(self
+                    .game
+                    .game_outcome()
+                    .expect("there should be an outcome"));
             }
         };
 
         // start turn
-        if self.state.active_step == Step::Reset {
+        if self.game.active_step() == Step::Reset {
             self.start_turn().await?;
         }
 
         // skip the current step, used to skip the first performance of the game
-        if self.player_has_modifier(self.state.active_player, SkipStep(self.state.active_step)) {
+        if self.player_has_modifier(self.game.active_player(), SkipStep(self.game.active_step())) {
             // don't skip end turn
-            if self.state.active_step == Step::End {
+            if self.game.active_step() == Step::End {
                 return self.end_turn().await;
             } else {
                 return Ok(GameContinue);
             }
         }
 
-        info!("- active step: {:?}", self.state.active_step);
-        self.report_enter_step(self.state.active_player, self.state.active_step)
+        info!("- active step: {:?}", self.game.active_step());
+        self.report_enter_step(self.game.active_player(), self.game.active_step())
             .await?;
 
-        match self.state.active_step {
+        match self.game.active_step() {
             Step::Setup => panic!("should not setup more than once"),
             Step::Reset => self.reset_step().await,
             Step::Draw => self.draw_step().await,
@@ -338,15 +359,18 @@ impl Game {
             Step::End => self.end_step().await,
             Step::GameOver => {
                 // already returned above
-                return Err(self.state.game_outcome.expect("there should be an outcome"));
+                return Err(self
+                    .game
+                    .game_outcome()
+                    .expect("there should be an outcome"));
             }
         }?;
 
-        self.report_exit_step(self.state.active_player, self.state.active_step)
+        self.report_exit_step(self.game.active_player(), self.game.active_step())
             .await?;
 
         // end turn
-        if self.state.active_step == Step::End {
+        if self.game.active_step() == Step::End {
             self.end_turn().await?;
         }
 
@@ -354,16 +378,16 @@ impl Game {
     }
 
     pub async fn start_turn(&mut self) -> GameResult {
-        self.state.turn_number += 1;
+        self.game.state.turn_number += 1;
 
-        info!("active player: {:?}", self.state.active_player);
-        self.report_start_turn(self.state.active_player).await?;
+        info!("active player: {:?}", self.game.active_player());
+        self.report_start_turn(self.game.active_player()).await?;
 
         Ok(GameContinue)
     }
 
     pub async fn end_turn(&mut self) -> GameResult {
-        self.report_end_turn(self.state.active_player).await?;
+        self.report_end_turn(self.game.active_player()).await?;
 
         Ok(GameContinue)
     }
@@ -378,7 +402,7 @@ impl Game {
         if let Some(mem) = self.active_board().collab {
             self.add_modifier(mem, Resting, LifeTime::UntilRemoved)
                 .await?;
-            self.send_from_collab_to_back_stage(self.state.active_player, mem)
+            self.send_from_collab_to_back_stage(self.game.active_player(), mem)
                 .await?;
         }
         // - if no center, back stage to center
@@ -387,9 +411,9 @@ impl Game {
             info!("prompt new center member");
             // TODO request (intent)
             let back = self
-                .prompt_for_back_stage_to_center(self.state.active_player, false)
+                .prompt_for_back_stage_to_center(self.game.active_player(), false)
                 .await;
-            self.send_from_back_stage_to_center_stage(self.state.active_player, back)
+            self.send_from_back_stage_to_center_stage(self.game.active_player(), back)
                 .await?;
         }
 
@@ -401,13 +425,13 @@ impl Game {
         if self.active_board().main_deck.count() == 0 {
             info!(
                 "player {:?} has no card in their main deck",
-                self.state.active_player
+                self.game.active_player()
             );
             return self.lose_game(GameOverReason::EmptyDeckInDrawStep).await;
         }
 
         // - draw 1 card from main deck
-        self.draw_from_main_deck(self.state.active_player, 1)
+        self.draw_from_main_deck(self.game.active_player(), 1)
             .await?;
 
         Ok(GameContinue)
@@ -416,7 +440,7 @@ impl Game {
     pub async fn cheer_step(&mut self) -> GameResult {
         // - draw 1 card from cheer deck, attach it
         // TODO request (intent) select member
-        self.attach_cheers_from_zone(self.state.active_player, Zone::CheerDeck, 1)
+        self.attach_cheers_from_zone(self.game.active_player(), Zone::CheerDeck, 1)
             .await?;
 
         Ok(GameContinue)
@@ -428,13 +452,13 @@ impl Game {
             info!("{} cards in hand", self.active_board().hand().count());
 
             // TODO request (intent) main action, all possible actions
-            let action = self.prompt_for_main_action(self.state.active_player).await;
+            let action = self.prompt_for_main_action(self.game.active_player()).await;
             debug!("ACTION = {action:?}");
             match action {
                 MainStepAction::BackStageMember(card) => {
                     info!("- action: Back stage member");
                     // - place debut member on back stage
-                    self.send_from_hand_to_back_stage(self.state.active_player, vec![card])
+                    self.send_from_hand_to_back_stage(self.game.active_player(), vec![card])
                         .await?;
 
                     // cannot bloom member you just played
@@ -450,8 +474,10 @@ impl Game {
                     //   - bloom effect
                     //   - can't bloom on same turn as placed
                     // TODO request bloom target (intent)
-                    let card = self.prompt_for_bloom(self.state.active_player, bloom).await;
-                    self.bloom_holo_member(self.state.active_player, bloom, card)
+                    let card = self
+                        .prompt_for_bloom(self.game.active_player(), bloom)
+                        .await;
+                    self.bloom_holo_member(self.game.active_player(), bloom, card)
                         .await?;
                 }
                 MainStepAction::UseSupportCard(card) => {
@@ -459,7 +485,7 @@ impl Game {
                     // - use support card
                     //   - only one limited per turn
                     //   - otherwise unlimited
-                    self.use_support_card(self.state.active_player, card)
+                    self.use_support_card(self.game.active_player(), card)
                         .await?;
                 }
                 MainStepAction::CollabMember(card) => {
@@ -467,7 +493,7 @@ impl Game {
                     // - put back stage member in collab
                     //   - can be done on first turn?
                     //   - draw down card from deck into power zone
-                    self.send_from_back_stage_to_collab(self.state.active_player, card)
+                    self.send_from_back_stage_to_collab(self.game.active_player(), card)
                         .await?;
                 }
                 MainStepAction::BatonPass(card) => {
@@ -485,11 +511,11 @@ impl Game {
                     assert_eq!(center, card);
                     // TODO request (intent) select back stage member
                     let back = self
-                        .prompt_for_back_stage_to_center(self.state.active_player, true)
+                        .prompt_for_back_stage_to_center(self.game.active_player(), true)
                         .await;
                     // swap members
                     self.baton_pass_center_stage_to_back_stage(
-                        self.state.active_player,
+                        self.game.active_player(),
                         center,
                         back,
                     )
@@ -500,7 +526,7 @@ impl Game {
                     // - use oshi skill
                     //   - oshi power uses card in power zone
                     //   - once per turn / once per game
-                    self.use_oshi_skill(self.state.active_player, card, i)
+                    self.use_oshi_skill(self.game.active_player(), card, i)
                         .await?;
                 }
                 MainStepAction::Done => {
@@ -546,7 +572,7 @@ impl Game {
             //     }
             // }
 
-            let action = self.prompt_for_art_action(self.state.active_player).await;
+            let action = self.prompt_for_art_action(self.game.active_player()).await;
             debug!("ACTION = {action:?}");
             match action {
                 PerformanceStepAction::UseArt {
@@ -555,7 +581,7 @@ impl Game {
                     target,
                 } => {
                     info!("- action: Use art");
-                    self.perform_art(self.state.active_player, card, art_idx, Some(target))
+                    self.perform_art(self.game.active_player(), card, art_idx, Some(target))
                         .await?;
                 }
                 PerformanceStepAction::Done => {
@@ -577,9 +603,9 @@ impl Game {
             info!("prompt new center member");
             // TODO request (intent)
             let back = self
-                .prompt_for_back_stage_to_center(self.state.active_player, false)
+                .prompt_for_back_stage_to_center(self.game.active_player(), false)
                 .await;
-            self.send_from_back_stage_to_center_stage(self.state.active_player, back)
+            self.send_from_back_stage_to_center_stage(self.game.active_player(), back)
                 .await?;
         }
 
@@ -587,14 +613,14 @@ impl Game {
     }
 
     pub async fn win_game(&mut self, reason: GameOverReason) -> GameResult {
-        match self.state.active_player {
+        match self.game.active_player() {
             Player::One => info!("player 1 wins"),
             Player::Two => info!("player 2 wins"),
             _ => unreachable!("both players cannot be active at the same time"),
         };
         // stop the game
         let game_outcome = GameOutcome {
-            winning_player: Some(self.state.active_player),
+            winning_player: Some(self.game.active_player()),
             reason,
         };
         self.report_game_over(game_outcome).await?;
@@ -602,7 +628,7 @@ impl Game {
         Err(game_outcome)
     }
     pub async fn lose_game(&mut self, reason: GameOverReason) -> GameResult {
-        self.state.active_player = match self.state.active_player {
+        self.game.state.active_player = match self.game.active_player() {
             Player::One => Player::Two,
             Player::Two => Player::One,
             _ => unreachable!("both players cannot be active at the same time"),
@@ -612,14 +638,14 @@ impl Game {
 
     pub async fn check_loss_conditions(&mut self) -> GameResult {
         // cannot lose in setup, except from mulligan
-        if self.state.active_step == Step::Setup {
+        if self.game.active_step() == Step::Setup {
             return Ok(GameContinue);
         }
 
         let mut loss = None;
         for (player, board) in [
-            (Player::One, &self.state.player_1),
-            (Player::Two, &self.state.player_2),
+            (Player::One, &self.game.board(Player::One)),
+            (Player::Two, &self.game.board(Player::Two)),
         ] {
             // - life is 0
             if board.life.count() == 0 {
@@ -639,7 +665,7 @@ impl Game {
         }
 
         if let Some(lose_player) = loss {
-            self.state.active_player = lose_player.0;
+            self.game.state.active_player = lose_player.0;
             return self.lose_game(lose_player.1).await;
         }
 
@@ -1274,7 +1300,7 @@ impl Game {
             .iter()
             .copied()
             .filter(|c| {
-                let cond = condition.evaluate_with_context(&ctx.for_card(*c), &self.state);
+                let cond = condition.evaluate_with_context(&ctx.for_card(*c), &self.game);
                 if !cond {
                     // info!("viewed: {}", CardDisplay::new(*c, self))
                 }
@@ -1959,7 +1985,7 @@ pub struct MainStepActionDisplay {
 }
 
 impl MainStepActionDisplay {
-    pub fn new(action: MainStepAction, game: &GameState) -> MainStepActionDisplay {
+    pub fn new(action: MainStepAction, game: &Game) -> MainStepActionDisplay {
         let text = match action {
             MainStepAction::BackStageMember(card) => {
                 let display = CardDisplay::new(card, game);
@@ -2009,7 +2035,7 @@ pub struct CardDisplay {
 }
 
 impl CardDisplay {
-    pub fn new(card: CardRef, game: &GameState) -> CardDisplay {
+    pub fn new(card: CardRef, game: &Game) -> CardDisplay {
         let text = match game.lookup_card(card) {
             Card::OshiHoloMember(o) => {
                 // let life_remaining = game.board_for_card(card).life.count();
@@ -2073,7 +2099,7 @@ pub struct PerformanceStepActionDisplay {
 }
 
 impl PerformanceStepActionDisplay {
-    pub fn new(action: PerformanceStepAction, game: &GameState) -> PerformanceStepActionDisplay {
+    pub fn new(action: PerformanceStepAction, game: &Game) -> PerformanceStepActionDisplay {
         let text = match action {
             PerformanceStepAction::UseArt {
                 card,
@@ -2105,7 +2131,7 @@ pub struct ArtDisplay {
 }
 
 impl ArtDisplay {
-    pub fn new(card: CardRef, idx: usize, game: &GameState) -> ArtDisplay {
+    pub fn new(card: CardRef, idx: usize, game: &Game) -> ArtDisplay {
         let text = if let Some(m) = game.lookup_holo_member(card) {
             let art = &m.arts[idx];
             format!(
@@ -2145,22 +2171,9 @@ pub struct GameState {
     pub zone_modifiers: HashMap<Player, Vec<(Zone, Modifier)>>,
     pub card_modifiers: HashMap<CardRef, Vec<Modifier>>,
     pub card_damage_markers: HashMap<CardRef, DamageMarkers>,
-    pub event_span: EventSpan,
 }
 
 impl GameState {
-    pub fn new() -> Self {
-        GameState {
-            ..Default::default()
-        }
-    }
-
-    pub fn active_board(&self) -> &GameBoard {
-        self.board(self.active_player)
-    }
-    pub fn active_board_mut(&mut self) -> &mut GameBoard {
-        self.board_mut(self.active_player)
-    }
     pub fn board(&self, player: Player) -> &GameBoard {
         match player {
             Player::One => &self.player_1,
@@ -2190,6 +2203,59 @@ impl GameState {
         let player = self.player_for_card(card);
         self.board_mut(player)
     }
+}
+
+#[derive(Debug, Default)]
+pub struct Game {
+    pub library: Option<RwLockReadGuard<'static, GlobalLibrary>>,
+    pub event_span: EventSpan,
+    pub state: GameState,
+}
+
+impl Game {
+    pub async fn new() -> Self {
+        Game {
+            library: Some(library().await),
+            event_span: EventSpan::new(),
+            state: Default::default(),
+        }
+    }
+
+    pub fn active_player(&self) -> Player {
+        self.state.active_player
+    }
+    pub fn active_step(&self) -> Step {
+        self.state.active_step
+    }
+    pub fn turn_number(&self) -> u8 {
+        self.state.turn_number
+    }
+    pub fn game_outcome(&self) -> Option<GameOutcome> {
+        self.state.game_outcome
+    }
+
+    pub fn active_board(&self) -> &GameBoard {
+        self.board(self.active_player())
+    }
+    pub fn active_board_mut(&mut self) -> &mut GameBoard {
+        self.board_mut(self.active_player())
+    }
+    pub fn board(&self, player: Player) -> &GameBoard {
+        self.state.board(player)
+    }
+    pub fn board_mut(&mut self, player: Player) -> &mut GameBoard {
+        self.state.board_mut(player)
+    }
+
+    pub fn player_for_card(&self, card: CardRef) -> Player {
+        self.state.player_for_card(card)
+    }
+    pub fn board_for_card(&self, card: CardRef) -> &GameBoard {
+        self.state.board_for_card(card)
+    }
+    pub fn board_for_card_mut(&mut self, card: CardRef) -> &mut GameBoard {
+        self.state.board_for_card_mut(card)
+    }
 
     pub fn group_by_player_and_zone(
         &self,
@@ -2207,43 +2273,64 @@ impl GameState {
         map
     }
 
-    pub fn lookup_card_number(&self, card: CardRef) -> &CardNumber {
-        let (_, card_number) = self.card_map.get(&card).expect("should be in the map");
+    pub fn card_number(&self, card: CardRef) -> &CardNumber {
+        let (_, card_number) = self
+            .state
+            .card_map
+            .get(&card)
+            .expect("should be in the map");
         card_number
     }
+
     pub fn lookup_card(&self, card: CardRef) -> &Card {
-        let card_number = self.lookup_card_number(card);
-        test_library()
-            .lookup_card(card_number)
-            .unwrap_or_else(|| panic!("should be in the library: {card_number}"))
+        self.library
+            .as_ref()
+            .expect("library should be loaded")
+            .lookup_card(self.card_number(card))
     }
+
+    pub fn is_oshi(&self, card: CardRef) -> bool {
+        matches!(self.lookup_card(card), Card::OshiHoloMember(_))
+    }
+
     pub fn lookup_oshi(&self, card: CardRef) -> Option<&OshiHoloMemberCard> {
-        if let Card::OshiHoloMember(o) = self.lookup_card(card) {
-            Some(o)
-        } else {
-            None
-        }
+        self.library
+            .as_ref()
+            .expect("library should be loaded")
+            .lookup_oshi(self.card_number(card))
     }
+
+    pub fn is_holo_member(&self, card: CardRef) -> bool {
+        matches!(self.lookup_card(card), Card::HoloMember(_))
+    }
+
     pub fn lookup_holo_member(&self, card: CardRef) -> Option<&HoloMemberCard> {
-        if let Card::HoloMember(m) = self.lookup_card(card) {
-            Some(m)
-        } else {
-            None
-        }
+        self.library
+            .as_ref()
+            .expect("library should be loaded")
+            .lookup_holo_member(self.card_number(card))
     }
+
+    pub fn is_support(&self, card: CardRef) -> bool {
+        matches!(self.lookup_card(card), Card::Support(_))
+    }
+
     pub fn lookup_support(&self, card: CardRef) -> Option<&SupportCard> {
-        if let Card::Support(s) = self.lookup_card(card) {
-            Some(s)
-        } else {
-            None
-        }
+        self.library
+            .as_ref()
+            .expect("library should be loaded")
+            .lookup_support(self.card_number(card))
     }
+
+    pub fn is_cheer(&self, card: CardRef) -> bool {
+        matches!(self.lookup_card(card), Card::Cheer(_))
+    }
+
     pub fn lookup_cheer(&self, card: CardRef) -> Option<&CheerCard> {
-        if let Card::Cheer(c) = self.lookup_card(card) {
-            Some(c)
-        } else {
-            None
-        }
+        self.library
+            .as_ref()
+            .expect("library should be loaded")
+            .lookup_cheer(self.card_number(card))
     }
 
     pub fn attachments(&self, card: CardRef) -> impl Iterator<Item = CardRef> + '_ {

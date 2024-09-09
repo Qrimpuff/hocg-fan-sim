@@ -114,7 +114,7 @@ async fn step_transitions() {
         &[1],
     ]);
 
-    let (mut game, p1_client, p2_client) = setup_test_game(state.clone(), p1_p, p2_p);
+    let (mut game, p1_client, p2_client) = setup_test_game(state.clone(), p1_p, p2_p).await;
     tokio::spawn(p1_client.receive_requests());
     tokio::spawn(p2_client.receive_requests());
 
@@ -237,7 +237,7 @@ async fn step_transitions() {
             ),
         ]);
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 1 - turn 1 - reset step
     game.next_step().await.unwrap();
@@ -259,7 +259,7 @@ async fn step_transitions() {
         .1
         .life_time = LifeTime::ThisTurn;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 1 - turn 1 - draw step
     game.next_step().await.unwrap();
@@ -275,7 +275,7 @@ async fn step_transitions() {
     ]
     .into();
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 1 - turn 1 - cheer step
     game.next_step().await.unwrap();
@@ -293,19 +293,19 @@ async fn step_transitions() {
         .attachments
         .extend([(CardRef::from("c_1211"), "c_0811".into())]);
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 1 - turn 1 - main step
     game.next_step().await.unwrap();
     expected_state.active_step = Step::Main;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 1 - turn 1 - performance step
     game.next_step().await.unwrap();
     expected_state.active_step = Step::Performance;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 1 - turn 1 - end step
     game.next_step().await.unwrap();
@@ -313,7 +313,7 @@ async fn step_transitions() {
     // state - player 1
     expected_state.zone_modifiers.insert(Player::One, [].into());
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 2 - turn 2 - reset step
     game.next_step().await.unwrap();
@@ -328,7 +328,7 @@ async fn step_transitions() {
         .1
         .life_time = LifeTime::ThisTurn;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 2 - turn 2 - draw step
     game.next_step().await.unwrap();
@@ -344,7 +344,7 @@ async fn step_transitions() {
     ]
     .into();
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 2 - turn 2 - cheer step
     game.next_step().await.unwrap();
@@ -362,19 +362,19 @@ async fn step_transitions() {
         .attachments
         .extend([(CardRef::from("c_1512"), "c_0812".into())]);
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 2 - turn 2 - main step
     game.next_step().await.unwrap();
     expected_state.active_step = Step::Main;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 2 - turn 2 - performance step
     game.next_step().await.unwrap();
     expected_state.active_step = Step::Performance;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 2 - turn 2 - end step
     game.next_step().await.unwrap();
@@ -382,7 +382,7 @@ async fn step_transitions() {
     // state - player 2
     expected_state.zone_modifiers.insert(Player::Two, [].into());
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 1 - turn 3 - reset step
     game.next_step().await.unwrap();
@@ -390,7 +390,7 @@ async fn step_transitions() {
     expected_state.active_player = Player::One;
     expected_state.turn_number = 3;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 1 - turn 3 - draw step
     game.next_step().await.unwrap();
@@ -407,7 +407,7 @@ async fn step_transitions() {
     ]
     .into();
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 1 - turn 3 - cheer step
     game.next_step().await.unwrap();
@@ -419,25 +419,25 @@ async fn step_transitions() {
         .attachments
         .extend([(CardRef::from("c_0f11"), "c_0811".into())]);
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 1 - turn 3 - main step
     game.next_step().await.unwrap();
     expected_state.active_step = Step::Main;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 1 - turn 3 - performance step
     game.next_step().await.unwrap();
     expected_state.active_step = Step::Performance;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 1 - turn 3 - end step
     game.next_step().await.unwrap();
     expected_state.active_step = Step::End;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 2 - turn 4 - reset step
     game.next_step().await.unwrap();
@@ -445,7 +445,7 @@ async fn step_transitions() {
     expected_state.active_player = Player::Two;
     expected_state.turn_number = 4;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 2 - turn 4 - draw step
     game.next_step().await.unwrap();
@@ -462,7 +462,7 @@ async fn step_transitions() {
     ]
     .into();
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 2 - turn 4 - cheer step
     game.next_step().await.unwrap();
@@ -474,25 +474,25 @@ async fn step_transitions() {
         .attachments
         .extend([(CardRef::from("c_0f12"), "c_0812".into())]);
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 2 - turn 4 - main step
     game.next_step().await.unwrap();
     expected_state.active_step = Step::Main;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 2 - turn 4 - performance step
     game.next_step().await.unwrap();
     expected_state.active_step = Step::Performance;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 2 - turn 4 - end step
     game.next_step().await.unwrap();
     expected_state.active_step = Step::End;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 1 - turn 5 - reset step
     game.next_step().await.unwrap();
@@ -500,7 +500,7 @@ async fn step_transitions() {
     expected_state.active_player = Player::One;
     expected_state.turn_number = 5;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 1 - turn 5 - draw step
     game.next_step().await.unwrap();
@@ -518,7 +518,7 @@ async fn step_transitions() {
     ]
     .into();
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 1 - turn 5 - cheer step
     game.next_step().await.unwrap();
@@ -530,25 +530,25 @@ async fn step_transitions() {
         .attachments
         .extend([(CardRef::from("c_1011"), "c_0811".into())]);
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 1 - turn 5 - main step
     game.next_step().await.unwrap();
     expected_state.active_step = Step::Main;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 1 - turn 5 - performance step
     game.next_step().await.unwrap();
     expected_state.active_step = Step::Performance;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 1 - turn 5 - end step
     game.next_step().await.unwrap();
     expected_state.active_step = Step::End;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 2 - turn 6 - reset step
     game.next_step().await.unwrap();
@@ -556,7 +556,7 @@ async fn step_transitions() {
     expected_state.active_player = Player::Two;
     expected_state.turn_number = 6;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 2 - turn 6 - draw step
     game.next_step().await.unwrap();
@@ -574,7 +574,7 @@ async fn step_transitions() {
     ]
     .into();
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 2 - turn 6 - cheer step
     game.next_step().await.unwrap();
@@ -586,25 +586,25 @@ async fn step_transitions() {
         .attachments
         .extend([(CardRef::from("c_0d12"), "c_0812".into())]);
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 2 - turn 6 - main step
     game.next_step().await.unwrap();
     expected_state.active_step = Step::Main;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 2 - turn 6 - performance step
     game.next_step().await.unwrap();
     expected_state.active_step = Step::Performance;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 2 - turn 6 - end step
     game.next_step().await.unwrap();
     expected_state.active_step = Step::End;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 1 - turn 7 - reset step
     game.next_step().await.unwrap();
@@ -612,7 +612,7 @@ async fn step_transitions() {
     expected_state.active_player = Player::One;
     expected_state.turn_number = 7;
 
-    assert_eq!(expected_state, game.state);
+    assert_eq!(expected_state, game.game.state);
 
     // player 1 - turn 7 - draw step
     assert_eq!(

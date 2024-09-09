@@ -3,11 +3,11 @@ use tracing::debug;
 
 use crate::{
     events::*,
-    gameplay::{GameContinue, GameOutcome, GameResult, GameState},
+    gameplay::{Game, GameContinue, GameOutcome, GameResult},
 };
 
 pub struct Client<E, I> {
-    pub game: GameState,
+    pub game: Game,
     pub send: Sender<ClientSend>,
     pub receive: Receiver<ClientReceive>,
     pub event_handler: E,
@@ -18,13 +18,13 @@ where
     E: EventHandler,
     I: IntentRequestHandler,
 {
-    pub fn new(
+    pub async fn new(
         channels: (Sender<ClientSend>, Receiver<ClientReceive>),
         event_handler: E,
         intent_handler: I,
     ) -> Self {
         Client {
-            game: GameState::new(),
+            game: Game::new().await,
             send: channels.0,
             receive: channels.1,
             event_handler,
@@ -37,15 +37,15 @@ where
             .receive
             .recv()
             .await
-            .map_err(|_| self.game.game_outcome.expect("game should be over"))?;
+            .map_err(|_| self.game.game_outcome().expect("game should be over"))?;
         match req {
             ClientReceive::Event(event) => {
                 debug!("RECEIVED EVENT = {:?}", event);
 
                 // sync state with server
-                event.apply_state_change(&mut self.game);
+                event.apply_state_change(&mut self.game.state);
 
-                if let Some(outcome) = self.game.game_outcome {
+                if let Some(outcome) = self.game.game_outcome() {
                     return Err(outcome);
                 }
 
@@ -70,17 +70,17 @@ where
         // loop until the end of the game
         while self.handle_request().await.is_ok() {}
 
-        debug!("GAME OUTCOME = {:?}", self.game.game_outcome);
-        self.game.game_outcome.expect("game should be over")
+        debug!("GAME OUTCOME = {:?}", self.game.game_outcome());
+        self.game.game_outcome().expect("game should be over")
     }
 }
 
 #[allow(async_fn_in_trait)]
 pub trait EventHandler {
-    async fn handle_event(&mut self, game: &GameState, event: Event);
+    async fn handle_event(&mut self, game: &Game, event: Event);
 }
 pub trait IntentRequestHandler {
-    fn handle_intent_request(&mut self, game: &GameState, req: IntentRequest) -> IntentResponse;
+    fn handle_intent_request(&mut self, game: &Game, req: IntentRequest) -> IntentResponse;
 }
 
 #[derive(Default)]
@@ -91,7 +91,7 @@ impl DefaultEventHandler {
     }
 }
 impl EventHandler for DefaultEventHandler {
-    async fn handle_event(&mut self, _game: &GameState, _event: Event) {
+    async fn handle_event(&mut self, _game: &Game, _event: Event) {
         // do nothing
     }
 }

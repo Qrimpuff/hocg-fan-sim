@@ -3,6 +3,9 @@ name = "hocg-fan-sim"
 edition = "2021"
 version.workspace = true
 
+[features]
+test = []
+
 [dependencies]
 hocg-fan-sim-derive = { workspace = true }
 dialoguer = { workspace = true }
@@ -22,6 +25,7 @@ async-channel = { workspace = true }
 get-size = { workspace = true }
 bincode = { workspace = true }
 flate2 = { workspace = true }
+async-rwlock = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

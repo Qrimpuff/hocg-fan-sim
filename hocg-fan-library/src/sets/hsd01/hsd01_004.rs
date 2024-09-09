@@ -35,7 +35,8 @@ pub fn card() -> Card {
         extra: None,
         attributes: vec![],
         rarity: Rarity::Rare,
-        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-004.webp".into(),
+        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-004.webp"
+            .into(),
         artist: "".into(),
     })
 }
@@ -82,7 +83,7 @@ mod tests {
         ]);
         let p2_p = BufferedPrompter::new(&[]);
 
-        let (mut game, p1_client, p2_client) = setup_test_game(state.clone(), p1_p, p2_p);
+        let (mut game, p1_client, p2_client) = setup_test_game(state.clone(), p1_p, p2_p).await;
         tokio::spawn(p1_client.receive_requests());
         tokio::spawn(p2_client.receive_requests());
 
@@ -135,6 +136,6 @@ mod tests {
             .insert("c_0212".into(), DamageMarkers::from_hp(40));
         // expected_state.card_damage_markers
 
-        assert_eq!(expected_state, game.state);
+        assert_eq!(expected_state, game.game.state);
     }
 }

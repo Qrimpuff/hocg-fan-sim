@@ -123,86 +123,6 @@ impl Modifier {
 }
 
 impl GameState {
-    pub fn find_modifiers(&self, card: CardRef) -> impl Iterator<Item = &Modifier> + '_ {
-        let (player, _) = self.card_map.get(&card).expect("should be in the map");
-
-        let zone = match player {
-            Player::One => self
-                .player_1
-                .find_card_zone(card)
-                .expect("the card should be on player 1 side"),
-            Player::Two => self
-                .player_2
-                .find_card_zone(card)
-                .expect("the card should be on player 2 side"),
-            Player::Both => unreachable!("a card can't be owned by both player"),
-        };
-
-        self.card_modifiers.get(&card).into_iter().flatten().chain(
-            self.zone_modifiers
-                .get(player)
-                .into_iter()
-                .flatten()
-                .filter(move |(z, _)| z.includes(zone))
-                .map(|(_, b)| b),
-        )
-    }
-    pub fn find_player_modifiers(&self, player: Player) -> impl Iterator<Item = &Modifier> + '_ {
-        // need to look for any card, oshi is always there
-        let oshi = self
-            .board(player)
-            .get_zone(Zone::Oshi)
-            .peek_top_card()
-            .expect("oshi is always there");
-        self.find_modifiers(oshi)
-    }
-
-    /// is used with Zone::All
-    pub fn player_has_modifier(&self, player: Player, kind: ModifierKind) -> bool {
-        self.player_has_modifier_with(player, |m| *m == kind)
-    }
-    pub fn player_has_modifier_with(
-        &self,
-        player: Player,
-        filter_fn: impl FnMut(&ModifierKind) -> bool,
-    ) -> bool {
-        // need to look for any card, oshi is always there
-        let oshi = self
-            .board(player)
-            .get_zone(Zone::Oshi)
-            .peek_top_card()
-            .expect("oshi is always there");
-        self.has_modifier_with(oshi, filter_fn)
-    }
-
-    pub fn has_modifier(&self, card: CardRef, kind: ModifierKind) -> bool {
-        self.has_modifier_with(card, |m| *m == kind)
-    }
-    pub fn has_modifier_with(
-        &self,
-        card: CardRef,
-        filter_fn: impl FnMut(&ModifierKind) -> bool,
-    ) -> bool {
-        self.find_modifiers(card)
-            .filter(|m| m.is_active())
-            .filter_map(|m| match &m.kind {
-                ModifierKind::Conditional(c, k) => c
-                    .evaluate_with_card(self, card, false)
-                    .then_some(k.as_ref()),
-                _ => Some(&m.kind),
-            })
-            .any(filter_fn)
-    }
-
-    pub fn promote_modifiers(&mut self, attachment: CardRef, parent: CardRef) {
-        if let Some((_, modifiers)) = self.card_modifiers.remove_entry(&parent) {
-            self.card_modifiers
-                .entry(attachment)
-                .or_default()
-                .extend(modifiers);
-        }
-    }
-
     pub fn start_turn_modifiers(&mut self, player: Player) {
         // house keeping for the card modifiers
         // split in 2 because can't modify and player_for_card at the same time
@@ -261,9 +181,96 @@ impl GameState {
             });
     }
 
+    pub fn promote_modifiers(&mut self, attachment: CardRef, parent: CardRef) {
+        if let Some((_, modifiers)) = self.card_modifiers.remove_entry(&parent) {
+            self.card_modifiers
+                .entry(attachment)
+                .or_default()
+                .extend(modifiers);
+        }
+    }
+
+    pub fn promote_damage_markers(&mut self, attachment: CardRef, parent: CardRef) {
+        if let Some((_, dmg)) = self.card_damage_markers.remove_entry(&parent) {
+            *self.card_damage_markers.entry(attachment).or_default() += dmg;
+        }
+    }
+}
+
+impl Game {
+    pub fn find_modifiers(&self, card: CardRef) -> impl Iterator<Item = &Modifier> + '_ {
+        let player = self.player_for_card(card);
+        let zone = self
+            .board(player)
+            .find_card_zone(card)
+            .expect("card should be in zone");
+
+        self.state
+            .card_modifiers
+            .get(&card)
+            .into_iter()
+            .flatten()
+            .chain(
+                self.state
+                    .zone_modifiers
+                    .get(&player)
+                    .into_iter()
+                    .flatten()
+                    .filter(move |(z, _)| z.includes(zone))
+                    .map(|(_, b)| b),
+            )
+    }
+    pub fn find_player_modifiers(&self, player: Player) -> impl Iterator<Item = &Modifier> + '_ {
+        // need to look for any card, oshi is always there
+        let oshi = self
+            .board(player)
+            .get_zone(Zone::Oshi)
+            .peek_top_card()
+            .expect("oshi is always there");
+        self.find_modifiers(oshi)
+    }
+
+    /// is used with Zone::All
+    pub fn player_has_modifier(&self, player: Player, kind: ModifierKind) -> bool {
+        self.player_has_modifier_with(player, |m| *m == kind)
+    }
+    pub fn player_has_modifier_with(
+        &self,
+        player: Player,
+        filter_fn: impl FnMut(&ModifierKind) -> bool,
+    ) -> bool {
+        // need to look for any card, oshi is always there
+        let oshi = self
+            .board(player)
+            .get_zone(Zone::Oshi)
+            .peek_top_card()
+            .expect("oshi is always there");
+        self.has_modifier_with(oshi, filter_fn)
+    }
+
+    pub fn has_modifier(&self, card: CardRef, kind: ModifierKind) -> bool {
+        self.has_modifier_with(card, |m| *m == kind)
+    }
+    pub fn has_modifier_with(
+        &self,
+        card: CardRef,
+        filter_fn: impl FnMut(&ModifierKind) -> bool,
+    ) -> bool {
+        self.find_modifiers(card)
+            .filter(|m| m.is_active())
+            .filter_map(|m| match &m.kind {
+                ModifierKind::Conditional(c, k) => c
+                    .evaluate_with_card(self, card, false)
+                    .then_some(k.as_ref()),
+                _ => Some(&m.kind),
+            })
+            .any(filter_fn)
+    }
+
     // damage markers
     pub fn has_damage(&self, card: CardRef) -> bool {
-        self.card_damage_markers
+        self.state
+            .card_damage_markers
             .get(&card)
             .filter(|dmg| dmg.0 > 0)
             .is_some()
@@ -279,47 +286,42 @@ impl GameState {
     }
 
     pub fn get_damage(&self, card: CardRef) -> DamageMarkers {
-        self.card_damage_markers
+        self.state
+            .card_damage_markers
             .get(&card)
             .copied()
             .unwrap_or_default()
     }
-
-    pub fn promote_damage_markers(&mut self, attachment: CardRef, parent: CardRef) {
-        if let Some((_, dmg)) = self.card_damage_markers.remove_entry(&parent) {
-            *self.card_damage_markers.entry(attachment).or_default() += dmg;
-        }
-    }
 }
 
-impl Game {
+impl GameDirector {
     pub fn find_modifiers(&self, card: CardRef) -> impl Iterator<Item = &Modifier> + '_ {
-        self.state.find_modifiers(card)
+        self.game.find_modifiers(card)
     }
     pub fn find_player_modifiers(&self, player: Player) -> impl Iterator<Item = &Modifier> + '_ {
-        self.state.find_player_modifiers(player)
+        self.game.find_player_modifiers(player)
     }
 
     /// is used with Zone::All
     pub fn player_has_modifier(&self, player: Player, kind: ModifierKind) -> bool {
-        self.state.player_has_modifier(player, kind)
+        self.game.player_has_modifier(player, kind)
     }
     pub fn player_has_modifier_with(
         &self,
         player: Player,
         filter_fn: impl FnMut(&ModifierKind) -> bool,
     ) -> bool {
-        self.state.player_has_modifier_with(player, filter_fn)
+        self.game.player_has_modifier_with(player, filter_fn)
     }
     pub fn has_modifier(&self, card: CardRef, kind: ModifierKind) -> bool {
-        self.state.has_modifier(card, kind)
+        self.game.has_modifier(card, kind)
     }
     pub fn has_modifier_with(
         &self,
         card: CardRef,
         filter_fn: impl FnMut(&ModifierKind) -> bool,
     ) -> bool {
-        self.state.has_modifier_with(card, filter_fn)
+        self.game.has_modifier_with(card, filter_fn)
     }
 
     pub async fn add_modifier(
@@ -404,6 +406,7 @@ impl Game {
             .expect("the card should be in a zone");
 
         let modifiers = self
+            .game
             .state
             .card_modifiers
             .get(&card)
@@ -435,6 +438,7 @@ impl Game {
         filter_fn: impl FnMut(&&(Zone, Modifier)) -> bool,
     ) -> GameResult {
         let modifiers = self
+            .game
             .state
             .zone_modifiers
             .get(&player)
@@ -463,6 +467,7 @@ impl Game {
     pub async fn remove_expiring_modifiers(&mut self, life_time: LifeTime) -> GameResult {
         // remove expiring card modifiers
         let c_mods: HashMap<_, Vec<_>> = self
+            .game
             .state
             .card_modifiers
             .iter()
@@ -484,6 +489,7 @@ impl Game {
 
         // remove expiring zone modifiers
         let z_mods: HashMap<_, Vec<_>> = self
+            .game
             .state
             .zone_modifiers
             .iter()
@@ -502,15 +508,15 @@ impl Game {
 
     // damage markers
     pub fn has_damage(&self, card: CardRef) -> bool {
-        self.state.has_damage(card)
+        self.game.has_damage(card)
     }
 
     pub fn remaining_hp(&self, card: CardRef) -> HoloMemberHp {
-        self.state.remaining_hp(card)
+        self.game.remaining_hp(card)
     }
 
     pub fn get_damage(&self, card: CardRef) -> DamageMarkers {
-        self.state.get_damage(card)
+        self.game.get_damage(card)
     }
 
     pub async fn add_damage_markers(&mut self, card: CardRef, dmg: DamageMarkers) -> GameResult {
