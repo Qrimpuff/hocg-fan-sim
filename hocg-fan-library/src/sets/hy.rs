@@ -1,9 +1,7 @@
 use hocg_fan_sim::cards::Card;
 
-mod hy01_001;
-mod hy02_001;
-mod hy03_001;
-mod hy04_001;
+
+automod::dir!("src/sets/hy");
 
 pub fn set() -> Vec<fn() -> Card> {
     vec![
