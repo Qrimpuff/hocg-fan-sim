@@ -2798,7 +2798,9 @@ impl EvaluateEvent for ActivateSupportCard {
 
         // activate the support card
         effect
-            .evaluate_with_card_mut(game, self.card.1, false)
+            .ctx()
+            .with_card(self.card.1, &game.game)
+            .evaluate_mut(game)
             .await?;
 
         // limited support can only be used once per turn
@@ -2848,7 +2850,10 @@ impl EvaluateEvent for ActivateSupportAbility {
         let effect = support.effect.clone();
 
         effect
-            .evaluate_with_card_mut(game, self.card.1, self.is_triggered)
+            .ctx()
+            .with_card(self.card.1, &game.game)
+            .with_triggered(self.is_triggered)
+            .evaluate_mut(game)
             .await?;
 
         Ok(GameContinue)
@@ -2898,7 +2903,10 @@ impl EvaluateEvent for ActivateOshiSkill {
         game.game.event_span.close_untracked_span();
 
         effect
-            .evaluate_with_card_mut(game, self.card.1, self.is_triggered)
+            .ctx()
+            .with_card(self.card.1, &game.game)
+            .with_triggered(self.is_triggered)
+            .evaluate_mut(game)
             .await?;
 
         //   - once per turn / once per game
@@ -2944,7 +2952,10 @@ impl EvaluateEvent for ActivateHoloMemberAbility {
         let effect = ability.effect.clone();
 
         effect
-            .evaluate_with_card_mut(game, self.card.1, self.is_triggered)
+            .ctx()
+            .with_card(self.card.1, &game.game)
+            .with_triggered(self.is_triggered)
+            .evaluate_mut(game)
             .await?;
 
         Ok(GameContinue)
@@ -2995,7 +3006,12 @@ impl EvaluateEvent for PerformArt {
             .expect("this should be a valid member");
 
         //  check condition for art
-        if !mem.can_use_art(self.card.1, self.art_idx, game) {
+        if !mem.can_use_art(
+            self.card.1,
+            self.art_idx,
+            self.target.expect("there should be a target").1,
+            game,
+        ) {
             panic!("cannot use this art");
         }
 
@@ -3012,7 +3028,9 @@ impl EvaluateEvent for PerformArt {
 
         // evaluate the effect of art, could change damage calculation
         effect
-            .evaluate_with_card_mut(game, self.card.1, false)
+            .ctx()
+            .with_card(self.card.1, &game.game)
+            .evaluate_mut(game)
             .await?;
 
         // FIXME evaluate damage number

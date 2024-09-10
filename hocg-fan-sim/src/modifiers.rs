@@ -260,7 +260,9 @@ impl Game {
             .filter(|m| m.is_active())
             .filter_map(|m| match &m.kind {
                 ModifierKind::Conditional(c, k) => c
-                    .evaluate_with_card(self, card, false)
+                    .ctx()
+                    .with_card(card, self)
+                    .evaluate(self)
                     .then_some(k.as_ref()),
                 _ => Some(&m.kind),
             })

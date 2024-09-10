@@ -252,7 +252,10 @@ impl OshiHoloMemberCard {
 
         self.skills[skill_idx]
             .condition
-            .evaluate_with_card(&game.game, card, is_triggered)
+            .ctx()
+            .with_card(card, &game.game)
+            .with_triggered(is_triggered)
+            .evaluate(&game.game)
     }
 }
 
@@ -409,10 +412,19 @@ impl HoloMemberCard {
 
         self.abilities[ability_idx]
             .condition
-            .evaluate_with_card(&game.game, card, is_triggered)
+            .ctx()
+            .with_card(card, &game.game)
+            .with_triggered(is_triggered)
+            .evaluate(&game.game)
     }
 
-    pub fn can_use_art(&self, card: CardRef, art_idx: usize, game: &GameDirector) -> bool {
+    pub fn can_use_art(
+        &self,
+        card: CardRef,
+        art_idx: usize,
+        target_card: CardRef,
+        game: &GameDirector,
+    ) -> bool {
         //  could prevent art by effect
         if game.has_modifier(card, PreventArt(art_idx)) {
             return false;
@@ -431,7 +443,11 @@ impl HoloMemberCard {
 
         self.arts[art_idx]
             .condition
-            .evaluate_with_card(&game.game, card, false)
+            .ctx()
+            .with_card(card, &game.game)
+            .with_target(target_card)
+            .evaluate(&game.game)
+        // .evaluate_with_card(&game.game, card, false)
     }
 }
 
@@ -636,7 +652,10 @@ impl SupportCard {
             return false;
         }
 
-        self.condition.evaluate_with_card(&game.game, card, false)
+        self.condition
+            .ctx()
+            .with_card(card, &game.game)
+            .evaluate(&game.game)
     }
 
     pub fn can_attach_target(
@@ -656,7 +675,10 @@ impl SupportCard {
         }
 
         self.condition
-            .evaluate_with_card(&game.game, card, is_triggered)
+            .ctx()
+            .with_card(card, &game.game)
+            .with_triggered(is_triggered)
+            .evaluate(&game.game)
     }
 }
 

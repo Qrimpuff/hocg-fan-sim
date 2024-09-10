@@ -1201,7 +1201,7 @@ impl GameDirector {
                     .iter()
                     .enumerate()
                     // TODO check opponent condition
-                    .filter(|(i, _)| mem.1.can_use_art(mem.0, *i, self))
+                    .filter(|(i, _)| mem.1.can_use_art(mem.0, *i, op.0, self))
                 {
                     actions.push(PerformanceStepAction::UseArt {
                         card: mem.0,

@@ -199,6 +199,9 @@ pub enum CardReference {
     // event_origin -> <card_ref>
     #[hocg_fan_sim(token = "event_origin")]
     EventOrigin,
+    // target -> <[card_ref]>
+    #[hocg_fan_sim(token = "target")]
+    Target,
     // this_card -> <card_ref>
     #[hocg_fan_sim(token = "this_card")]
     ThisCard,
@@ -224,6 +227,9 @@ pub enum CardReferences {
     // leftovers -> <[card_ref]>
     #[hocg_fan_sim(token = "leftovers")]
     Leftovers,
+    // target -> <[card_ref]>
+    #[hocg_fan_sim(token = "target")]
+    Target,
     // this_card -> <[card_ref]>
     #[hocg_fan_sim(token = "this_card")]
     ThisCard,
@@ -288,6 +294,9 @@ pub enum Condition {
     // is_even <value> -> <condition>
     #[hocg_fan_sim(token = "is_even")]
     IsEven(Number),
+    // is_in_zone <zone> -> <condition>
+    #[hocg_fan_sim(token = "is_in_zone")]
+    IsInZone(Zone),
     // is_level_first -> <condition>
     #[hocg_fan_sim(token = "is_level_first")]
     IsLevelFirst,

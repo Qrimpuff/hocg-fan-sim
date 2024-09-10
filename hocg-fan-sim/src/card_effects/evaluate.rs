@@ -17,60 +17,149 @@ use crate::{
 
 static VAR_THIS_CARD: &str = "&_this_card";
 static VAR_LEFTOVERS: &str = "&_leftovers";
+static VAR_TARGET: &str = "&_target";
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct EvaluateContext {
-    pub active_card: Option<CardRef>,
-    pub active_player: Option<gameplay::Player>,
-    // pub card_target: Option<CardRef>,
-    // pub player_target: Option<gameplay::Player>,
-    pub variables: HashMap<String, LetValue>,
-    // pub event: Option<&'a Event>,
-    pub is_triggered: bool,
-}
-
-impl EvaluateContext {
-    pub fn new() -> Self {
-        EvaluateContext {
-            active_card: None,
-            active_player: None,
-            // card_target: None,
-            // player_target: None,
-            variables: HashMap::new(),
-            // event: None,
-            is_triggered: false,
-        }
-    }
-    pub fn with_card(card: CardRef, game: &Game, is_trigger: bool) -> Self {
-        let player = game.player_for_card(card);
-        let mut variables = HashMap::new();
-        variables.insert(
-            VAR_THIS_CARD.into(),
-            LetValue::CardReferences([card].into()),
-        );
-        EvaluateContext {
-            active_card: Some(card),
-            active_player: Some(player),
-            // card_target: Some(card),
-            // player_target: Some(player),
-            variables,
-            // event: None,
-            is_triggered: is_trigger,
-        }
-    }
-
-    pub fn for_card(&self, card: CardRef) -> Self {
-        let mut new = self.clone();
-        new.active_card = Some(card);
-        new
-    }
-}
+pub type EvaluateResult<T> = Result<T, GameOutcome>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LetValue {
     CardReferences(Vec<CardRef>),
     Condition(Condition),
     Number(usize),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct EvaluateContext {
+    pub active_card: Option<CardRef>,
+    pub active_player: Option<gameplay::Player>,
+    pub variables: HashMap<String, LetValue>,
+    pub is_triggered: bool,
+}
+
+impl EvaluateContext {
+    pub fn for_card(&self, card: CardRef) -> Self {
+        // temporary target for filters
+        let mut new = self.clone();
+        new.active_card = Some(card);
+        new
+    }
+}
+
+#[derive(Debug)]
+pub struct EvaluateBuilder<'a, T> {
+    effect: &'a T,
+    context: EvaluateContext,
+}
+
+impl<T> EvaluateBuilder<'_, T> {
+    pub fn with_card(mut self, card: CardRef, game: &Game) -> Self
+    where
+        Self: Sized,
+    {
+        // set the active card
+        self.context.active_card = Some(card);
+        self.context.variables.insert(
+            VAR_THIS_CARD.into(),
+            LetValue::CardReferences([card].into()),
+        );
+
+        // set the active player
+        let player = game.player_for_card(card);
+        self.context.active_player = Some(player);
+
+        self
+    }
+
+    pub fn with_triggered(mut self, is_triggered: bool) -> Self
+    where
+        Self: Sized,
+    {
+        // triggered from an event
+        self.context.is_triggered = is_triggered;
+
+        self
+    }
+
+    pub fn with_target(mut self, target: CardRef) -> Self {
+        // set target for arts and attachments
+        self.context
+            .variables
+            .insert(VAR_TARGET.into(), LetValue::CardReferences([target].into()));
+        self
+    }
+}
+
+impl<T> EvaluateBuilder<'_, T>
+where
+    T: EvaluateEffectMut,
+{
+    pub async fn evaluate_mut(self, game: &mut GameDirector) -> EvaluateResult<T::Value> {
+        let mut context = self.context;
+        let card = context.active_card;
+
+        if let Some(card) = card {
+            game.game.event_span.open_card_span(card);
+        }
+
+        let value = self
+            .effect
+            .evaluate_with_context_mut(&mut context, game)
+            .await;
+
+        if let Some(card) = card {
+            game.game.event_span.close_card_span(card);
+        }
+
+        game.remove_expiring_modifiers(modifiers::LifeTime::ThisEffect)
+            .await?;
+
+        value
+    }
+}
+
+impl<T> EvaluateBuilder<'_, T>
+where
+    T: EvaluateEffect,
+{
+    pub fn evaluate(self, game: &Game) -> T::Value {
+        self.effect.evaluate_with_context(&self.context, game)
+    }
+}
+
+#[allow(async_fn_in_trait)]
+pub trait EvaluateEffectMut {
+    type Value;
+
+    fn ctx(&self) -> EvaluateBuilder<Self>
+    where
+        Self: Sized,
+    {
+        EvaluateBuilder {
+            effect: self,
+            context: Default::default(),
+        }
+    }
+
+    async fn evaluate_with_context_mut(
+        &self,
+        ctx: &mut EvaluateContext,
+        game: &mut GameDirector,
+    ) -> EvaluateResult<Self::Value>;
+}
+pub trait EvaluateEffect {
+    type Value;
+
+    fn ctx(&self) -> EvaluateBuilder<Self>
+    where
+        Self: Sized,
+    {
+        EvaluateBuilder {
+            effect: self,
+            context: Default::default(),
+        }
+    }
+
+    fn evaluate_with_context(&self, ctx: &EvaluateContext, game: &Game) -> Self::Value;
 }
 
 pub trait CombineEffect {
@@ -84,86 +173,6 @@ impl CombineEffect for bool {
     fn combine_effect(self, other: Self) -> Self {
         self && other
     }
-}
-
-pub type EvaluateResult<T> = Result<T, GameOutcome>;
-
-pub(crate) trait EvaluateEffectMut {
-    type Value;
-
-    async fn evaluate_with_context_mut(
-        &self,
-        ctx: &mut EvaluateContext,
-        game: &mut GameDirector,
-    ) -> EvaluateResult<Self::Value>;
-
-    async fn evaluate_with_card_mut(
-        &self,
-        game: &mut GameDirector,
-        card: CardRef,
-        is_triggered: bool,
-    ) -> EvaluateResult<Self::Value>
-    where
-        Self: Sized,
-    {
-        game.game.event_span.open_card_span(card);
-        let value = self
-            .evaluate_with_context_mut(
-                &mut EvaluateContext::with_card(card, &game.game, is_triggered),
-                game,
-            )
-            .await;
-        game.game.event_span.close_card_span(card);
-
-        game.remove_expiring_modifiers(modifiers::LifeTime::ThisEffect)
-            .await?;
-
-        value
-    }
-    // fn evaluate_with_card_event_mut(
-    //     &self,
-    //     game: &mut Game,
-    //     card: CardRef,
-    //     event: &Event,
-    // ) -> EvaluateResult<Self::Value>
-    // where
-    //     Self: Sized,
-    // {
-    //     game.state.event_span.open_card_span(card);
-    //     let mut ctx = EvaluateContext::with_card(card, &game.state);
-    //     ctx.event = Some(event);
-    //     let value = self.evaluate_with_context_mut(&mut ctx, game);
-    //     game.state.event_span.close_card_span(card);
-
-    //     game.remove_expiring_modifiers( modifiers::LifeTime::ThisEffect)?;
-
-    //     value
-    // }
-}
-pub trait EvaluateEffect {
-    type Value;
-
-    fn evaluate_with_context(&self, ctx: &EvaluateContext, game: &Game) -> Self::Value;
-
-    fn evaluate_with_card(&self, game: &Game, card: CardRef, is_triggered: bool) -> Self::Value
-    where
-        Self: Sized,
-    {
-        self.evaluate_with_context(&EvaluateContext::with_card(card, game, is_triggered), game)
-    }
-    // fn evaluate_with_card_event(
-    //     &self,
-    //     game: &GameState,
-    //     card: CardRef,
-    //     event: &Event,
-    // ) -> Self::Value
-    // where
-    //     Self: Sized,
-    // {
-    //     let mut ctx = EvaluateContext::with_card(card, game);
-    //     ctx.event = Some(event);
-    //     self.evaluate_with_context(&ctx, game)
-    // }
 }
 
 impl<I, E, V> EvaluateEffectMut for I
@@ -352,6 +361,9 @@ impl EvaluateEffect for CardReference {
                 .event_span
                 .event_origin_for_evaluate(ctx)
                 .expect("there should be an event origin card"),
+            CardReference::Target => {
+                CardReference::Var(Var(VAR_TARGET.into())).evaluate_with_context(ctx, game)
+            }
             CardReference::ThisCard => {
                 CardReference::Var(Var(VAR_THIS_CARD.into())).evaluate_with_context(ctx, game)
             }
@@ -401,6 +413,9 @@ impl EvaluateEffect for CardReferences {
             }
             CardReferences::Leftovers => {
                 CardReferences::Var(Var(VAR_LEFTOVERS.into())).evaluate_with_context(ctx, game)
+            }
+            CardReferences::Target => {
+                CardReferences::Var(Var(VAR_TARGET.into())).evaluate_with_context(ctx, game)
             }
             CardReferences::ThisCard => {
                 CardReferences::Var(Var(VAR_THIS_CARD.into())).evaluate_with_context(ctx, game)
@@ -486,6 +501,11 @@ impl EvaluateEffect for Condition {
             Condition::IsEven(value) => {
                 let value = value.evaluate_with_context(ctx, game);
                 value % 2 == 0
+            }
+            Condition::IsInZone(zone) => {
+                let (player, zone) = zone.evaluate_with_context(ctx, game);
+                let card = ctx.active_card.expect("there should be an active card");
+                game.board(player).find_card_zone(card) == Some(zone)
             }
             Condition::IsLevelFirst => {
                 let card = ctx.active_card.expect("there should be an active card");
