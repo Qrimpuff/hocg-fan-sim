@@ -14,7 +14,7 @@ pub fn card() -> Card {
                 let $roll = roll_dice
                 if $roll >= 3 (
                     let $cheer = select_one from archive is_cheer
-                    if exist $cheer (
+                    if exists $cheer (
                         let $mem = select_one from stage is_member
                         attach_cards $cheer $mem
                     )

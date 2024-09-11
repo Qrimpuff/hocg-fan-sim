@@ -52,6 +52,7 @@ pub enum ModifierKind {
     SkipStep(Step),
     MoreDamage(usize),
     NextDiceRoll(usize),
+    NoLifeLoss,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, GetSize, Encode, Decode)]

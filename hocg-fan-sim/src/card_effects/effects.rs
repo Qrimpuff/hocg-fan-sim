@@ -155,6 +155,12 @@ pub enum Action {
     // attach_cards <[card_ref]> <card_ref> -> <action>
     #[hocg_fan_sim(token = "attach_cards")]
     AttachCards(CardReferences, CardReference),
+    // deal_damage <[card_ref]> <value> -> <action>
+    #[hocg_fan_sim(token = "deal_damage")]
+    DealDamage(CardReferences, Number),
+    // deal_special_damage <[card_ref]> <value> -> <action>
+    #[hocg_fan_sim(token = "deal_special_damage")]
+    DealSpecialDamage(CardReferences, Number),
     // draw <value> -> <action>
     #[hocg_fan_sim(token = "draw")]
     Draw(Number),
@@ -267,9 +273,9 @@ pub enum Condition {
     // <value> == <value> -> <condition>
     #[hocg_fan_sim(infix = "==")]
     Equals(Number, Number),
-    // exist <[card_ref]> -> <condition>
-    #[hocg_fan_sim(token = "exist")]
-    Exist(CardReferences),
+    // exists <[card_ref]> -> <condition>
+    #[hocg_fan_sim(token = "exists")]
+    Exists(CardReferences),
     // false -> <condition>
     #[hocg_fan_sim(token = "false")]
     False,
@@ -396,6 +402,9 @@ pub enum Modifier {
     // next_dice_roll <value> -> <mod>
     #[hocg_fan_sim(token = "next_dice_roll")]
     NextDiceRoll(Number),
+    // no_life_loss -> <mod>
+    #[hocg_fan_sim(token = "no_life_loss")]
+    NoLifeLoss,
     // when <condition> <mod>  -> <mod>
     #[hocg_fan_sim(token = "when")]
     When(Condition, Box<Modifier>),

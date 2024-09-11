@@ -8,6 +8,7 @@ use crate::cards::*;
 use crate::events::Shuffle;
 use crate::gameplay::Player;
 use crate::gameplay::Zone;
+use crate::modifiers::DamageMarkers;
 use crate::modifiers::LifeTime;
 use crate::modifiers::ModifierKind;
 use crate::{
@@ -273,6 +274,24 @@ impl EvaluateEffectMut for Action {
                 game.attach_cards_to_card(player, attachments, target)
                     .await?;
             }
+            Action::DealDamage(targets, amount) => {
+                let card = ctx.active_card.expect("there should be an active card");
+                let targets = targets.evaluate_with_context(ctx, &game.game);
+                let amount = amount.evaluate_with_context(ctx, &game.game);
+                for target in targets {
+                    game.deal_damage(card, target, DamageMarkers::from_hp(amount as u16), false)
+                        .await?;
+                }
+            }
+            Action::DealSpecialDamage(targets, amount) => {
+                let card = ctx.active_card.expect("there should be an active card");
+                let targets = targets.evaluate_with_context(ctx, &game.game);
+                let amount = amount.evaluate_with_context(ctx, &game.game);
+                for target in targets {
+                    game.deal_damage(card, target, DamageMarkers::from_hp(amount as u16), true)
+                        .await?;
+                }
+            }
             Action::Draw(amount) => {
                 game.draw_from_main_deck(
                     ctx.active_player
@@ -467,7 +486,7 @@ impl EvaluateEffect for Condition {
                 let value_2 = value_2.evaluate_with_context(ctx, game);
                 value_1 == value_2
             }
-            Condition::Exist(cards) => {
+            Condition::Exists(cards) => {
                 let cards = cards.evaluate_with_context(ctx, game);
                 !cards.is_empty()
             }
@@ -693,6 +712,7 @@ impl EvaluateEffect for Modifier {
                 let number = number.evaluate_with_context(ctx, game);
                 ModifierKind::NextDiceRoll(number)
             }
+            Modifier::NoLifeLoss => ModifierKind::NoLifeLoss,
             Modifier::When(condition, modifier) => {
                 let modifier = modifier.evaluate_with_context(ctx, game);
                 ModifierKind::Conditional(condition.clone(), Box::new(modifier))

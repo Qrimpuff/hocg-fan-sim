@@ -176,11 +176,15 @@ impl GameStateBuilder {
         self.state.card_modifiers = card_modifiers;
         self
     }
-    pub fn with_card_damage_markers(
+    pub fn with_damage_markers(
         mut self,
-        card_damage_markers: HashMap<CardRef, DamageMarkers>,
+        player: Player,
+        zone: Zone,
+        card_idx: usize,
+        damage_markers: DamageMarkers,
     ) -> Self {
-        self.state.card_damage_markers = card_damage_markers;
+        let card = self.state.board(player).get_zone(zone).all_cards()[card_idx];
+        self.state.card_damage_markers.insert(card, damage_markers);
         self
     }
 }
@@ -250,7 +254,7 @@ pub fn setup_test_logs() -> tracing_appender::non_blocking::WorkerGuard {
 
     let file_appender = tracing_appender::rolling::daily("logs", "hocg-fan-sim.log");
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
-    tracing_subscriber::fmt()
+    let _ = tracing_subscriber::fmt()
         .with_timer(LocalTime::new(format_description!(
             "[year]-[month]-[day] [hour repr:24]:[minute]:[second].[subsecond digits:4]"
         )))
@@ -259,7 +263,7 @@ pub fn setup_test_logs() -> tracing_appender::non_blocking::WorkerGuard {
         // enable thread id to be emitted
         .with_thread_ids(true)
         .with_env_filter(EnvFilter::from_default_env())
-        .init();
+        .try_init();
     // -------------- end setup logs -------------------
     guard
 }

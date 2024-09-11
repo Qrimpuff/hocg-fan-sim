@@ -30,8 +30,8 @@ pub fn card() -> Card {
                 text: "[Once per game] Switch 1 of your opponent's Back position holomem with their Center position holomem. Until end of turn, your White Center position holomem have +50 to their Arts.".into(),
                 triggers: vec![],
                 condition: (r"
-                    exist from opponent_center_stage
-                    exist from opponent_back_stage
+                    exists from opponent_center_stage
+                    exists from opponent_back_stage
                 ").parse_effect().unwrap(),
                 effect: (r"
                     let $back_mem = select_one from opponent_back_stage is_member

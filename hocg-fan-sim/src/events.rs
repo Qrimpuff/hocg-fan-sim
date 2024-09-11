@@ -1285,10 +1285,10 @@ impl GameDirector {
 
     pub async fn deal_damage(
         &mut self,
-
         card: CardRef,
         target: CardRef,
         dmg: DamageMarkers,
+        is_special: bool,
     ) -> GameResult {
         let player = self.player_for_card(card);
         let card_zone = self
@@ -1309,6 +1309,7 @@ impl GameDirector {
                 target_player,
                 target: (target_zone, target),
                 dmg,
+                is_special,
             }
             .into(),
         )
@@ -2263,6 +2264,7 @@ impl EvaluateEvent for AddDamageMarkers {
         // calculate life loss
         let life_loss = defeated
             .iter()
+            .filter(|c| !game.has_modifier(**c, NoLifeLoss))
             .filter_map(|c| game.lookup_holo_member(*c))
             .map(|m| {
                 // buzz members loses 2 lives
@@ -3050,7 +3052,7 @@ impl EvaluateEvent for PerformArt {
 
         // deal damage if there is a target. if any other damage is done, it will be in the effect
         if let Some(target) = self.target {
-            game.deal_damage(self.card.1, target.1, dmg).await?;
+            game.deal_damage(self.card.1, target.1, dmg, false).await?;
         }
 
         game.game.event_span.open_untracked_span();
@@ -3110,6 +3112,7 @@ pub struct DealDamage {
     pub target_player: Player,
     pub target: (Zone, CardRef),
     pub dmg: DamageMarkers,
+    pub is_special: bool,
 }
 impl EvaluateEvent for DealDamage {
     fn apply_state_change(&self, _state: &mut GameState) {

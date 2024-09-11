@@ -486,10 +486,13 @@ pub enum HoloMemberHashTag {
     Gen5,
     SecretSocietyholoX,
     IDGen1,
+    IDGen3,
+    Myth,
     Promise,
     // misc
     Alcohol,
     AnimalEars,
+    Bird,
     Drawing,
     Song,
 }

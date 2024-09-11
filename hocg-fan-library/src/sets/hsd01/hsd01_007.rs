@@ -17,7 +17,7 @@ pub fn card() -> Card {
             name: "HOPE".into(),
             text: "Look at your holoPOWER. You may reveal a card from among your holoPOWER and put it into your hand. Then put 1 card from your hand onto your holoPOWER.".into(),
             condition: (r"
-                exist from holo_power
+                exists from holo_power
             ").parse_effect().expect("hSD01-007"),
             effect: (r"
                 let $choice = select_one from holo_power anything

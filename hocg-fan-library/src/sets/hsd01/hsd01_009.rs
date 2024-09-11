@@ -19,7 +19,7 @@ pub fn card() -> Card {
             condition: vec![],
             effect: (r"
                 let $roll = roll_dice
-                if (($roll <= 4) and exist from back_stage) (
+                if (($roll <= 4) and exists from back_stage) (
                     let $cheer = from_top 1 cheer_deck
                     reveal $cheer
                     let $back_mem = select_one from back_stage is_member
