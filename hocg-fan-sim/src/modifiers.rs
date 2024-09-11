@@ -329,7 +329,6 @@ impl GameDirector {
 
     pub async fn add_modifier(
         &mut self,
-
         card: CardRef,
         kind: ModifierKind,
         life_time: LifeTime,
@@ -338,28 +337,21 @@ impl GameDirector {
     }
     pub async fn add_many_modifiers(
         &mut self,
-
         card: CardRef,
         modifiers: Vec<(ModifierKind, LifeTime)>,
     ) -> GameResult {
-        let player = self.player_for_card(card);
-        let zone = self
-            .board(player)
-            .find_card_zone(card)
-            .expect("the card should be in a zone");
         let modifiers = modifiers
             .into_iter()
             .map(|(kind, life_time)| {
                 Modifier::for_card(card, kind, life_time, &mut self.next_modifier_ref)
             })
             .collect();
-        self.add_many_modifiers_to_many_cards(player, zone, vec![card], modifiers)
+        self.add_many_modifiers_to_many_cards(vec![card], modifiers)
             .await
     }
 
     pub async fn add_zone_modifier(
         &mut self,
-
         player: Player,
         zone: Zone,
         kind: ModifierKind,
@@ -370,7 +362,6 @@ impl GameDirector {
     }
     pub async fn add_many_zone_modifiers(
         &mut self,
-
         player: Player,
         zone: Zone,
         kind: ModifierKind,
@@ -398,16 +389,9 @@ impl GameDirector {
     }
     pub async fn remove_all_modifiers_with(
         &mut self,
-
         card: CardRef,
         filter_fn: impl FnMut(&&Modifier) -> bool,
     ) -> GameResult {
-        let player = self.player_for_card(card);
-        let zone = self
-            .board(player)
-            .find_card_zone(card)
-            .expect("the card should be in a zone");
-
         let modifiers = self
             .game
             .state
@@ -419,13 +403,12 @@ impl GameDirector {
             .map(|m| m.id)
             .collect();
 
-        self.remove_many_modifiers_from_many_cards(player, zone, vec![card], modifiers)
+        self.remove_many_modifiers_from_many_cards(vec![card], modifiers)
             .await
     }
 
     pub async fn remove_all_zone_modifiers(
         &mut self,
-
         player: Player,
         zone: Zone,
         kind: ModifierKind,
@@ -435,7 +418,6 @@ impl GameDirector {
     }
     pub async fn remove_all_zone_modifiers_with(
         &mut self,
-
         player: Player,
         zone: Zone,
         filter_fn: impl FnMut(&&(Zone, Modifier)) -> bool,
@@ -457,14 +439,7 @@ impl GameDirector {
     }
 
     pub async fn clear_all_modifiers(&mut self, card: CardRef) -> GameResult {
-        let player = self.player_for_card(card);
-        let zone = self
-            .board(player)
-            .find_card_zone(card)
-            .expect("the card should be in a zone");
-
-        self.clear_all_modifiers_from_many_cards(player, zone, vec![card])
-            .await
+        self.clear_all_modifiers_from_many_cards(vec![card]).await
     }
 
     pub async fn remove_expiring_modifiers(&mut self, life_time: LifeTime) -> GameResult {
@@ -477,16 +452,11 @@ impl GameDirector {
             .flat_map(|(c, ms)| ms.iter().map(move |m| (c, m)))
             .filter(|(_, m)| m.life_time == life_time)
             .fold(HashMap::new(), |mut c_m, (c, m)| {
-                let p = self.player_for_card(*c);
-                let z = self
-                    .board(p)
-                    .find_card_zone(*c)
-                    .expect("the card should be in a zone");
-                c_m.entry((p, z, *c)).or_default().push(m.id);
+                c_m.entry(*c).or_default().push(m.id);
                 c_m
             });
-        for ((p, z, c), m) in c_mods {
-            self.remove_many_modifiers_from_many_cards(p, z, vec![c], m)
+        for (c, m) in c_mods {
+            self.remove_many_modifiers_from_many_cards(vec![c], m)
                 .await?;
         }
 
@@ -523,14 +493,7 @@ impl GameDirector {
     }
 
     pub async fn add_damage_markers(&mut self, card: CardRef, dmg: DamageMarkers) -> GameResult {
-        let player = self.player_for_card(card);
-        let zone = self
-            .board(player)
-            .find_card_zone(card)
-            .expect("the card should be in a zone");
-
-        self.add_damage_markers_to_many_cards(player, zone, vec![card], dmg)
-            .await
+        self.add_damage_markers_to_many_cards(vec![card], dmg).await
     }
 
     pub async fn remove_damage_markers(&mut self, card: CardRef, dmg: DamageMarkers) -> GameResult {
@@ -540,7 +503,7 @@ impl GameDirector {
             .find_card_zone(card)
             .expect("the card should be in a zone");
 
-        self.remove_damage_markers_from_many_cards(player, zone, vec![card], dmg)
+        self.remove_damage_markers_from_many_cards(vec![card], dmg)
             .await
     }
 }

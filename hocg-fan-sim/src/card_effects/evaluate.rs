@@ -271,8 +271,7 @@ impl EvaluateEffectMut for Action {
                 }
                 let player = game
                     .player_for_card(*attachments.first().expect("should have at least one card"));
-                game.attach_cards_to_card(player, attachments, target)
-                    .await?;
+                game.attach_cards_to_card(attachments, target).await?;
             }
             Action::DealDamage(targets, amount) => {
                 let card = ctx.active_card.expect("there should be an active card");
@@ -330,7 +329,7 @@ impl EvaluateEffectMut for Action {
             Action::Reveal(cards) => {
                 let cards = cards.evaluate_with_context(ctx, &game.game);
                 let map: HashMap<(Player, Zone), Vec<CardRef>> =
-                    game.group_by_player_and_zone(cards);
+                    game.group_by_player_and_zone(&cards);
                 for ((player, zone), cards) in map {
                     game.reveal_cards(player, zone, &cards).await?;
                 }
@@ -340,8 +339,7 @@ impl EvaluateEffectMut for Action {
                 let cards = cards.evaluate_with_context(ctx, &game.game);
                 if let Some(c) = cards.first() {
                     let player = game.player_for_card(*c);
-                    game.send_cards_to_zone(player, cards, to_zone, to_zone.default_add_location())
-                        .await?;
+                    game.send_to_zone(cards, to_zone).await?;
                 }
             }
             Action::SendToBottom(to_zone, cards) => {
@@ -349,7 +347,7 @@ impl EvaluateEffectMut for Action {
                 let cards = cards.evaluate_with_context(ctx, &game.game);
                 if let Some(c) = cards.first() {
                     let player = game.player_for_card(*c);
-                    game.send_cards_to_zone(player, cards, to_zone, ZoneAddLocation::Bottom)
+                    game.send_to_zone_with_location(cards, to_zone, ZoneAddLocation::Bottom)
                         .await?;
                 }
             }
@@ -358,13 +356,13 @@ impl EvaluateEffectMut for Action {
                 let cards = cards.evaluate_with_context(ctx, &game.game);
                 if let Some(c) = cards.first() {
                     let player = game.player_for_card(*c);
-                    game.send_cards_to_zone(player, cards, to_zone, ZoneAddLocation::Top)
+                    game.send_to_zone_with_location(cards, to_zone, ZoneAddLocation::Top)
                         .await?;
                 }
             }
             Action::Shuffle(zone) => {
                 let (player, zone) = zone.evaluate_with_context(ctx, &game.game);
-                game.shuffle_decks(&[(player, zone)]).await?;
+                game.shuffle_decks(vec![(player, zone)]).await?;
             }
         }
         Ok(())

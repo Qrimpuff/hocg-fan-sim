@@ -79,10 +79,8 @@ pub enum Event {
     ClearDamageMarkers,
 
     LookAndSelect,
-    ZoneToZone,
-    ZoneToAttach,
-    AttachToAttach,
-    AttachToZone,
+    SendToZone,
+    AttachToCard,
 
     /// marker event before zone to attach (deck -> hand)
     Draw,
@@ -585,7 +583,6 @@ impl GameDirector {
     }
     pub async fn report_enter_step(
         &mut self,
-
         active_player: Player,
         active_step: Step,
     ) -> GameResult {
@@ -602,7 +599,6 @@ impl GameDirector {
     }
     pub async fn report_exit_step(
         &mut self,
-
         active_player: Player,
         active_step: Step,
     ) -> GameResult {
@@ -620,33 +616,19 @@ impl GameDirector {
 
     pub async fn send_full_hand_to_main_deck(&mut self, player: Player) -> GameResult {
         let hand = self.board(player).get_zone(Zone::Hand);
-        self.send_event(
-            ZoneToZone {
-                player,
-                from_zone: Zone::Hand,
-                cards: hand.peek_top_cards(hand.count()),
-                to_zone: Zone::MainDeck,
-                to_zone_location: Zone::MainDeck.default_add_location(),
-            }
-            .into(),
-        )
-        .await?;
+        let cards = hand.peek_top_cards(hand.count());
+
+        self.send_to_zone(cards, Zone::MainDeck).await?;
 
         Ok(GameContinue)
     }
 
-    pub async fn shuffle_decks(&mut self, decks: &[(Player, Zone)]) -> GameResult {
+    pub async fn shuffle_decks(&mut self, decks: Vec<(Player, Zone)>) -> GameResult {
         if decks.is_empty() {
             return Ok(GameContinue);
         }
 
-        self.send_event(
-            Shuffle {
-                decks: decks.into(),
-            }
-            .into(),
-        )
-        .await?;
+        self.send_event(Shuffle { decks }.into()).await?;
 
         Ok(GameContinue)
     }
@@ -677,7 +659,6 @@ impl GameDirector {
 
     pub async fn reveal_cards(
         &mut self,
-
         player: Player,
         zone: Zone,
         cards: &[CardRef],
@@ -709,69 +690,15 @@ impl GameDirector {
         Ok(GameContinue)
     }
 
-    pub async fn send_from_hand_to_center_stage(
-        &mut self,
-
-        player: Player,
-        card: CardRef,
-    ) -> GameResult {
-        self.send_event(
-            ZoneToZone {
-                player,
-                from_zone: Zone::Hand,
-                cards: vec![card],
-                to_zone: Zone::CenterStage,
-                to_zone_location: Zone::CenterStage.default_add_location(),
-            }
-            .into(),
-        )
-        .await?;
+    pub async fn send_to_center_stage(&mut self, card: CardRef) -> GameResult {
+        let cards = vec![card];
+        self.send_to_zone(cards, Zone::CenterStage).await?;
 
         Ok(GameContinue)
     }
 
-    pub async fn send_from_back_stage_to_center_stage(
-        &mut self,
-
-        player: Player,
-        card: CardRef,
-    ) -> GameResult {
-        self.send_event(
-            ZoneToZone {
-                player,
-                from_zone: Zone::BackStage,
-                cards: vec![card],
-                to_zone: Zone::CenterStage,
-                to_zone_location: Zone::CenterStage.default_add_location(),
-            }
-            .into(),
-        )
-        .await?;
-
-        Ok(GameContinue)
-    }
-
-    pub async fn send_from_hand_to_back_stage(
-        &mut self,
-
-        player: Player,
-        cards: Vec<CardRef>,
-    ) -> GameResult {
-        if cards.is_empty() {
-            return Ok(GameContinue);
-        }
-
-        self.send_event(
-            ZoneToZone {
-                player,
-                from_zone: Zone::Hand,
-                cards,
-                to_zone: Zone::BackStage,
-                to_zone_location: Zone::BackStage.default_add_location(),
-            }
-            .into(),
-        )
-        .await?;
+    pub async fn send_to_back_stage(&mut self, cards: Vec<CardRef>) -> GameResult {
+        self.send_to_zone(cards, Zone::BackStage).await?;
 
         Ok(GameContinue)
     }
@@ -782,26 +709,14 @@ impl GameDirector {
         }
 
         let deck = self.board(player).get_zone(Zone::MainDeck);
-        if deck.count() > 0 {
-            self.send_event(
-                ZoneToZone {
-                    player,
-                    from_zone: Zone::MainDeck,
-                    cards: deck.peek_top_cards(amount),
-                    to_zone: Zone::HoloPower,
-                    to_zone_location: Zone::HoloPower.default_add_location(),
-                }
-                .into(),
-            )
-            .await?;
-        }
+        let cards = deck.peek_top_cards(amount);
+        self.send_to_zone(cards, Zone::HoloPower).await?;
 
         Ok(GameContinue)
     }
 
     pub async fn send_holo_power_to_archive(
         &mut self,
-
         player: Player,
         amount: usize,
     ) -> GameResult {
@@ -814,31 +729,16 @@ impl GameDirector {
             panic!("not enough holo power");
         }
 
-        self.send_event(
-            ZoneToZone {
-                player,
-                from_zone: Zone::HoloPower,
-                cards: power.peek_top_cards(amount),
-                to_zone: Zone::Archive,
-                to_zone_location: Zone::Archive.default_add_location(),
-            }
-            .into(),
-        )
-        .await?;
+        let cards = power.peek_top_cards(amount);
+        self.send_to_zone(cards, Zone::Archive).await?;
 
         Ok(GameContinue)
     }
 
-    pub async fn send_from_back_stage_to_collab(
-        &mut self,
-
-        player: Player,
-        card: CardRef,
-    ) -> GameResult {
+    pub async fn send_to_collab(&mut self, card: CardRef) -> GameResult {
         self.send_event(
             Collab {
-                player,
-                card: (Zone::BackStage, card),
+                card,
                 holo_power_amount: 1, // TODO some cards could maybe power for more
             }
             .into(),
@@ -848,64 +748,9 @@ impl GameDirector {
         Ok(GameContinue)
     }
 
-    pub async fn send_from_collab_to_back_stage(
-        &mut self,
-
-        player: Player,
-        card: CardRef,
-    ) -> GameResult {
-        self.send_event(
-            ZoneToZone {
-                player,
-                from_zone: Zone::Collab,
-                cards: vec![card],
-                to_zone: Zone::BackStage,
-                to_zone_location: Zone::BackStage.default_add_location(),
-            }
-            .into(),
-        )
-        .await?;
-
-        Ok(GameContinue)
-    }
-
-    pub async fn send_from_center_stage_to_back_stage(
-        &mut self,
-
-        player: Player,
-        card: CardRef,
-    ) -> GameResult {
-        self.send_event(
-            ZoneToZone {
-                player,
-                from_zone: Zone::CenterStage,
-                cards: vec![card],
-                to_zone: Zone::BackStage,
-                to_zone_location: Zone::BackStage.default_add_location(),
-            }
-            .into(),
-        )
-        .await?;
-
-        Ok(GameContinue)
-    }
-
-    pub async fn baton_pass_center_stage_to_back_stage(
-        &mut self,
-
-        player: Player,
-        from_card: CardRef,
-        to_card: CardRef,
-    ) -> GameResult {
-        self.send_event(
-            BatonPass {
-                player,
-                from_card: (Zone::CenterStage, from_card),
-                to_card: (Zone::BackStage, to_card),
-            }
-            .into(),
-        )
-        .await?;
+    pub async fn baton_pass(&mut self, from_card: CardRef, to_card: CardRef) -> GameResult {
+        self.send_event(BatonPass { from_card, to_card }.into())
+            .await?;
 
         Ok(GameContinue)
     }
@@ -916,13 +761,39 @@ impl GameDirector {
         }
 
         let cheers = self.board(player).get_zone(Zone::CheerDeck);
+        let cards = cheers.peek_top_cards(amount);
+        self.send_to_zone(cards, Zone::Life).await?;
+
+        Ok(GameContinue)
+    }
+
+    pub async fn send_to_archive(&mut self, cards: Vec<CardRef>) -> GameResult {
+        self.send_to_zone(cards, Zone::Archive).await?;
+
+        Ok(GameContinue)
+    }
+
+    pub async fn send_to_zone(&mut self, cards: Vec<CardRef>, zone: Zone) -> GameResult {
+        self.send_to_zone_with_location(cards, zone, zone.default_add_location())
+            .await?;
+
+        Ok(GameContinue)
+    }
+    pub async fn send_to_zone_with_location(
+        &mut self,
+        cards: Vec<CardRef>,
+        zone: Zone,
+        zone_location: ZoneAddLocation,
+    ) -> GameResult {
+        if cards.is_empty() {
+            return Ok(GameContinue);
+        }
+
         self.send_event(
-            ZoneToZone {
-                player,
-                from_zone: Zone::CheerDeck,
-                cards: cheers.peek_top_cards(amount),
-                to_zone: Zone::Life,
-                to_zone_location: Zone::Life.default_add_location(),
+            SendToZone {
+                cards,
+                zone,
+                zone_location,
             }
             .into(),
         )
@@ -931,99 +802,8 @@ impl GameDirector {
         Ok(GameContinue)
     }
 
-    pub async fn send_cards_to_archive(
-        &mut self,
-
-        player: Player,
-        cards: Vec<CardRef>,
-    ) -> GameResult {
-        if cards.is_empty() {
-            return Ok(GameContinue);
-        }
-
-        for (zone, cards) in self.board(player).group_cards_by_zone(&cards) {
-            self.send_event(
-                ZoneToZone {
-                    player,
-                    from_zone: zone,
-                    cards,
-                    to_zone: Zone::Archive,
-                    to_zone_location: Zone::Archive.default_add_location(),
-                }
-                .into(),
-            )
-            .await?;
-        }
-
-        Ok(GameContinue)
-    }
-
-    pub async fn send_cards_to_zone(
-        &mut self,
-
-        player: Player,
-        cards: Vec<CardRef>,
-        to_zone: Zone,
-        location: ZoneAddLocation,
-    ) -> GameResult {
-        if cards.is_empty() {
-            return Ok(GameContinue);
-        }
-
-        let mut from_zone: HashMap<_, Vec<_>> = HashMap::new();
-        let mut from_cards: HashMap<_, Vec<_>> = HashMap::new();
-
-        // group by card or zone
-        for card in cards {
-            if let Some(attached_to) = self.board(player).attached_to(card) {
-                from_cards.entry(attached_to).or_default().push(card);
-            } else {
-                let zone = self
-                    .board(player)
-                    .find_card_zone(card)
-                    .expect("card should be in a zone");
-                from_zone.entry(zone).or_default().push(card);
-            }
-        }
-
-        for (zone, cards) in from_zone {
-            self.send_event(
-                ZoneToZone {
-                    player,
-                    from_zone: zone,
-                    cards,
-                    to_zone,
-                    to_zone_location: location,
-                }
-                .into(),
-            )
-            .await?;
-        }
-
-        for (from_card, attachments) in from_cards {
-            let from_zone = self
-                .board(player)
-                .find_card_zone(from_card)
-                .expect("card should be in a zone");
-            self.send_event(
-                AttachToZone {
-                    player,
-                    from_card: (from_zone, from_card),
-                    attachments,
-                    to_zone,
-                    to_zone_location: location,
-                }
-                .into(),
-            )
-            .await?;
-        }
-
-        Ok(GameContinue)
-    }
-
     pub async fn attach_cheers_from_zone(
         &mut self,
-
         player: Player,
         zone: Zone,
         amount: usize,
@@ -1046,27 +826,15 @@ impl GameDirector {
                     .expect("the card should be in a zone");
 
                 self.send_event(
-                    ZoneToAttach {
-                        player,
-                        from_zone: zone,
+                    AttachToCard {
                         attachments: vec![cheer],
-                        to_card: (to_zone, mem),
+                        card: mem,
                     }
                     .into(),
                 )
                 .await?;
             } else {
-                self.send_event(
-                    ZoneToZone {
-                        player,
-                        from_zone: zone,
-                        cards: vec![cheer],
-                        to_zone: Zone::Archive,
-                        to_zone_location: Zone::Archive.default_add_location(),
-                    }
-                    .into(),
-                )
-                .await?;
+                self.send_to_zone(vec![cheer], Zone::Archive).await?;
             }
         }
 
@@ -1075,8 +843,6 @@ impl GameDirector {
 
     pub async fn attach_cards_to_card(
         &mut self,
-
-        player: Player,
         attachments: Vec<CardRef>,
         card: CardRef,
     ) -> GameResult {
@@ -1084,95 +850,14 @@ impl GameDirector {
             return Ok(GameContinue);
         }
 
-        let to_zone = self
-            .board(player)
-            .find_card_zone(card)
-            .expect("card should be in a zone");
-        let mut from_zone: HashMap<_, Vec<_>> = HashMap::new();
-        let mut from_cards: HashMap<_, Vec<_>> = HashMap::new();
-
-        // group by card or zone
-        for card in attachments {
-            if let Some(attached_to) = self.board(player).attached_to(card) {
-                from_cards.entry(attached_to).or_default().push(card);
-            } else {
-                let zone = self
-                    .board(player)
-                    .find_card_zone(card)
-                    .expect("card should be in a zone");
-                from_zone.entry(zone).or_default().push(card);
-            }
-        }
-
-        for (zone, attachments) in from_zone {
-            self.send_event(
-                ZoneToAttach {
-                    player,
-                    from_zone: zone,
-                    attachments,
-                    to_card: (to_zone, card),
-                }
-                .into(),
-            )
+        self.send_event(AttachToCard { attachments, card }.into())
             .await?;
-        }
-
-        for (from_card, attachments) in from_cards {
-            let from_zone = self
-                .board(player)
-                .find_card_zone(from_card)
-                .expect("card should be in a zone");
-            self.send_event(
-                AttachToAttach {
-                    player,
-                    from_card: (from_zone, from_card),
-                    attachments,
-                    to_card: (to_zone, card),
-                }
-                .into(),
-            )
-            .await?;
-        }
-
-        Ok(GameContinue)
-    }
-
-    pub async fn send_attachments_to_archive(
-        &mut self,
-
-        player: Player,
-        card: CardRef,
-        attachments: Vec<CardRef>,
-    ) -> GameResult {
-        if attachments.is_empty() {
-            return Ok(GameContinue);
-        }
-
-        let zone = self
-            .board(player)
-            .find_card_zone(card)
-            .expect("the card should be in a zone");
-
-        self.send_event(
-            AttachToZone {
-                player,
-                from_card: (zone, card),
-                attachments,
-                to_zone: Zone::Archive,
-                to_zone_location: Zone::Archive.default_add_location(),
-            }
-            .into(),
-        )
-        .await?;
 
         Ok(GameContinue)
     }
 
     pub async fn add_many_modifiers_to_many_cards(
         &mut self,
-
-        player: Player,
-        zone: Zone,
         cards: Vec<CardRef>,
         modifiers: Vec<Modifier>,
     ) -> GameResult {
@@ -1180,25 +865,14 @@ impl GameDirector {
             return Ok(GameContinue);
         }
 
-        self.send_event(
-            AddCardModifiers {
-                player,
-                zone,
-                cards,
-                modifiers,
-            }
-            .into(),
-        )
-        .await?;
+        self.send_event(AddCardModifiers { cards, modifiers }.into())
+            .await?;
 
         Ok(GameContinue)
     }
 
     pub async fn remove_many_modifiers_from_many_cards(
         &mut self,
-
-        player: Player,
-        zone: Zone,
         cards: Vec<CardRef>,
         modifiers: Vec<ModifierRef>,
     ) -> GameResult {
@@ -1206,27 +880,13 @@ impl GameDirector {
             return Ok(GameContinue);
         }
 
-        self.send_event(
-            RemoveCardModifiers {
-                player,
-                zone,
-                cards,
-                modifiers,
-            }
-            .into(),
-        )
-        .await?;
+        self.send_event(RemoveCardModifiers { cards, modifiers }.into())
+            .await?;
 
         Ok(GameContinue)
     }
 
-    pub async fn clear_all_modifiers_from_many_cards(
-        &mut self,
-
-        player: Player,
-        zone: Zone,
-        cards: Vec<CardRef>,
-    ) -> GameResult {
+    pub async fn clear_all_modifiers_from_many_cards(&mut self, cards: Vec<CardRef>) -> GameResult {
         let cards = cards
             .into_iter()
             .filter(|c| self.game.state.card_modifiers.contains_key(c))
@@ -1236,22 +896,13 @@ impl GameDirector {
             return Ok(GameContinue);
         }
 
-        self.send_event(
-            ClearCardModifiers {
-                player,
-                zone,
-                cards,
-            }
-            .into(),
-        )
-        .await?;
+        self.send_event(ClearCardModifiers { cards }.into()).await?;
 
         Ok(GameContinue)
     }
 
     pub async fn add_many_modifiers_to_zone(
         &mut self,
-
         player: Player,
         zone: Zone,
         modifiers: Vec<Modifier>,
@@ -1275,7 +926,6 @@ impl GameDirector {
 
     pub async fn remove_many_modifiers_from_zone(
         &mut self,
-
         player: Player,
         zone: Zone,
         modifiers: Vec<ModifierRef>,
@@ -1304,24 +954,14 @@ impl GameDirector {
         dmg: DamageMarkers,
         is_special: bool,
     ) -> GameResult {
-        let player = self.player_for_card(card);
-        let card_zone = self
-            .board(player)
-            .find_card_zone(card)
-            .expect("the card should be in a zone");
-
-        let target_player = self.player_for_card(target);
-        let target_zone = self
-            .board(target_player)
-            .find_card_zone(target)
-            .expect("the target should be in a zone");
+        if dmg.0 < 1 {
+            return Ok(GameContinue);
+        }
 
         self.send_event(
             DealDamage {
-                player,
-                card: (card_zone, card),
-                target_player,
-                target: (target_zone, target),
+                card,
+                target,
                 dmg,
                 is_special,
             }
@@ -1334,9 +974,6 @@ impl GameDirector {
 
     pub async fn add_damage_markers_to_many_cards(
         &mut self,
-
-        player: Player,
-        zone: Zone,
         cards: Vec<CardRef>,
         dmg: DamageMarkers,
     ) -> GameResult {
@@ -1344,25 +981,14 @@ impl GameDirector {
             return Ok(GameContinue);
         }
 
-        self.send_event(
-            AddDamageMarkers {
-                player,
-                zone,
-                cards,
-                dmg,
-            }
-            .into(),
-        )
-        .await?;
+        self.send_event(AddDamageMarkers { cards, dmg }.into())
+            .await?;
 
         Ok(GameContinue)
     }
 
     pub async fn remove_damage_markers_from_many_cards(
         &mut self,
-
-        player: Player,
-        zone: Zone,
         cards: Vec<CardRef>,
         dmg: DamageMarkers,
     ) -> GameResult {
@@ -1375,25 +1001,14 @@ impl GameDirector {
             return Ok(GameContinue);
         }
 
-        self.send_event(
-            RemoveDamageMarkers {
-                player,
-                zone,
-                cards,
-                dmg,
-            }
-            .into(),
-        )
-        .await?;
+        self.send_event(RemoveDamageMarkers { cards, dmg }.into())
+            .await?;
 
         Ok(GameContinue)
     }
 
     pub async fn clear_all_damage_markers_from_many_cards(
         &mut self,
-
-        player: Player,
-        zone: Zone,
         cards: Vec<CardRef>,
     ) -> GameResult {
         let cards = cards
@@ -1405,15 +1020,7 @@ impl GameDirector {
             return Ok(GameContinue);
         }
 
-        self.send_event(
-            ClearDamageMarkers {
-                player,
-                zone,
-                cards,
-            }
-            .into(),
-        )
-        .await?;
+        self.send_event(ClearDamageMarkers { cards }.into()).await?;
 
         Ok(GameContinue)
     }
@@ -1438,23 +1045,11 @@ impl GameDirector {
         Ok(GameContinue)
     }
 
-    pub async fn bloom_holo_member(
-        &mut self,
-
-        player: Player,
-        bloom: CardRef,
-        target: CardRef,
-    ) -> GameResult {
-        let stage = self
-            .board(player)
-            .find_card_zone(target)
-            .expect("the card should be on stage");
+    pub async fn bloom_holo_member(&mut self, bloom: CardRef, target: CardRef) -> GameResult {
         self.send_event(
             Bloom {
-                player,
-                // can only bloom from hand, for now
-                from_card: (Zone::Hand, bloom),
-                to_card: (stage, target),
+                from_card: bloom,
+                to_card: target,
             }
             .into(),
         )
@@ -1463,32 +1058,16 @@ impl GameDirector {
         Ok(GameContinue)
     }
 
-    pub async fn use_support_card(&mut self, player: Player, card: CardRef) -> GameResult {
-        self.send_event(
-            ActivateSupportCard {
-                player,
-                // can only use card from hand, for now
-                card: (Zone::Hand, card),
-            }
-            .into(),
-        )
-        .await?;
+    pub async fn use_support_card(&mut self, card: CardRef) -> GameResult {
+        self.send_event(ActivateSupportCard { card }.into()).await?;
 
         Ok(GameContinue)
     }
 
-    pub async fn use_oshi_skill(
-        &mut self,
-
-        player: Player,
-        card: CardRef,
-        skill_idx: usize,
-    ) -> GameResult {
+    pub async fn use_oshi_skill(&mut self, card: CardRef, skill_idx: usize) -> GameResult {
         self.send_event(
             ActivateOshiSkill {
-                player,
-                // can only use skill from oshi
-                card: (Zone::Oshi, card),
+                card,
                 skill_idx,
                 is_triggered: false,
             }
@@ -1501,17 +1080,13 @@ impl GameDirector {
 
     pub async fn activate_oshi_skill(
         &mut self,
-
         card: CardRef,
         skill_idx: usize,
         is_triggered: bool,
     ) -> GameResult {
-        let player = self.player_for_card(card);
         self.send_event(
             ActivateOshiSkill {
-                player,
-                // can only use skill from oshi
-                card: (Zone::Oshi, card),
+                card,
                 skill_idx,
                 is_triggered,
             }
@@ -1524,20 +1099,13 @@ impl GameDirector {
 
     pub async fn activate_holo_member_ability(
         &mut self,
-
         card: CardRef,
         ability_idx: usize,
         is_triggered: bool,
     ) -> GameResult {
-        let player = self.player_for_card(card);
-        let zone = self
-            .board(player)
-            .find_card_zone(card)
-            .expect("member should be in a zone");
         self.send_event(
             ActivateHoloMemberAbility {
-                player,
-                card: (zone, card),
+                card,
                 ability_idx,
                 is_triggered,
             }
@@ -1550,60 +1118,26 @@ impl GameDirector {
 
     pub async fn activate_support_ability(
         &mut self,
-
         card: CardRef,
         is_triggered: bool,
     ) -> GameResult {
-        let player = self.player_for_card(card);
-        let zone = self
-            .board(player)
-            .find_card_zone(card)
-            .expect("member should be in a zone");
-        self.send_event(
-            ActivateSupportAbility {
-                player,
-                card: (zone, card),
-                is_triggered,
-            }
-            .into(),
-        )
-        .await?;
+        self.send_event(ActivateSupportAbility { card, is_triggered }.into())
+            .await?;
 
         Ok(GameContinue)
     }
 
     pub async fn perform_art(
         &mut self,
-
-        player: Player,
         card: CardRef,
         art_idx: usize,
         target: Option<CardRef>,
     ) -> GameResult {
-        let card_zone = self
-            .board(player)
-            .find_card_zone(card)
-            .expect("the card should be in a zone");
-
-        let mut target_player = None;
-        let mut target_zone_card = None;
-        if let Some(target) = target {
-            let t_player = self.player_for_card(target);
-            let t_zone = self
-                .board(t_player)
-                .find_card_zone(target)
-                .expect("the target should be in a zone");
-            target_player = Some(t_player);
-            target_zone_card = Some((t_zone, target));
-        }
-
         self.send_event(
             PerformArt {
-                player,
-                card: (card_zone, card),
+                card,
                 art_idx,
-                target_player,
-                target: target_zone_card,
+                target,
             }
             .into(),
         )
@@ -1695,7 +1229,7 @@ impl EvaluateEvent for Setup {
         self.apply_state_change(&mut game.game.state);
 
         // - shuffle main decks and cheer decks
-        game.shuffle_decks(&[
+        game.shuffle_decks(vec![
             (Player::One, Zone::MainDeck),
             (Player::Two, Zone::MainDeck),
             (Player::One, Zone::CheerDeck),
@@ -1754,30 +1288,26 @@ impl EvaluateEvent for Setup {
         // TODO request (intent)
         info!("prompt debut 1");
         let debut_1 = game.prompt_for_first_debut(first_player).await;
-        game.send_from_hand_to_center_stage(first_player, debut_1)
-            .await?;
+        game.send_to_center_stage(debut_1).await?;
 
         // TODO member hide
         // TODO request (intent)
         info!("prompt debut 2");
         let debut_2 = game.prompt_for_first_debut(second_player).await;
-        game.send_from_hand_to_center_stage(second_player, debut_2)
-            .await?;
+        game.send_to_center_stage(debut_2).await?;
 
         // - place other debut / spot members back stage
         // TODO member hide
         // TODO request (intent)
         info!("prompt other debut 1");
         let other_debut_1: Vec<_> = game.prompt_for_first_back_stage(first_player).await;
-        game.send_from_hand_to_back_stage(first_player, other_debut_1)
-            .await?;
+        game.send_to_back_stage(other_debut_1).await?;
 
         // TODO member hide
         // TODO request (intent)
         info!("prompt other debut 2");
         let other_debut_2: Vec<_> = game.prompt_for_first_back_stage(second_player).await;
-        game.send_from_hand_to_back_stage(second_player, other_debut_2)
-            .await?;
+        game.send_to_back_stage(other_debut_2).await?;
 
         // - reveal face down oshi and members
         // oshi and members reveal
@@ -2073,17 +1603,15 @@ impl EvaluateEvent for ExitStep {
 
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct AddCardModifiers {
-    pub player: Player,
-    pub zone: Zone,
     pub cards: Vec<CardRef>,
     pub modifiers: Vec<Modifier>,
 }
 impl EvaluateEvent for AddCardModifiers {
     fn apply_state_change(&self, state: &mut GameState) {
-        for card in &self.cards {
+        for card in self.cards.iter().copied() {
             state
                 .card_modifiers
-                .entry(*card)
+                .entry(card)
                 .or_default()
                 .extend(self.modifiers.iter().cloned());
         }
@@ -2094,8 +1622,6 @@ impl EvaluateEvent for AddCardModifiers {
             return Ok(GameContinue);
         }
 
-        verify_cards_in_zone(game, self.player, self.zone, &self.cards);
-
         self.apply_state_change(&mut game.game.state);
 
         Ok(GameContinue)
@@ -2104,8 +1630,6 @@ impl EvaluateEvent for AddCardModifiers {
 
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct RemoveCardModifiers {
-    pub player: Player,
-    pub zone: Zone,
     pub cards: Vec<CardRef>,
     pub modifiers: Vec<ModifierRef>,
 }
@@ -2118,12 +1642,12 @@ impl EvaluateEvent for RemoveCardModifiers {
             .cartesian_product(self.modifiers.iter().cloned())
             .collect_vec();
 
-        for card in &self.cards {
-            state.card_modifiers.entry(*card).or_default().retain(|m| {
+        for card in self.cards.iter().copied() {
+            state.card_modifiers.entry(card).or_default().retain(|m| {
                 let idx = to_remove
                     .iter()
                     .enumerate()
-                    .find(|(_, r)| r.0 == *card && r.1 == m.id)
+                    .find(|(_, r)| r.0 == card && r.1 == m.id)
                     .map(|(i, _)| i);
                 if let Some(idx) = idx {
                     to_remove.swap_remove(idx);
@@ -2140,8 +1664,6 @@ impl EvaluateEvent for RemoveCardModifiers {
             return Ok(GameContinue);
         }
 
-        verify_cards_in_zone(game, self.player, self.zone, &self.cards);
-
         self.apply_state_change(&mut game.game.state);
 
         Ok(GameContinue)
@@ -2150,14 +1672,12 @@ impl EvaluateEvent for RemoveCardModifiers {
 
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct ClearCardModifiers {
-    pub player: Player,
-    pub zone: Zone,
     pub cards: Vec<CardRef>,
 }
 impl EvaluateEvent for ClearCardModifiers {
     fn apply_state_change(&self, state: &mut GameState) {
-        for card in &self.cards {
-            state.card_modifiers.remove_entry(card);
+        for card in self.cards.iter().copied() {
+            state.card_modifiers.remove_entry(&card);
         }
     }
 
@@ -2165,8 +1685,6 @@ impl EvaluateEvent for ClearCardModifiers {
         if self.cards.is_empty() {
             return Ok(GameContinue);
         }
-
-        verify_cards_in_zone(game, self.player, self.zone, &self.cards);
 
         self.apply_state_change(&mut game.game.state);
 
@@ -2248,15 +1766,13 @@ impl EvaluateEvent for RemoveZoneModifiers {
 
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct AddDamageMarkers {
-    pub player: Player,
-    pub zone: Zone,
     pub cards: Vec<CardRef>,
     pub dmg: DamageMarkers,
 }
 impl EvaluateEvent for AddDamageMarkers {
     fn apply_state_change(&self, state: &mut GameState) {
-        for card in &self.cards {
-            *state.card_damage_markers.entry(*card).or_default() += self.dmg;
+        for card in self.cards.iter().copied() {
+            *state.card_damage_markers.entry(card).or_default() += self.dmg;
         }
     }
 
@@ -2265,47 +1781,38 @@ impl EvaluateEvent for AddDamageMarkers {
             return Ok(GameContinue);
         }
 
-        verify_cards_in_zone(game, self.player, self.zone, &self.cards);
-
         self.apply_state_change(&mut game.game.state);
 
-        // verify that they are still alive
-        let defeated = self
-            .cards
-            .iter()
-            .copied()
-            .filter(|card| game.remaining_hp(*card) == 0)
-            .collect_vec();
+        for (player, cards) in game.group_by_player(&self.cards) {
+            // verify that they are still alive
+            let defeated = cards
+                .iter()
+                .copied()
+                .filter(|card| game.remaining_hp(*card) == 0)
+                .collect_vec();
 
-        // calculate life loss
-        let life_loss = defeated
-            .iter()
-            .filter(|c| !game.has_modifier(**c, NoLifeLoss))
-            .filter_map(|c| game.lookup_holo_member(*c))
-            .map(|m| {
-                // buzz members loses 2 lives
-                if m.attributes.contains(&HoloMemberExtraAttribute::Buzz) {
-                    2
-                } else {
-                    1
-                }
-            })
-            .sum();
+            // calculate life loss
+            let life_loss = defeated
+                .iter()
+                .filter(|c| !game.has_modifier(**c, NoLifeLoss))
+                .filter_map(|c| game.lookup_holo_member(*c))
+                .map(|m| {
+                    // buzz members loses 2 lives
+                    if m.attributes.contains(&HoloMemberExtraAttribute::Buzz) {
+                        2
+                    } else {
+                        1
+                    }
+                })
+                .sum();
 
-        // send member to archive, from attack
-        for card in defeated {
-            game.send_event(
-                HoloMemberDefeated {
-                    player: self.player,
-                    card: (self.zone, card),
-                }
-                .into(),
-            )
-            .await?;
+            // send member to archive, from attack
+            game.send_event(HoloMemberDefeated { cards: defeated }.into())
+                .await?;
+
+            // TODO do we need a untracked span here?
+            game.lose_lives(player, life_loss).await?;
         }
-
-        // TODO do we need a untracked span here?
-        game.lose_lives(self.player, life_loss).await?;
 
         Ok(GameContinue)
     }
@@ -2313,15 +1820,13 @@ impl EvaluateEvent for AddDamageMarkers {
 
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct RemoveDamageMarkers {
-    pub player: Player,
-    pub zone: Zone,
     pub cards: Vec<CardRef>,
     pub dmg: DamageMarkers,
 }
 impl EvaluateEvent for RemoveDamageMarkers {
     fn apply_state_change(&self, state: &mut GameState) {
-        for card in &self.cards {
-            *state.card_damage_markers.entry(*card).or_default() -= self.dmg;
+        for card in self.cards.iter().copied() {
+            *state.card_damage_markers.entry(card).or_default() -= self.dmg;
         }
     }
 
@@ -2329,8 +1834,6 @@ impl EvaluateEvent for RemoveDamageMarkers {
         if self.cards.is_empty() || self.dmg.0 < 1 {
             return Ok(GameContinue);
         }
-
-        verify_cards_in_zone(game, self.player, self.zone, &self.cards);
 
         self.apply_state_change(&mut game.game.state);
 
@@ -2340,14 +1843,12 @@ impl EvaluateEvent for RemoveDamageMarkers {
 
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct ClearDamageMarkers {
-    pub player: Player,
-    pub zone: Zone,
     pub cards: Vec<CardRef>,
 }
 impl EvaluateEvent for ClearDamageMarkers {
     fn apply_state_change(&self, state: &mut GameState) {
-        for card in &self.cards {
-            state.card_damage_markers.remove_entry(card);
+        for card in self.cards.iter().copied() {
+            state.card_damage_markers.remove_entry(&card);
         }
     }
 
@@ -2355,8 +1856,6 @@ impl EvaluateEvent for ClearDamageMarkers {
         if self.cards.is_empty() {
             return Ok(GameContinue);
         }
-
-        verify_cards_in_zone(game, self.player, self.zone, &self.cards);
 
         self.apply_state_change(&mut game.game.state);
 
@@ -2388,20 +1887,18 @@ impl EvaluateEvent for LookAndSelect {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
-pub struct ZoneToZone {
-    pub player: Player,
-    pub from_zone: Zone,
+pub struct SendToZone {
     pub cards: Vec<CardRef>,
-    pub to_zone: Zone,
-    pub to_zone_location: ZoneAddLocation,
+    pub zone: Zone,
+    pub zone_location: ZoneAddLocation,
 }
-impl EvaluateEvent for ZoneToZone {
+impl EvaluateEvent for SendToZone {
     fn apply_state_change(&self, state: &mut GameState) {
-        state.board_mut(self.player).send_many_to_zone(
-            self.cards.clone(),
-            self.to_zone,
-            self.to_zone_location,
-        );
+        for card in self.cards.iter().copied() {
+            state
+                .board_for_card_mut(card)
+                .send_to_zone(card, self.zone, self.zone_location);
+        }
     }
 
     async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
@@ -2409,17 +1906,23 @@ impl EvaluateEvent for ZoneToZone {
             return Ok(GameContinue);
         }
 
-        verify_cards_in_zone(game, self.player, self.from_zone, &self.cards);
-
         // cannot send to stage if stage is full
-        if !Zone::Stage.includes(self.from_zone) && Zone::Stage.includes(self.to_zone) {
-            let count = game
-                .board(self.player)
-                .stage()
-                .filter(|c| game.game.is_holo_member(*c))
-                .count();
-            if count >= MAX_MEMBERS_ON_STAGE {
-                panic!("cannot send to stage. stage is full");
+        if Zone::Stage.includes(self.zone) {
+            for (player, cards) in game.group_by_player(&self.cards) {
+                let mut already_on_stage = 0;
+                let on_stage = game
+                    .board(player)
+                    .stage()
+                    .filter(|c| game.game.is_holo_member(*c))
+                    .inspect(|c| {
+                        if cards.contains(c) {
+                            already_on_stage += 1;
+                        }
+                    })
+                    .count();
+                if on_stage + cards.len() - already_on_stage > MAX_MEMBERS_ON_STAGE {
+                    panic!("cannot send to stage. stage is full");
+                }
             }
         }
 
@@ -2427,21 +1930,20 @@ impl EvaluateEvent for ZoneToZone {
 
         game.game.event_span.open_untracked_span();
         // lose attachments and buffs when leaving stage
-        if !Zone::Stage.includes(self.to_zone) {
-            game.clear_all_damage_markers_from_many_cards(
-                self.player,
-                self.to_zone,
-                self.cards.clone(),
-            )
-            .await?;
+        if !Zone::Stage.includes(self.zone) {
+            game.clear_all_modifiers_from_many_cards(self.cards.clone())
+                .await?;
 
-            for card in &self.cards {
-                let attachments = game.board(self.player).attachments(*card);
-                game.send_attachments_to_archive(self.player, *card, attachments)
-                    .await?;
+            game.clear_all_damage_markers_from_many_cards(self.cards.clone())
+                .await?;
 
-                game.clear_all_modifiers(*card).await?;
-            }
+            let attachments = self
+                .cards
+                .iter()
+                .copied()
+                .flat_map(|c| game.board_for_card(c).attachments(c))
+                .collect();
+            game.send_to_archive(attachments).await?;
         }
 
         // check if a player lost when cards are moving
@@ -2453,49 +1955,17 @@ impl EvaluateEvent for ZoneToZone {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
-pub struct ZoneToAttach {
-    pub player: Player,
-    pub from_zone: Zone,
+pub struct AttachToCard {
     pub attachments: Vec<CardRef>,
-    pub to_card: (Zone, CardRef),
+    pub card: CardRef,
 }
-impl EvaluateEvent for ZoneToAttach {
-    fn apply_state_change(&self, state: &mut GameState) {
-        for attachment in &self.attachments {
-            state
-                .board_mut(self.player)
-                .attach_to_card(*attachment, self.to_card.1);
-        }
-    }
-
-    async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
-        if self.attachments.is_empty() {
-            return Ok(GameContinue);
-        }
-
-        verify_cards_in_zone(game, self.player, self.from_zone, &self.attachments);
-        verify_cards_in_zone(game, self.player, self.to_card.0, &[self.to_card.1]);
-
-        self.apply_state_change(&mut game.game.state);
-
-        Ok(GameContinue)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
-pub struct AttachToAttach {
-    pub player: Player,
-    pub from_card: (Zone, CardRef),
-    pub attachments: Vec<CardRef>,
-    pub to_card: (Zone, CardRef),
-}
-impl EvaluateEvent for AttachToAttach {
+impl EvaluateEvent for AttachToCard {
     fn apply_state_change(&self, state: &mut GameState) {
         // zone to attach
         for attachment in &self.attachments {
             state
-                .board_mut(self.player)
-                .attach_to_card(*attachment, self.to_card.1);
+                .board_for_card_mut(self.card)
+                .attach_to_card(*attachment, self.card);
         }
     }
 
@@ -2503,41 +1973,6 @@ impl EvaluateEvent for AttachToAttach {
         if self.attachments.is_empty() {
             return Ok(GameContinue);
         }
-
-        verify_cards_in_zone(game, self.player, self.from_card.0, &[self.from_card.1]);
-        verify_cards_attached(game, self.player, self.from_card.1, &self.attachments);
-        verify_cards_in_zone(game, self.player, self.to_card.0, &[self.to_card.1]);
-
-        self.apply_state_change(&mut game.game.state);
-
-        Ok(GameContinue)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
-pub struct AttachToZone {
-    pub player: Player,
-    pub from_card: (Zone, CardRef),
-    pub attachments: Vec<CardRef>,
-    pub to_zone: Zone,
-    pub to_zone_location: ZoneAddLocation,
-}
-impl EvaluateEvent for AttachToZone {
-    fn apply_state_change(&self, state: &mut GameState) {
-        state.board_mut(self.player).send_many_to_zone(
-            self.attachments.clone(),
-            self.to_zone,
-            self.to_zone_location,
-        );
-    }
-
-    async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
-        if self.attachments.is_empty() {
-            return Ok(GameContinue);
-        }
-
-        verify_cards_in_zone(game, self.player, self.from_card.0, &[self.from_card.1]);
-        verify_cards_attached(game, self.player, self.from_card.1, &self.attachments);
 
         self.apply_state_change(&mut game.game.state);
 
@@ -2557,22 +1992,9 @@ impl EvaluateEvent for Draw {
     }
 
     async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
-        if self.amount < 1 {
-            return Ok(GameContinue);
-        }
-
         let deck = game.board(self.player).get_zone(Zone::MainDeck);
-        game.send_event(
-            ZoneToZone {
-                player: self.player,
-                from_zone: Zone::MainDeck,
-                cards: deck.peek_top_cards(self.amount),
-                to_zone: Zone::Hand,
-                to_zone_location: Zone::Hand.default_add_location(),
-            }
-            .into(),
-        )
-        .await?;
+        let cards = deck.peek_top_cards(self.amount);
+        game.send_to_zone(cards, Zone::Hand).await?;
 
         Ok(GameContinue)
     }
@@ -2581,8 +2003,7 @@ impl EvaluateEvent for Draw {
 /// marker event after zone to zone (back stage -> collab stage)
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct Collab {
-    pub player: Player,
-    pub card: (Zone, CardRef),
+    pub card: CardRef,
     pub holo_power_amount: usize,
 }
 impl EvaluateEvent for Collab {
@@ -2591,38 +2012,28 @@ impl EvaluateEvent for Collab {
     }
 
     async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
-        verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
+        let player = game.player_for_card(self.card);
 
         // check condition for collab
-        if game.board(self.player).get_zone(Zone::Collab).count() > 0 {
+        if game.board(player).get_zone(Zone::Collab).count() > 0 {
             panic!("collab is already occupied");
         }
-        if game.has_modifier(self.card.1, Resting) {
+        if game.has_modifier(self.card, Resting) {
             panic!("cannot collab a resting member");
         }
-        if game.has_modifier(self.card.1, PreventCollab) {
+        if game.has_modifier(self.card, PreventCollab) {
             panic!("cannot collab this member");
         }
 
-        game.send_event(
-            ZoneToZone {
-                player: self.player,
-                from_zone: self.card.0,
-                cards: vec![self.card.1],
-                to_zone: Zone::Collab,
-                to_zone_location: Zone::Collab.default_add_location(),
-            }
-            .into(),
-        )
-        .await?;
+        game.send_to_zone(vec![self.card], Zone::Collab).await?;
 
         game.game.event_span.open_untracked_span();
         //   - draw down card from deck into power zone
-        game.send_cards_to_holo_power(self.player, self.holo_power_amount)
+        game.send_cards_to_holo_power(player, self.holo_power_amount)
             .await?;
 
         // can only collab once per turn
-        game.add_zone_modifier(self.player, Zone::All, PreventCollab, LifeTime::ThisTurn)
+        game.add_zone_modifier(player, Zone::All, PreventCollab, LifeTime::ThisTurn)
             .await?;
         game.game.event_span.close_untracked_span();
 
@@ -2650,17 +2061,7 @@ impl EvaluateEvent for LoseLives {
         if game.board(self.player).get_zone(Zone::Life).count() <= self.amount {
             let cheers = game.board(self.player).get_zone(Zone::Life).all_cards();
             game.reveal_cards(self.player, Zone::Life, &cheers).await?;
-            game.send_event(
-                ZoneToZone {
-                    player: self.player,
-                    from_zone: Zone::Life,
-                    cards: cheers,
-                    to_zone: Zone::Archive,
-                    to_zone_location: Zone::Archive.default_add_location(),
-                }
-                .into(),
-            )
-            .await?;
+            game.send_to_zone(cheers, Zone::Archive).await?;
         } else {
             game.attach_cheers_from_zone(self.player, Zone::Life, self.amount)
                 .await?;
@@ -2673,36 +2074,32 @@ impl EvaluateEvent for LoseLives {
 /// marker event before zone to zone (deck -> hand)
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct Bloom {
-    pub player: Player,
-    pub from_card: (Zone, CardRef),
-    pub to_card: (Zone, CardRef),
+    pub from_card: CardRef,
+    pub to_card: CardRef,
 }
 impl EvaluateEvent for Bloom {
     fn apply_state_change(&self, state: &mut GameState) {
         // attach the bloom card to the bloom target
         state
-            .board_mut(self.player)
-            .attach_to_card(self.from_card.1, self.to_card.1);
+            .board_for_card_mut(self.to_card)
+            .attach_to_card(self.from_card, self.to_card);
 
         // move the attachments and damage to the new card
         state
-            .board_mut(self.player)
-            .promote_attachment(self.from_card.1, self.to_card.1);
-        state.promote_modifiers(self.from_card.1, self.to_card.1);
-        state.promote_damage_markers(self.from_card.1, self.to_card.1);
+            .board_for_card_mut(self.to_card)
+            .promote_attachment(self.from_card, self.to_card);
+        state.promote_modifiers(self.from_card, self.to_card);
+        state.promote_damage_markers(self.from_card, self.to_card);
     }
 
     async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
-        verify_cards_in_zone(game, self.player, self.from_card.0, &[self.from_card.1]);
-        verify_cards_in_zone(game, self.player, self.to_card.0, &[self.to_card.1]);
-
         let bloom = game
-            .lookup_holo_member(self.from_card.1)
+            .lookup_holo_member(self.from_card)
             .expect("should be a valid member");
         let target = game
-            .lookup_holo_member(self.to_card.1)
+            .lookup_holo_member(self.to_card)
             .expect("should be a valid member");
-        if !bloom.can_bloom_target(self.from_card.1, game, (self.to_card.1, target)) {
+        if !bloom.can_bloom_target(self.from_card, game, (self.to_card, target)) {
             unreachable!("bloom should not be an option, if it's not allowed")
         }
 
@@ -2710,7 +2107,7 @@ impl EvaluateEvent for Bloom {
 
         // prevent it from blooming again this turn
         game.game.event_span.open_untracked_span();
-        game.add_modifier(self.from_card.1, PreventBloom, LifeTime::ThisTurn)
+        game.add_modifier(self.from_card, PreventBloom, LifeTime::ThisTurn)
             .await?;
         game.game.event_span.close_untracked_span();
 
@@ -2721,9 +2118,8 @@ impl EvaluateEvent for Bloom {
 /// marker event after zone to zone (back stage -> collab stage)
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct BatonPass {
-    pub player: Player,
-    pub from_card: (Zone, CardRef),
-    pub to_card: (Zone, CardRef),
+    pub from_card: CardRef,
+    pub to_card: CardRef,
 }
 impl EvaluateEvent for BatonPass {
     fn apply_state_change(&self, _state: &mut GameState) {
@@ -2731,41 +2127,37 @@ impl EvaluateEvent for BatonPass {
     }
 
     async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
-        verify_cards_in_zone(game, self.player, self.from_card.0, &[self.from_card.1]);
-        verify_cards_in_zone(game, self.player, self.to_card.0, &[self.to_card.1]);
-
         // only center stage can baton pass to back stage
-        assert_eq!(self.from_card.0, Zone::CenterStage);
-        assert_eq!(self.to_card.0, Zone::BackStage);
+        // assert_eq!(self.from_card.0, Zone::CenterStage);
+        // assert_eq!(self.to_card.0, Zone::BackStage);
 
         let mem = game
-            .lookup_holo_member(self.from_card.1)
+            .lookup_holo_member(self.from_card)
             .expect("cannot pay baton pass cost for non member");
 
-        if !mem.can_baton_pass(self.from_card.1, game) {
+        if !mem.can_baton_pass(self.from_card, game) {
             unreachable!("baton should not be an option, if it's not allowed")
         }
+
+        let player = game.player_for_card(self.from_card);
 
         // pay the baton pass cost
         // TODO cost should automatic when there is a single cheers color
         // TODO request (intent) select attached cheers
         let cheers = game
-            .prompt_for_baton_pass(self.player, self.from_card.1, mem.baton_pass_cost)
+            .prompt_for_baton_pass(player, self.from_card, mem.baton_pass_cost)
             .await;
-        game.send_attachments_to_archive(self.player, self.from_card.1, cheers)
-            .await?;
+        game.send_to_archive(cheers).await?;
 
         // send the center member to the back
-        game.send_from_center_stage_to_back_stage(self.player, self.from_card.1)
-            .await?;
+        game.send_to_back_stage(vec![self.from_card]).await?;
 
         // send back stage member to center
-        game.send_from_back_stage_to_center_stage(self.player, self.to_card.1)
-            .await?;
+        game.send_to_center_stage(self.to_card).await?;
 
         // can only baton pass once per turn
         game.game.event_span.open_untracked_span();
-        game.add_zone_modifier(self.player, Zone::All, PreventBatonPass, LifeTime::ThisTurn)
+        game.add_zone_modifier(player, Zone::All, PreventBatonPass, LifeTime::ThisTurn)
             .await?;
         game.game.event_span.close_untracked_span();
 
@@ -2775,8 +2167,7 @@ impl EvaluateEvent for BatonPass {
 
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct ActivateSupportCard {
-    pub player: Player,
-    pub card: (Zone, CardRef),
+    pub card: CardRef,
 }
 impl EvaluateEvent for ActivateSupportCard {
     fn apply_state_change(&self, _state: &mut GameState) {
@@ -2784,57 +2175,41 @@ impl EvaluateEvent for ActivateSupportCard {
     }
 
     async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
-        verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
-
         // - use support card
         //   - only one limited per turn
         //   - otherwise unlimited
         let sup = game
-            .lookup_support(self.card.1)
+            .lookup_support(self.card)
             .expect("only support should be allowed here");
 
         let limited_use = sup.limited;
         let effect = sup.effect.clone();
 
-        if !sup.can_use_support(self.card.1, game) {
+        if !sup.can_use_support(self.card, game) {
             unreachable!("support should not be an option, if it's not allowed")
         }
 
         // send the support card out of the game, so it doesn't affect itself
         game.game.event_span.open_untracked_span();
-        game.send_event(
-            ZoneToZone {
-                player: self.player,
-                from_zone: self.card.0,
-                cards: vec![self.card.1],
-                to_zone: Zone::ActivateSupport,
-                to_zone_location: Zone::ActivateSupport.default_add_location(),
-            }
-            .into(),
-        )
-        .await?;
+        game.send_to_zone(vec![self.card], Zone::ActivateSupport)
+            .await?;
 
         // activate the support card
         effect
             .ctx()
-            .with_card(self.card.1, &game.game)
+            .with_card(self.card, &game.game)
             .evaluate_mut(game)
             .await?;
 
         // limited support can only be used once per turn
         if limited_use {
-            game.add_zone_modifier(
-                self.player,
-                Zone::All,
-                PreventLimitedSupport,
-                LifeTime::ThisTurn,
-            )
-            .await?;
+            let player = game.player_for_card(self.card);
+            game.add_zone_modifier(player, Zone::All, PreventLimitedSupport, LifeTime::ThisTurn)
+                .await?;
         }
 
         // send the used card to the archive
-        game.send_cards_to_archive(game.game.active_player(), vec![self.card.1])
-            .await?;
+        game.send_to_archive(vec![self.card]).await?;
         game.game.event_span.close_untracked_span();
 
         Ok(GameContinue)
@@ -2844,8 +2219,7 @@ impl EvaluateEvent for ActivateSupportCard {
 /// used by Lui oshi skill
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct ActivateSupportAbility {
-    pub player: Player,
-    pub card: (Zone, CardRef),
+    pub card: CardRef,
     pub is_triggered: bool,
 }
 impl EvaluateEvent for ActivateSupportAbility {
@@ -2854,14 +2228,12 @@ impl EvaluateEvent for ActivateSupportAbility {
     }
 
     async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
-        verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
-
         let support = game
-            .lookup_support(self.card.1)
+            .lookup_support(self.card)
             .expect("only support should be using skills");
 
         //  check condition for skill
-        if !support.can_use_ability(self.card.1, game, self.is_triggered) {
+        if !support.can_use_ability(self.card, game, self.is_triggered) {
             panic!("cannot use this skill");
         }
 
@@ -2869,7 +2241,7 @@ impl EvaluateEvent for ActivateSupportAbility {
 
         effect
             .ctx()
-            .with_card(self.card.1, &game.game)
+            .with_card(self.card, &game.game)
             .with_triggered(self.is_triggered)
             .evaluate_mut(game)
             .await?;
@@ -2881,8 +2253,7 @@ impl EvaluateEvent for ActivateSupportAbility {
 /// used by Lui oshi skill
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct ActivateOshiSkill {
-    pub player: Player,
-    pub card: (Zone, CardRef),
+    pub card: CardRef,
     pub skill_idx: usize,
     pub is_triggered: bool,
 }
@@ -2892,14 +2263,12 @@ impl EvaluateEvent for ActivateOshiSkill {
     }
 
     async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
-        verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
-
         let oshi = game
-            .lookup_oshi(self.card.1)
+            .lookup_oshi(self.card)
             .expect("only oshi should be using skills");
 
         //  check condition for skill
-        if !oshi.can_use_skill(self.card.1, self.skill_idx, game, self.is_triggered) {
+        if !oshi.can_use_skill(self.card, self.skill_idx, game, self.is_triggered) {
             panic!("cannot use this skill");
         }
 
@@ -2917,12 +2286,13 @@ impl EvaluateEvent for ActivateOshiSkill {
         // pay the cost of the oshi skill
         // TODO could have a buff that could pay for the skill
         game.game.event_span.open_untracked_span();
-        game.send_holo_power_to_archive(self.player, cost).await?;
+        let player = game.player_for_card(self.card);
+        game.send_holo_power_to_archive(player, cost).await?;
         game.game.event_span.close_untracked_span();
 
         effect
             .ctx()
-            .with_card(self.card.1, &game.game)
+            .with_card(self.card, &game.game)
             .with_triggered(self.is_triggered)
             .evaluate_mut(game)
             .await?;
@@ -2930,7 +2300,7 @@ impl EvaluateEvent for ActivateOshiSkill {
         //   - once per turn / once per game
         game.game.event_span.open_untracked_span();
         game.add_modifier(
-            self.card.1,
+            self.card,
             PreventOshiSkill(self.skill_idx),
             prevent_life_time,
         )
@@ -2944,8 +2314,7 @@ impl EvaluateEvent for ActivateOshiSkill {
 /// used by Lui oshi skill
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct ActivateHoloMemberAbility {
-    pub player: Player,
-    pub card: (Zone, CardRef),
+    pub card: CardRef,
     pub ability_idx: usize,
     pub is_triggered: bool,
 }
@@ -2955,14 +2324,12 @@ impl EvaluateEvent for ActivateHoloMemberAbility {
     }
 
     async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
-        verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
-
         let mem = game
-            .lookup_holo_member(self.card.1)
+            .lookup_holo_member(self.card)
             .expect("only member should be using skills");
 
         //  check condition for skill
-        if !mem.can_use_ability(self.card.1, self.ability_idx, game, self.is_triggered) {
+        if !mem.can_use_ability(self.card, self.ability_idx, game, self.is_triggered) {
             panic!("cannot use this skill");
         }
 
@@ -2971,7 +2338,7 @@ impl EvaluateEvent for ActivateHoloMemberAbility {
 
         effect
             .ctx()
-            .with_card(self.card.1, &game.game)
+            .with_card(self.card, &game.game)
             .with_triggered(self.is_triggered)
             .evaluate_mut(game)
             .await?;
@@ -2983,8 +2350,7 @@ impl EvaluateEvent for ActivateHoloMemberAbility {
 /// used by Lui oshi skill
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct ActivateHoloMemberArtEffect {
-    pub player: Player,
-    pub card: (Zone, CardRef),
+    pub card: CardRef,
     pub skill_idx: usize,
 }
 impl EvaluateEvent for ActivateHoloMemberArtEffect {
@@ -2993,19 +2359,15 @@ impl EvaluateEvent for ActivateHoloMemberArtEffect {
     }
 
     async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
-        verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
-
         unimplemented!()
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct PerformArt {
-    pub player: Player,
-    pub card: (Zone, CardRef),
+    pub card: CardRef,
     pub art_idx: usize,
-    pub target_player: Option<Player>,
-    pub target: Option<(Zone, CardRef)>,
+    pub target: Option<CardRef>,
 }
 impl EvaluateEvent for PerformArt {
     fn apply_state_change(&self, _state: &mut GameState) {
@@ -3013,21 +2375,15 @@ impl EvaluateEvent for PerformArt {
     }
 
     async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
-        verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
-
-        if let (Some(target), Some(target_player)) = (self.target, self.target_player) {
-            verify_cards_in_zone(game, target_player, target.0, &[target.1]);
-        }
-
         let mem = game
-            .lookup_holo_member(self.card.1)
+            .lookup_holo_member(self.card)
             .expect("this should be a valid member");
 
         //  check condition for art
         if !mem.can_use_art(
-            self.card.1,
+            self.card,
             self.art_idx,
-            self.target.expect("there should be a target").1,
+            self.target.expect("there should be a target"),
             game,
         ) {
             panic!("cannot use this art");
@@ -3047,7 +2403,7 @@ impl EvaluateEvent for PerformArt {
         // evaluate the effect of art, could change damage calculation
         effect
             .ctx()
-            .with_card(self.card.1, &game.game)
+            .with_card(self.card, &game.game)
             .evaluate_mut(game)
             .await?;
 
@@ -3060,7 +2416,7 @@ impl EvaluateEvent for PerformArt {
             HoloMemberArtDamage::Uncertain => unimplemented!(),
         };
         // apply damage modifiers
-        for m in game.find_modifiers(self.card.1) {
+        for m in game.find_modifiers(self.card) {
             if let ModifierKind::MoreDamage(more_dmg_hp) = m.kind {
                 dmg += DamageMarkers::from_hp(more_dmg_hp as u16);
             }
@@ -3068,14 +2424,14 @@ impl EvaluateEvent for PerformArt {
 
         // deal damage if there is a target. if any other damage is done, it will be in the effect
         if let Some(target) = self.target {
-            game.deal_damage(self.card.1, target.1, dmg, false).await?;
+            game.deal_damage(self.card, target, dmg, false).await?;
         }
 
         game.game.event_span.open_untracked_span();
         game.remove_expiring_modifiers(LifeTime::ThisArt).await?;
 
         // can only perform art once per turn
-        game.add_modifier(self.card.1, PreventAllArts, LifeTime::ThisTurn)
+        game.add_modifier(self.card, PreventAllArts, LifeTime::ThisTurn)
             .await?;
         game.game.event_span.close_untracked_span();
 
@@ -3103,8 +2459,7 @@ impl EvaluateEvent for WaitingForPlayerIntent {
 /// used by Pekora oshi skill, marker event before zone to zone
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct HoloMemberDefeated {
-    pub player: Player,
-    pub card: (Zone, CardRef),
+    pub cards: Vec<CardRef>,
 }
 impl EvaluateEvent for HoloMemberDefeated {
     fn apply_state_change(&self, _state: &mut GameState) {
@@ -3112,10 +2467,7 @@ impl EvaluateEvent for HoloMemberDefeated {
     }
 
     async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
-        verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
-
-        game.send_cards_to_archive(self.player, vec![self.card.1])
-            .await?;
+        game.send_to_archive(self.cards.clone()).await?;
 
         Ok(GameContinue)
     }
@@ -3123,10 +2475,8 @@ impl EvaluateEvent for HoloMemberDefeated {
 /// used by Suisei oshi skill
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct DealDamage {
-    pub player: Player,
-    pub card: (Zone, CardRef),
-    pub target_player: Player,
-    pub target: (Zone, CardRef),
+    pub card: CardRef,
+    pub target: CardRef,
     pub dmg: DamageMarkers,
     pub is_special: bool,
 }
@@ -3136,10 +2486,7 @@ impl EvaluateEvent for DealDamage {
     }
 
     async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
-        verify_cards_in_zone(game, self.player, self.card.0, &[self.card.1]);
-        verify_cards_in_zone(game, self.target_player, self.target.0, &[self.target.1]);
-
-        game.add_damage_markers(self.target.1, self.dmg).await?;
+        game.add_damage_markers(self.target, self.dmg).await?;
 
         Ok(GameContinue)
     }

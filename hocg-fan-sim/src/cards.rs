@@ -533,7 +533,7 @@ impl HoloMemberAbility {
                     card: collab_card, ..
                 })) = triggered_event
                 {
-                    collab_card.1 == card
+                    *collab_card == card
                 } else {
                     false
                 }
@@ -544,7 +544,7 @@ impl HoloMemberAbility {
                     ..
                 })) = triggered_event
                 {
-                    bloom_card.1 == card
+                    *bloom_card == card
                 } else {
                     false
                 }

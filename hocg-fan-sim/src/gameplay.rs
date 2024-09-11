@@ -198,9 +198,12 @@ impl GameDirector {
     pub fn board_for_card_mut(&mut self, card: CardRef) -> &mut GameBoard {
         self.game.board_for_card_mut(card)
     }
+    pub fn group_by_player(&self, cards: &[CardRef]) -> HashMap<Player, Vec<CardRef>> {
+        self.game.group_by_player(cards)
+    }
     pub fn group_by_player_and_zone(
         &self,
-        cards: Vec<CardRef>,
+        cards: &[CardRef],
     ) -> HashMap<(Player, Zone), Vec<CardRef>> {
         self.game.group_by_player_and_zone(cards)
     }
@@ -402,8 +405,7 @@ impl GameDirector {
         if let Some(mem) = self.active_board().collab {
             self.add_modifier(mem, Resting, LifeTime::UntilRemoved)
                 .await?;
-            self.send_from_collab_to_back_stage(self.game.active_player(), mem)
-                .await?;
+            self.send_to_back_stage(vec![mem]).await?;
         }
         // - if no center, back stage to center
         if self.active_board().center_stage.is_none() && !self.active_board().back_stage.is_empty()
@@ -413,8 +415,7 @@ impl GameDirector {
             let back = self
                 .prompt_for_back_stage_to_center(self.game.active_player(), false)
                 .await;
-            self.send_from_back_stage_to_center_stage(self.game.active_player(), back)
-                .await?;
+            self.send_to_center_stage(back).await?;
         }
 
         Ok(GameContinue)
@@ -458,8 +459,7 @@ impl GameDirector {
                 MainStepAction::BackStageMember(card) => {
                     info!("- action: Back stage member");
                     // - place debut member on back stage
-                    self.send_from_hand_to_back_stage(self.game.active_player(), vec![card])
-                        .await?;
+                    self.send_to_back_stage(vec![card]).await?;
 
                     // cannot bloom member you just played
                     self.add_modifier(card, PreventBloom, LifeTime::ThisTurn)
@@ -477,24 +477,21 @@ impl GameDirector {
                     let card = self
                         .prompt_for_bloom(self.game.active_player(), bloom)
                         .await;
-                    self.bloom_holo_member(self.game.active_player(), bloom, card)
-                        .await?;
+                    self.bloom_holo_member(bloom, card).await?;
                 }
                 MainStepAction::UseSupportCard(card) => {
                     info!("- action: Use support card");
                     // - use support card
                     //   - only one limited per turn
                     //   - otherwise unlimited
-                    self.use_support_card(self.game.active_player(), card)
-                        .await?;
+                    self.use_support_card(card).await?;
                 }
                 MainStepAction::CollabMember(card) => {
                     info!("- action: Collab member");
                     // - put back stage member in collab
                     //   - can be done on first turn?
                     //   - draw down card from deck into power zone
-                    self.send_from_back_stage_to_collab(self.game.active_player(), card)
-                        .await?;
+                    self.send_to_collab(card).await?;
                 }
                 MainStepAction::BatonPass(card) => {
                     info!("- action: Baton pass");
@@ -514,20 +511,14 @@ impl GameDirector {
                         .prompt_for_back_stage_to_center(self.game.active_player(), true)
                         .await;
                     // swap members
-                    self.baton_pass_center_stage_to_back_stage(
-                        self.game.active_player(),
-                        center,
-                        back,
-                    )
-                    .await?;
+                    self.baton_pass(center, back).await?;
                 }
                 MainStepAction::UseOshiSkill(card, i) => {
                     info!("- action: Use skill");
                     // - use oshi skill
                     //   - oshi power uses card in power zone
                     //   - once per turn / once per game
-                    self.use_oshi_skill(self.game.active_player(), card, i)
-                        .await?;
+                    self.use_oshi_skill(card, i).await?;
                 }
                 MainStepAction::Done => {
                     info!("- action: Done");
@@ -581,8 +572,7 @@ impl GameDirector {
                     target,
                 } => {
                     info!("- action: Use art");
-                    self.perform_art(self.game.active_player(), card, art_idx, Some(target))
-                        .await?;
+                    self.perform_art(card, art_idx, Some(target)).await?;
                 }
                 PerformanceStepAction::Done => {
                     info!("- action: Done");
@@ -605,8 +595,7 @@ impl GameDirector {
             let back = self
                 .prompt_for_back_stage_to_center(self.game.active_player(), false)
                 .await;
-            self.send_from_back_stage_to_center_stage(self.game.active_player(), back)
-                .await?;
+            self.send_to_center_stage(back).await?;
         }
 
         Ok(GameContinue)
@@ -2256,18 +2245,26 @@ impl Game {
         self.state.board_for_card_mut(card)
     }
 
+    pub fn group_by_player(&self, cards: &[CardRef]) -> HashMap<Player, Vec<CardRef>> {
+        let mut map: HashMap<_, Vec<_>> = HashMap::new();
+        for card in cards {
+            let player = self.player_for_card(*card);
+            map.entry(player).or_default().push(*card);
+        }
+        map
+    }
     pub fn group_by_player_and_zone(
         &self,
-        cards: Vec<CardRef>,
+        cards: &[CardRef],
     ) -> HashMap<(Player, Zone), Vec<CardRef>> {
         let mut map: HashMap<_, Vec<_>> = HashMap::new();
         for card in cards {
-            let player = self.player_for_card(card);
+            let player = self.player_for_card(*card);
             let zone = self
                 .board(player)
-                .find_card_zone(card)
+                .find_card_zone(*card)
                 .expect("card should be in zone");
-            map.entry((player, zone)).or_default().push(card);
+            map.entry((player, zone)).or_default().push(*card);
         }
         map
     }

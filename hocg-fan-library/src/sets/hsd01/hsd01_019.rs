@@ -36,6 +36,8 @@ mod tests {
     #[tokio::test]
     /// hSD01-019 - Amazing PC (Item)
     async fn hsd01_019() {
+        // let _guard = setup_test_logs();
+
         let p1 = TestGameBoard {
             oshi: Some("hSD01-001".into()),
             center_stage: Some("hSD01-013".into()),

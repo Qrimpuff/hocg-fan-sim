@@ -1,6 +1,5 @@
 use hocg_fan_sim::cards::Card;
 
-
 automod::dir!("src/sets/hsd01");
 
 pub fn set() -> Vec<fn() -> Card> {
