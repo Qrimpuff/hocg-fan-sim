@@ -5,7 +5,6 @@ use iter_tools::Itertools;
 
 use super::effects::*;
 use crate::cards::*;
-use crate::events::Shuffle;
 use crate::gameplay::Player;
 use crate::gameplay::Zone;
 use crate::modifiers::DamageMarkers;
@@ -269,8 +268,6 @@ impl EvaluateEffectMut for Action {
                 if attachments.is_empty() {
                     return Ok(());
                 }
-                let player = game
-                    .player_for_card(*attachments.first().expect("should have at least one card"));
                 game.attach_cards_to_card(attachments, target).await?;
             }
             Action::DealDamage(targets, amount) => {
@@ -337,28 +334,19 @@ impl EvaluateEffectMut for Action {
             Action::SendTo(to_zone, cards) => {
                 let (_, to_zone) = to_zone.evaluate_with_context(ctx, &game.game);
                 let cards = cards.evaluate_with_context(ctx, &game.game);
-                if let Some(c) = cards.first() {
-                    let player = game.player_for_card(*c);
-                    game.send_to_zone(cards, to_zone).await?;
-                }
+                game.send_to_zone(cards, to_zone).await?;
             }
             Action::SendToBottom(to_zone, cards) => {
                 let (_, to_zone) = to_zone.evaluate_with_context(ctx, &game.game);
                 let cards = cards.evaluate_with_context(ctx, &game.game);
-                if let Some(c) = cards.first() {
-                    let player = game.player_for_card(*c);
-                    game.send_to_zone_with_location(cards, to_zone, ZoneAddLocation::Bottom)
-                        .await?;
-                }
+                game.send_to_zone_with_location(cards, to_zone, ZoneAddLocation::Bottom)
+                    .await?;
             }
             Action::SendToTop(to_zone, cards) => {
                 let (_, to_zone) = to_zone.evaluate_with_context(ctx, &game.game);
                 let cards = cards.evaluate_with_context(ctx, &game.game);
-                if let Some(c) = cards.first() {
-                    let player = game.player_for_card(*c);
-                    game.send_to_zone_with_location(cards, to_zone, ZoneAddLocation::Top)
-                        .await?;
-                }
+                game.send_to_zone_with_location(cards, to_zone, ZoneAddLocation::Top)
+                    .await?;
             }
             Action::Shuffle(zone) => {
                 let (player, zone) = zone.evaluate_with_context(ctx, &game.game);

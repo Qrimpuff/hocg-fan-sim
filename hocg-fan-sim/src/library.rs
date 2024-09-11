@@ -13,7 +13,7 @@ use tracing::{error, warn};
 
 fn global_library() -> &'static RwLock<GlobalLibrary> {
     static GLOBAL_LIBRARY: OnceLock<RwLock<GlobalLibrary>> = OnceLock::new();
-    GLOBAL_LIBRARY.get_or_init(|| RwLock::default())
+    GLOBAL_LIBRARY.get_or_init(RwLock::default)
 }
 
 pub async fn library() -> RwLockReadGuard<'static, GlobalLibrary> {

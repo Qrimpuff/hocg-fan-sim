@@ -1,9 +1,6 @@
-use hocg_fan_sim::{
-    card_effects::ParseEffect,
-    cards::{
-        Color::*, HoloMemberArtDamage::*, HoloMemberExtraAttribute::*, HoloMemberHashTag::*,
-        HoloMemberLevel::*, Rarity::*, *,
-    },
+use hocg_fan_sim::cards::{
+    Color::*, HoloMemberArtDamage::*, HoloMemberExtraAttribute::*, HoloMemberHashTag::*,
+    HoloMemberLevel::*, Rarity::*, *,
 };
 
 pub fn card() -> Card {
@@ -22,7 +19,7 @@ pub fn card() -> Card {
             damage: Basic(30),
             special_damage: None,
             text: "".into(),
-            condition:vec![],
+            condition: vec![],
             effect: vec![],
         }],
         attributes: vec![Unlimited],
@@ -34,8 +31,6 @@ pub fn card() -> Card {
 
 #[cfg(test)]
 mod tests {
-    use hocg_fan_sim::{gameplay::*, modifiers::*, prompters::*, tests::*};
-    use pretty_assertions::assert_eq;
 
     #[tokio::test]
     async fn hbp01_021() {

@@ -497,12 +497,6 @@ impl GameDirector {
     }
 
     pub async fn remove_damage_markers(&mut self, card: CardRef, dmg: DamageMarkers) -> GameResult {
-        let player = self.player_for_card(card);
-        let zone = self
-            .board(player)
-            .find_card_zone(card)
-            .expect("the card should be in a zone");
-
         self.remove_damage_markers_from_many_cards(vec![card], dmg)
             .await
     }

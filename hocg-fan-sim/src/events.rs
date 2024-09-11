@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::{
     card_effects::evaluate::{EvaluateContext, EvaluateEffectMut},
     cards::*,
@@ -15,7 +13,7 @@ use enum_dispatch::enum_dispatch;
 use get_size::GetSize;
 use iter_tools::Itertools;
 use rand::Rng;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 use ModifierKind::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
@@ -820,11 +818,6 @@ impl GameDirector {
             // info!("lost a life: {}", CardDisplay::new(cheer, self));
 
             if let Some(mem) = self.prompt_for_cheer(player).await {
-                let to_zone = self
-                    .board(player)
-                    .find_card_zone(mem)
-                    .expect("the card should be in a zone");
-
                 self.send_event(
                     AttachToCard {
                         attachments: vec![cheer],
@@ -1171,31 +1164,6 @@ pub trait EvaluateEvent {
     async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult;
 }
 
-fn verify_cards_in_zone(game: &GameDirector, player: Player, zone: Zone, cards: &[CardRef]) {
-    // from_zone is only there for client knowledge, the game knows where the card is
-    let from_zone = game.board(player).get_zone(zone);
-    let all_card_in_zone = cards.iter().all(|c| from_zone.is_in_zone(*c));
-    if !all_card_in_zone {
-        error!("not all cards are in zone - game: {game:#?} - player: {player:#?} - zone: {zone:#?} - cards: {cards:#?}");
-        panic!("not all cards are in zone")
-    }
-}
-
-fn verify_cards_attached(
-    game: &GameDirector,
-    player: Player,
-    card: CardRef,
-    attachments: &[CardRef],
-) {
-    // from_zone is only there for client knowledge, the game knows where the card is
-    let board = game.board(player);
-    let all_card_attached = attachments.iter().all(|a| board.is_attached_to(*a, card));
-    if !all_card_attached {
-        error!("not all cards are attached - game: {game:#?} - player: {player:#?} - card: {card:#?} - attachments: {attachments:#?}");
-        panic!("not all cards are attached")
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct SyncGameState {
     pub state: Box<GameState>,
@@ -1463,17 +1431,10 @@ impl EvaluateEvent for Reveal {
         // no state change
     }
 
-    async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
+    async fn evaluate_event(&self, _game: &mut GameDirector) -> GameResult {
         if self.cards.is_empty() {
             return Ok(GameContinue);
         }
-
-        verify_cards_in_zone(
-            game,
-            self.player,
-            self.zone,
-            &self.cards.iter().map(|(c, _)| c).copied().collect_vec(),
-        );
 
         // TODO implement for network
 
@@ -1676,8 +1637,8 @@ pub struct ClearCardModifiers {
 }
 impl EvaluateEvent for ClearCardModifiers {
     fn apply_state_change(&self, state: &mut GameState) {
-        for card in self.cards.iter().copied() {
-            state.card_modifiers.remove_entry(&card);
+        for card in self.cards.iter() {
+            state.card_modifiers.remove_entry(card);
         }
     }
 
@@ -1847,8 +1808,8 @@ pub struct ClearDamageMarkers {
 }
 impl EvaluateEvent for ClearDamageMarkers {
     fn apply_state_change(&self, state: &mut GameState) {
-        for card in self.cards.iter().copied() {
-            state.card_damage_markers.remove_entry(&card);
+        for card in self.cards.iter() {
+            state.card_damage_markers.remove_entry(card);
         }
     }
 
@@ -1874,12 +1835,10 @@ impl EvaluateEvent for LookAndSelect {
         // no state change
     }
 
-    async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
+    async fn evaluate_event(&self, _game: &mut GameDirector) -> GameResult {
         if self.cards.is_empty() {
             return Ok(GameContinue);
         }
-
-        verify_cards_in_zone(game, self.player, self.zone, &self.cards);
 
         // TODO implement
         unimplemented!()
@@ -2358,7 +2317,7 @@ impl EvaluateEvent for ActivateHoloMemberArtEffect {
         // no state change
     }
 
-    async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
+    async fn evaluate_event(&self, _game: &mut GameDirector) -> GameResult {
         unimplemented!()
     }
 }

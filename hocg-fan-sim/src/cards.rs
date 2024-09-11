@@ -389,10 +389,9 @@ impl HoloMemberCard {
                     .map(|m| m.names()),
             );
 
-        let can_bloom = names
+        names
             .multi_cartesian_product()
-            .any(|ns| ns.into_iter().all_equal());
-        can_bloom
+            .any(|ns| ns.into_iter().all_equal())
     }
 
     pub fn can_use_ability(
