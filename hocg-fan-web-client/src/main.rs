@@ -627,8 +627,8 @@ fn Deck(mat: Signal<Mat>, player: Player, zone: Zone) -> Element {
     let shuffling_c = use_memo(move || if shuffling() { "deck-shuffling" } else { "" });
     use_effect(move || {
         shuffling.set(
-            if let Some(Event::Shuffle(Shuffle { player: p, zone: z })) = *EVENT.read() {
-                p == player && z == zone
+            if let Some(Event::Shuffle(Shuffle { ref decks })) = *EVENT.read() {
+                decks.contains(&(player, zone))
             } else {
                 false
             },

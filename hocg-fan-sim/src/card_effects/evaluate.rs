@@ -364,7 +364,7 @@ impl EvaluateEffectMut for Action {
             }
             Action::Shuffle(zone) => {
                 let (player, zone) = zone.evaluate_with_context(ctx, &game.game);
-                game.send_event(Shuffle { player, zone }.into()).await?;
+                game.shuffle_decks(&[(player, zone)]).await?;
             }
         }
         Ok(())

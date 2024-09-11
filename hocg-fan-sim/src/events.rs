@@ -635,11 +635,26 @@ impl GameDirector {
         Ok(GameContinue)
     }
 
+    pub async fn shuffle_decks(&mut self, decks: &[(Player, Zone)]) -> GameResult {
+        if decks.is_empty() {
+            return Ok(GameContinue);
+        }
+
+        self.send_event(
+            Shuffle {
+                decks: decks.into(),
+            }
+            .into(),
+        )
+        .await?;
+
+        Ok(GameContinue)
+    }
+
     pub async fn shuffle_main_deck(&mut self, player: Player) -> GameResult {
         self.send_event(
             Shuffle {
-                player,
-                zone: Zone::MainDeck,
+                decks: vec![(player, Zone::MainDeck)],
             }
             .into(),
         )
@@ -651,8 +666,7 @@ impl GameDirector {
     pub async fn shuffle_cheer_deck(&mut self, player: Player) -> GameResult {
         self.send_event(
             Shuffle {
-                player,
-                zone: Zone::CheerDeck,
+                decks: vec![(player, Zone::CheerDeck)],
             }
             .into(),
         )
@@ -1680,13 +1694,14 @@ impl EvaluateEvent for Setup {
     async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
         self.apply_state_change(&mut game.game.state);
 
-        // - shuffle main deck
-        game.shuffle_main_deck(Player::One).await?;
-        game.shuffle_main_deck(Player::Two).await?;
-
-        // - shuffle cheer deck
-        game.shuffle_cheer_deck(Player::One).await?;
-        game.shuffle_cheer_deck(Player::Two).await?;
+        // - shuffle main decks and cheer decks
+        game.shuffle_decks(&[
+            (Player::One, Zone::MainDeck),
+            (Player::Two, Zone::MainDeck),
+            (Player::One, Zone::CheerDeck),
+            (Player::Two, Zone::CheerDeck),
+        ])
+        .await?;
 
         // - oshi face down
         // TODO oshi hide
@@ -1852,8 +1867,7 @@ impl EvaluateEvent for Setup {
 
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct Shuffle {
-    pub player: Player,
-    pub zone: Zone,
+    pub decks: Vec<(Player, Zone)>,
 }
 impl EvaluateEvent for Shuffle {
     fn apply_state_change(&self, _state: &mut GameState) {
@@ -1862,13 +1876,15 @@ impl EvaluateEvent for Shuffle {
     }
 
     async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
-        // need that split, because the borrow checker needs to know we are accessing different fields
-        let zone = match self.player {
-            Player::One => game.game.state.player_1.get_zone_mut(self.zone),
-            Player::Two => game.game.state.player_2.get_zone_mut(self.zone),
-            _ => unreachable!("both players cannot be active at the same time"),
-        };
-        zone.shuffle(&mut game.rng);
+        for (player, zone) in &self.decks {
+            // need that split, because the borrow checker needs to know we are accessing different fields
+            let zone = match player {
+                Player::One => game.game.state.player_1.get_zone_mut(*zone),
+                Player::Two => game.game.state.player_2.get_zone_mut(*zone),
+                _ => unreachable!("both players cannot be active at the same time"),
+            };
+            zone.shuffle(&mut game.rng);
+        }
 
         Ok(GameContinue)
     }
