@@ -7,18 +7,19 @@ pub fn card() -> Card {
         kind: SupportKind::Event,
         limited: true,
         text: "You can use this card only if you have 6 or fewer cards in hand (not including this card). Look at the top 4 cards of your deck.\n\n You may reveal any number of [Tokino Sora] or [AZKi] holomem from among them and put the revealed cards into your hand. Put the rest on the bottom of your deck in any order.".into(),
-        attachment_condition: vec![],
-        triggers: vec![],
-        condition: (r"
-                6 >= count filter from hand is_not this_card
-            ").parse_effect().expect("hSD01-021"),
-        effect: (r"
-                let $top_4 = from_top 4 main_deck
-                let $mems = select_any $top_4 is_named_tokino_sora or is_named_azki
-                reveal $mems
-                send_to hand $mems
-                send_to_bottom main_deck leftovers
-            ").parse_effect().expect("hSD01-021"),
+        effects: vec![SupportEffect {
+            triggers: vec![Trigger::PlayFromHand],
+            condition: (r"
+                    6 >= count filter from hand is_not this_card
+                ").parse_effect().expect("hSD01-021"),
+            effect: (r"
+                    let $top_4 = from_top 4 main_deck
+                    let $mems = select_any $top_4 is_named_tokino_sora or is_named_azki
+                    reveal $mems
+                    send_to hand $mems
+                    send_to_bottom main_deck leftovers
+                ").parse_effect().expect("hSD01-021"),
+        }],
         rarity: Rarity::Common,
         illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-021.webp".into(),
         artist: "TODO".into(),

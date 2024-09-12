@@ -630,31 +630,20 @@ pub struct SupportCard {
     pub kind: SupportKind,
     pub limited: bool, // TODO limited is needed, but not sure how
     pub text: String,
-    #[serde(serialize_with = "serialize_conditions")]
-    #[serde(deserialize_with = "deserialize_conditions")]
-    #[serde(skip_serializing_if = "skip_default_conditions")]
-    pub attachment_condition: CardEffectCondition, // used by Fan
-    pub triggers: CardEffectTrigger,
-    #[serde(serialize_with = "serialize_conditions")]
-    #[serde(deserialize_with = "deserialize_conditions")]
-    #[serde(skip_serializing_if = "skip_default_conditions")]
-    pub condition: CardEffectCondition,
-    #[serde(serialize_with = "serialize_actions")]
-    #[serde(deserialize_with = "deserialize_actions")]
-    #[serde(skip_serializing_if = "skip_default_actions")]
-    pub effect: CardEffect,
+    pub effects: Vec<SupportEffect>,
     pub rarity: Rarity,
     pub illustration_url: IllustrationUrl,
     pub artist: String,
 }
 
 impl SupportCard {
-    pub fn can_use_support(&self, card: CardRef, game: &GameDirector) -> bool {
+    pub fn can_use_support(&self, card: CardRef, effect_idx: usize, game: &GameDirector) -> bool {
         if self.limited && game.has_modifier(card, PreventLimitedSupport) {
             return false;
         }
 
-        self.condition
+        self.effects[effect_idx]
+            .condition
             .ctx()
             .with_card(card, &game.game)
             .evaluate(&game.game)
@@ -670,13 +659,20 @@ impl SupportCard {
         unimplemented!()
     }
 
-    pub fn can_use_ability(&self, card: CardRef, game: &GameDirector, is_triggered: bool) -> bool {
-        //  could prevent art by effect
+    pub fn can_use_effect(
+        &self,
+        card: CardRef,
+        effect_idx: usize,
+        game: &GameDirector,
+        is_triggered: bool,
+    ) -> bool {
+        //  could prevent abilities by effect
         if game.has_modifier(card, PreventAbilities) {
             return false;
         }
 
-        self.condition
+        self.effects[effect_idx]
+            .condition
             .ctx()
             .with_card(card, &game.game)
             .with_triggered(is_triggered)
@@ -690,7 +686,23 @@ pub enum SupportKind {
     Staff,
     Item,
     Event,
+    Tool,
+    Mascot,
     Fan,
+}
+
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, GetSize)]
+#[serde(rename_all = "snake_case")]
+pub struct SupportEffect {
+    pub triggers: CardEffectTrigger,
+    #[serde(serialize_with = "serialize_conditions")]
+    #[serde(deserialize_with = "deserialize_conditions")]
+    #[serde(skip_serializing_if = "skip_default_conditions")]
+    pub condition: CardEffectCondition,
+    #[serde(serialize_with = "serialize_actions")]
+    #[serde(deserialize_with = "deserialize_actions")]
+    #[serde(skip_serializing_if = "skip_default_actions")]
+    pub effect: CardEffect,
 }
 
 #[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, GetSize)]

@@ -479,12 +479,12 @@ impl GameDirector {
                         .await;
                     self.bloom_holo_member(bloom, card).await?;
                 }
-                MainStepAction::UseSupportCard(card) => {
+                MainStepAction::UseSupportCard(card, i) => {
                     info!("- action: Use support card");
                     // - use support card
                     //   - only one limited per turn
                     //   - otherwise unlimited
-                    self.use_support_card(card).await?;
+                    self.use_support_card(card, i).await?;
                 }
                 MainStepAction::CollabMember(card) => {
                     info!("- action: Collab member");
@@ -974,8 +974,13 @@ impl GameDirector {
                 },
                 // check condition to play support
                 Card::Support(s) => s
-                    .can_use_support(c, self)
-                    .then_some(MainStepAction::UseSupportCard(c)),
+                    .effects
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, e)| e.triggers.iter().any(|t| *t == Trigger::PlayFromHand))
+                    .filter(|(i, _)| s.can_use_support(c, *i, self))
+                    .map(|(i, _)| MainStepAction::UseSupportCard(c, i))
+                    .next(),
                 Card::Cheer(_) => unreachable!("cheer cannot be in hand"),
             })
             // .map(|a| MainStepActionDisplay::new(a, self))
@@ -1959,7 +1964,7 @@ impl Display for Rps {
 pub enum MainStepAction {
     BackStageMember(CardRef),
     BloomMember(CardRef),
-    UseSupportCard(CardRef),
+    UseSupportCard(CardRef, usize),
     CollabMember(CardRef),
     BatonPass(CardRef),
     UseOshiSkill(CardRef, usize),
@@ -1983,7 +1988,7 @@ impl MainStepActionDisplay {
                 let display = CardDisplay::new(card, game);
                 format!("bloom member with: {display}")
             }
-            MainStepAction::UseSupportCard(card) => {
+            MainStepAction::UseSupportCard(card, _idx) => {
                 let display = CardDisplay::new(card, game);
                 format!("use support: {display}")
             }

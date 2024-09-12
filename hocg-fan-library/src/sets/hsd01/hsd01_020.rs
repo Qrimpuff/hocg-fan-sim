@@ -7,19 +7,20 @@ pub fn card() -> Card {
         kind: SupportKind::Event,
         limited: false,
         text: "Roll a six-sided die: If the result is 3 or greater, attach a Cheer card from your Archive to one of your holomem.".into(),
-        attachment_condition: vec![],
-        triggers: vec![],
-        condition: vec![],
-        effect: (r"
-                let $roll = roll_dice
-                if $roll >= 3 (
-                    let $cheer = select_one from archive is_cheer
-                    if exists $cheer (
-                        let $mem = select_one from stage is_member
-                        attach_cards $cheer $mem
+        effects: vec![SupportEffect {
+            triggers: vec![Trigger::PlayFromHand],
+            condition: vec![],
+            effect: (r"
+                    let $roll = roll_dice
+                    if $roll >= 3 (
+                        let $cheer = select_one from archive is_cheer
+                        if exists $cheer (
+                            let $mem = select_one from stage is_member
+                            attach_cards $cheer $mem
+                        )
                     )
-                )
-            ").parse_effect().expect("hSD01-020"),
+                ").parse_effect().expect("hSD01-020"),
+        }],
         rarity: Rarity::Common,
         illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-020.webp".into(),
         artist: "JinArt KABAKURA".into(),

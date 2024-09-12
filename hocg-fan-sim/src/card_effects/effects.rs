@@ -484,7 +484,9 @@ pub enum Zone {
 #[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, GetSize)]
 #[serde(rename_all = "snake_case")]
 pub enum Trigger {
+    Never,
     ActivateInMainStep,
+    PlayFromHand,
     OnStartTurn,
     OnEndTurn,
     OnEnterStep(Step),
@@ -498,7 +500,9 @@ pub enum Trigger {
 impl Trigger {
     pub fn should_activate(&self, triggered_event: &TriggeredEvent) -> bool {
         match self {
+            Trigger::Never => false,
             Trigger::ActivateInMainStep => false,
+            Trigger::PlayFromHand => false,
             Trigger::OnStartTurn => {
                 matches!(triggered_event, TriggeredEvent::After(Event::StartTurn(_)))
             }

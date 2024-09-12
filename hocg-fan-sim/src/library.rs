@@ -62,7 +62,7 @@ impl GlobalLibrary {
 
         // DON'T REMOVE YET. NOT BEFORE THE FILES ARE MADE
         // default condition to always
-        let default_trigger = Trigger::ActivateInMainStep;
+        let default_trigger = Trigger::Never;
         let default_condition = Condition::True;
         let default_action = Action::Noop;
         let default_url =
@@ -111,18 +111,17 @@ impl GlobalLibrary {
                     if s.illustration_url.is_empty() {
                         s.illustration_url.clone_from(&default_url);
                     };
-                    if s.attachment_condition.is_empty() {
-                        s.attachment_condition.push(default_condition.clone())
-                    }
-                    if s.triggers.is_empty() {
-                        s.triggers.push(default_trigger)
-                    }
-                    if s.condition.is_empty() {
-                        s.condition.push(default_condition.clone())
-                    }
-                    if s.effect.is_empty() {
-                        s.effect.push(default_action.clone())
-                    }
+                    s.effects.iter_mut().for_each(|s| {
+                        if s.triggers.is_empty() {
+                            s.triggers.push(default_trigger)
+                        }
+                        if s.condition.is_empty() {
+                            s.condition.push(default_condition.clone())
+                        }
+                        if s.effect.is_empty() {
+                            s.effect.push(default_action.clone())
+                        }
+                    });
                 }
                 Card::Cheer(c) => {
                     if c.illustration_url.is_empty() {
@@ -185,23 +184,16 @@ impl GlobalLibrary {
                         }
                     })
                 }
-                Card::Support(s) => {
-                    if let Err(e) = serialization_round_trip(s.attachment_condition.clone()) {
-                        error!(
-                            "{}: {} - attachment_condition - {}",
-                            s.card_number, s.name, e
-                        );
+                Card::Support(s) => s.effects.iter_mut().enumerate().for_each(|(i, e)| {
+                    if let Err(e) = serialization_round_trip(e.condition.clone()) {
+                        error!("{}: {} - condition - {}", s.card_number, i, e);
                         has_errors = true;
                     }
-                    if let Err(e) = serialization_round_trip(s.condition.clone()) {
-                        error!("{}: {} - condition - {}", s.card_number, s.name, e);
+                    if let Err(e) = serialization_round_trip(e.effect.clone()) {
+                        error!("{}: {} - effect - {}", s.card_number, i, e);
                         has_errors = true;
                     }
-                    if let Err(e) = serialization_round_trip(s.effect.clone()) {
-                        error!("{}: {} - effect - {}", s.card_number, s.name, e);
-                        has_errors = true;
-                    }
-                }
+                }),
                 Card::Cheer(_) => {} // cheers do not have effects
             }
         }

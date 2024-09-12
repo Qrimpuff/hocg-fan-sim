@@ -7,21 +7,22 @@ pub fn card() -> Card {
         kind: SupportKind::Item,
         limited: true,
         text: "You can use this card only if you Archive 1 Cheer card attached to your holomem.\n\n Search your deck for a non-Buzz 1st or 2nd holomem, reveal it, and put it into your hand. Then shuffle your deck.".into(),
-        attachment_condition: vec![],
-        triggers: vec![],
-        condition: (r"
-                any from stage has_cheers
-            ").parse_effect().expect("hSD01-019"),
-        effect: (r"
-                let $mem = select_one from stage is_member and has_cheers
-                let $cheer = select_one attached $mem is_cheer
-                send_to archive $cheer
-                let $cond = ((is_level_first or is_level_second) and not is_attribute_buzz) 
-                let $choice = select_one from main_deck $cond
-                reveal $choice
-                send_to hand $choice
-                shuffle main_deck
-            ").parse_effect().expect("hSD01-019"),
+        effects: vec![SupportEffect {
+            triggers: vec![Trigger::PlayFromHand],
+            condition: (r"
+                    any from stage has_cheers
+                ").parse_effect().expect("hSD01-019"),
+            effect: (r"
+                    let $mem = select_one from stage is_member and has_cheers
+                    let $cheer = select_one attached $mem is_cheer
+                    send_to archive $cheer
+                    let $cond = ((is_level_first or is_level_second) and not is_attribute_buzz) 
+                    let $choice = select_one from main_deck $cond
+                    reveal $choice
+                    send_to hand $choice
+                    shuffle main_deck
+                ").parse_effect().expect("hSD01-019"),
+        }],
         rarity: Rarity::Common,
         illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-019.webp".into(),
         artist: "JinArt KABAKURA".into(),

@@ -7,17 +7,18 @@ pub fn card() -> Card {
         kind: SupportKind::Staff,
         limited: true,
         text: "You can use this card only if you have 1 or more card in hand, not including this card.\n\n Shuffle your hand into your deck, then draw 5 cards.".into(),
-        attachment_condition: vec![],
-        triggers: vec![],
-        condition: (r"
-                1 <= count filter from hand is_not this_card
-            ").parse_effect().expect("hSD01-017"),
-        effect: (r"
-                let $hand = from hand
-                send_to main_deck $hand
-                shuffle main_deck
-                draw 5
-            ").parse_effect().expect("hSD01-017"),
+        effects: vec![SupportEffect {
+            triggers: vec![Trigger::PlayFromHand],
+            condition: (r"
+                    1 <= count filter from hand is_not this_card
+                ").parse_effect().expect("hSD01-017"),
+            effect: (r"
+                    let $hand = from hand
+                    send_to main_deck $hand
+                    shuffle main_deck
+                    draw 5
+                ").parse_effect().expect("hSD01-017"),
+        }],
         rarity: Rarity::Common,
         illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-017.webp".into(),
         artist: "株式会社 HIKE / Trigono".into(),

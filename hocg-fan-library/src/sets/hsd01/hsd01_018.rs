@@ -7,16 +7,17 @@ pub fn card() -> Card {
         kind: SupportKind::Item,
         limited: false,
         text: "Look at the top 5 cards of your deck. You may reveal a LIMITED Support card from among them and put it into your hand. Put the rest on the bottom of your deck in any order.".into(),
-        attachment_condition: vec![],
-        triggers: vec![],
-        condition: vec![],
-        effect: (r"
-                let $top_5 = from_top 5 main_deck
-                let $limited = select_up_to 1 $top_5 is_support_limited
-                reveal $limited
-                send_to hand $limited
-                send_to_bottom main_deck leftovers
-            ").parse_effect().expect("hSD01-018"),
+        effects: vec![SupportEffect {
+            triggers: vec![Trigger::PlayFromHand],
+            condition: vec![],
+            effect: (r"
+                    let $top_5 = from_top 5 main_deck
+                    let $limited = select_up_to 1 $top_5 is_support_limited
+                    reveal $limited
+                    send_to hand $limited
+                    send_to_bottom main_deck leftovers
+                ").parse_effect().expect("hSD01-018"),
+        }],
         rarity: Rarity::Common,
         illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-018.webp".into(),
         artist: "JinArt こばやかわやまと".into(),

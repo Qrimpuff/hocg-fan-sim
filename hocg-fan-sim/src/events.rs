@@ -91,7 +91,7 @@ pub enum Event {
 
     BatonPass,
     ActivateSupportCard,
-    ActivateSupportAbility,
+    ActivateSupportEffect,
     /// used by Lui oshi skill
     ActivateOshiSkill,
     ActivateHoloMemberAbility,
@@ -412,7 +412,7 @@ impl GameDirector {
         for card in all_cards_on_stage {
             let mut oshi_skill = None;
             let mut member_ability = None;
-            let mut support_ability = false;
+            let mut support_ability = None;
             match self.lookup_card(card) {
                 Card::OshiHoloMember(o) => {
                     for (idx, skill) in o.skills.iter().enumerate() {
@@ -437,12 +437,14 @@ impl GameDirector {
                     }
                 }
                 Card::Support(s) => {
-                    // FIXME need to use the usual check, but with event?
-                    if s.triggers.iter().any(|t| t.should_activate(&trigger))
-                        && s.can_use_ability(card, self, false)
-                    {
-                        debug!("ACTIVATE SUPPORT = {s:?}");
-                        support_ability = true;
+                    for (idx, effect) in s.effects.iter().enumerate() {
+                        // FIXME need to use the usual check, but with event?
+                        if effect.triggers.iter().any(|t| t.should_activate(&trigger))
+                            && s.can_use_effect(card, idx, self, false)
+                        {
+                            debug!("ACTIVATE SUPPORT? = {effect:?}");
+                            support_ability = Some(idx);
+                        }
                     }
                 }
                 Card::Cheer(_) => {} // cheers do not have triggers yet
@@ -462,8 +464,8 @@ impl GameDirector {
             if let Some(idx) = member_ability {
                 self.activate_holo_member_ability(card, idx, true).await?;
             }
-            if support_ability {
-                self.activate_support_ability(card, true).await?;
+            if let Some(idx) = support_ability {
+                self.activate_support_effect(card, idx, true).await?;
             }
             self.game.event_span.close_untracked_span();
         }
@@ -1051,8 +1053,9 @@ impl GameDirector {
         Ok(GameContinue)
     }
 
-    pub async fn use_support_card(&mut self, card: CardRef) -> GameResult {
-        self.send_event(ActivateSupportCard { card }.into()).await?;
+    pub async fn use_support_card(&mut self, card: CardRef, effect_idx: usize) -> GameResult {
+        self.send_event(ActivateSupportCard { card, effect_idx }.into())
+            .await?;
 
         Ok(GameContinue)
     }
@@ -1109,13 +1112,21 @@ impl GameDirector {
         Ok(GameContinue)
     }
 
-    pub async fn activate_support_ability(
+    pub async fn activate_support_effect(
         &mut self,
         card: CardRef,
+        effect_idx: usize,
         is_triggered: bool,
     ) -> GameResult {
-        self.send_event(ActivateSupportAbility { card, is_triggered }.into())
-            .await?;
+        self.send_event(
+            ActivateSupportEffect {
+                card,
+                effect_idx,
+                is_triggered,
+            }
+            .into(),
+        )
+        .await?;
 
         Ok(GameContinue)
     }
@@ -2127,6 +2138,7 @@ impl EvaluateEvent for BatonPass {
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct ActivateSupportCard {
     pub card: CardRef,
+    pub effect_idx: usize,
 }
 impl EvaluateEvent for ActivateSupportCard {
     fn apply_state_change(&self, _state: &mut GameState) {
@@ -2142,9 +2154,9 @@ impl EvaluateEvent for ActivateSupportCard {
             .expect("only support should be allowed here");
 
         let limited_use = sup.limited;
-        let effect = sup.effect.clone();
+        let effect = sup.effects[self.effect_idx].effect.clone();
 
-        if !sup.can_use_support(self.card, game) {
+        if !sup.can_use_support(self.card, self.effect_idx, game) {
             unreachable!("support should not be an option, if it's not allowed")
         }
 
@@ -2177,11 +2189,12 @@ impl EvaluateEvent for ActivateSupportCard {
 
 /// used by Lui oshi skill
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
-pub struct ActivateSupportAbility {
+pub struct ActivateSupportEffect {
     pub card: CardRef,
+    pub effect_idx: usize,
     pub is_triggered: bool,
 }
-impl EvaluateEvent for ActivateSupportAbility {
+impl EvaluateEvent for ActivateSupportEffect {
     fn apply_state_change(&self, _state: &mut GameState) {
         // no state change
     }
@@ -2192,11 +2205,11 @@ impl EvaluateEvent for ActivateSupportAbility {
             .expect("only support should be using skills");
 
         //  check condition for skill
-        if !support.can_use_ability(self.card, game, self.is_triggered) {
+        if !support.can_use_effect(self.card, self.effect_idx, game, self.is_triggered) {
             panic!("cannot use this skill");
         }
 
-        let effect = support.effect.clone();
+        let effect = support.effects[self.effect_idx].effect.clone();
 
         effect
             .ctx()

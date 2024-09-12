@@ -7,14 +7,15 @@ pub fn card() -> Card {
         kind: SupportKind::Staff,
         limited: true,
         text: "Draw 3 cards.".into(),
-        attachment_condition: vec![],
-        triggers: vec![],
-        condition: vec![],
-        effect: (r"
-                draw 3
-            ")
-        .parse_effect()
-        .expect("hSD01-016"),
+        effects: vec![SupportEffect {
+            triggers: vec![Trigger::PlayFromHand],
+            condition: vec![],
+            effect: (r"
+                    draw 3
+                ")
+            .parse_effect()
+            .expect("hSD01-016"),
+        }],
         rarity: Rarity::Common,
         illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-016.webp"
             .into(),

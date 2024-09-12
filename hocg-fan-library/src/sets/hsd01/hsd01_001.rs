@@ -1,4 +1,7 @@
-use hocg_fan_sim::{card_effects::ParseEffect, cards::*};
+use hocg_fan_sim::{
+    card_effects::{ParseEffect, Trigger},
+    cards::*,
+};
 
 pub fn card() -> Card {
     Card::OshiHoloMember(OshiHoloMemberCard {
@@ -11,7 +14,7 @@ pub fn card() -> Card {
                 name: "Replacement".into(),
                 cost: 1,
                 text: "[Once per turn] Move one Cheer card attached to one of your holomem to another of your holomem.".into(),
-                triggers: vec![],
+                triggers: vec![Trigger::ActivateInMainStep],
                 condition: (r"
                     2 <= count from stage
                     any from stage has_cheers
@@ -28,7 +31,7 @@ pub fn card() -> Card {
                 name: "So You're the Enemy?".into(),
                 cost: 2,
                 text: "[Once per game] Switch 1 of your opponent's Back position holomem with their Center position holomem. Until end of turn, your White Center position holomem have +50 to their Arts.".into(),
-                triggers: vec![],
+                triggers: vec![Trigger::ActivateInMainStep],
                 condition: (r"
                     exists from opponent_center_stage
                     exists from opponent_back_stage

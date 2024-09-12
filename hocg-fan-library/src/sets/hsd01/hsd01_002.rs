@@ -27,7 +27,7 @@ pub fn card() -> Card {
             name: "In My Right Hand, a Mic".into(),
             cost: 3,
             text: "[Once per game] Attach any number of Cheer cards from your Archive to one of your Green holomem.".into(),
-            triggers: vec![],
+            triggers: vec![Trigger::ActivateInMainStep],
             condition: (r"
                  any from stage is_member and is_color_green
             ").parse_effect().expect("hSD01-002"),
