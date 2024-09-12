@@ -23,7 +23,7 @@ pub fn card() -> Card {
             special_damage: None,
             text: "This Art can only target your opponent's Center position holomem.".into(),
             condition: (r"
-                all target is_in_zone opponent_center_stage
+                all art_target is_in_zone opponent_center_stage
             ")
             .parse_effect()
             .expect("hBP01-009"),

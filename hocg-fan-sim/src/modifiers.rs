@@ -201,10 +201,7 @@ impl GameState {
 impl Game {
     pub fn find_modifiers(&self, card: CardRef) -> impl Iterator<Item = &Modifier> + '_ {
         let player = self.player_for_card(card);
-        let zone = self
-            .board(player)
-            .find_card_zone(card)
-            .expect("card should be in zone");
+        let zone = self.board(player).find_card_zone(card).unwrap_or(Zone::All);
 
         self.state
             .card_modifiers

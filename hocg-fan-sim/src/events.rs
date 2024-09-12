@@ -375,6 +375,9 @@ impl GameDirector {
         let after = TriggeredEvent::After(&event);
         Box::pin(self.evaluate_triggers(after)).await?;
 
+        // change the event after it happens, with modifiers from triggers
+        Box::pin(event.adjust_event(self)).await?;
+
         // done with the current event
         // unchecked should be fine, can't check because the event could have been changed in adjust
         self.game.event_span.close_event_span_unchecked();
@@ -1135,7 +1138,7 @@ impl GameDirector {
         &mut self,
         card: CardRef,
         art_idx: usize,
-        target: Option<CardRef>,
+        target: CardRef,
     ) -> GameResult {
         self.send_event(
             PerformArt {
@@ -2339,7 +2342,7 @@ impl EvaluateEvent for ActivateHoloMemberArtEffect {
 pub struct PerformArt {
     pub card: CardRef,
     pub art_idx: usize,
-    pub target: Option<CardRef>,
+    pub target: CardRef,
 }
 impl EvaluateEvent for PerformArt {
     fn apply_state_change(&self, _state: &mut GameState) {
@@ -2352,12 +2355,7 @@ impl EvaluateEvent for PerformArt {
             .expect("this should be a valid member");
 
         //  check condition for art
-        if !mem.can_use_art(
-            self.card,
-            self.art_idx,
-            self.target.expect("there should be a target"),
-            game,
-        ) {
+        if !mem.can_use_art(self.card, self.art_idx, self.target, game) {
             panic!("cannot use this art");
         }
 
@@ -2376,6 +2374,7 @@ impl EvaluateEvent for PerformArt {
         effect
             .ctx()
             .with_card(self.card, &game.game)
+            .with_art_target(self.target)
             .evaluate_mut(game)
             .await?;
 
@@ -2395,9 +2394,7 @@ impl EvaluateEvent for PerformArt {
         }
 
         // deal damage if there is a target. if any other damage is done, it will be in the effect
-        if let Some(target) = self.target {
-            game.deal_damage(self.card, target, dmg, false).await?;
-        }
+        game.deal_damage(self.card, self.target, dmg, false).await?;
 
         game.game.event_span.open_untracked_span();
         game.remove_expiring_modifiers(LifeTime::ThisArt).await?;
@@ -2495,8 +2492,10 @@ impl EvaluateEvent for RollDice {
             return Ok(AdjustEventOutcome::PreventEvent);
         }
 
-        // not modifiers
-        self.number = game.rng.gen_range(1..=6);
+        // no modifiers, not rolled yet
+        if self.number == 0 {
+            self.number = game.rng.gen_range(1..=6);
+        }
 
         Ok(AdjustEventOutcome::ContinueEvent)
     }

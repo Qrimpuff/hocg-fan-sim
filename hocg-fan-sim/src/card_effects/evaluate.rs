@@ -17,7 +17,8 @@ use crate::{
 
 static VAR_THIS_CARD: &str = "&_this_card";
 static VAR_LEFTOVERS: &str = "&_leftovers";
-static VAR_TARGET: &str = "&_target";
+static VAR_ART_TARGET: &str = "&_art_target";
+static VAR_ATTACH_TARGET: &str = "&_attach_target";
 
 pub type EvaluateResult<T> = Result<T, GameOutcome>;
 
@@ -80,11 +81,21 @@ impl<T> EvaluateBuilder<'_, T> {
         self
     }
 
-    pub fn with_target(mut self, target: CardRef) -> Self {
+    pub fn with_art_target(mut self, target: CardRef) -> Self {
         // set target for arts and attachments
-        self.context
-            .variables
-            .insert(VAR_TARGET.into(), LetValue::CardReferences([target].into()));
+        self.context.variables.insert(
+            VAR_ART_TARGET.into(),
+            LetValue::CardReferences([target].into()),
+        );
+        self
+    }
+
+    pub fn with_attach_target(mut self, target: CardRef) -> Self {
+        // set target for arts and attachments
+        self.context.variables.insert(
+            VAR_ATTACH_TARGET.into(),
+            LetValue::CardReferences([target].into()),
+        );
         self
     }
 }
@@ -362,13 +373,17 @@ impl EvaluateEffect for CardReference {
 
     fn evaluate_with_context(&self, ctx: &EvaluateContext, game: &Game) -> Self::Value {
         match self {
+            CardReference::ArtTarget => {
+                CardReference::Var(Var(VAR_ART_TARGET.into())).evaluate_with_context(ctx, game)
+            }
+            CardReference::AttachTarget => {
+                CardReference::Var(Var(VAR_ATTACH_TARGET.into())).evaluate_with_context(ctx, game)
+            }
             CardReference::EventOrigin => game
                 .event_span
                 .event_origin_for_evaluate(ctx)
                 .expect("there should be an event origin card"),
-            CardReference::Target => {
-                CardReference::Var(Var(VAR_TARGET.into())).evaluate_with_context(ctx, game)
-            }
+
             CardReference::ThisCard => {
                 CardReference::Var(Var(VAR_THIS_CARD.into())).evaluate_with_context(ctx, game)
             }
@@ -397,9 +412,15 @@ impl EvaluateEffect for CardReferences {
 
     fn evaluate_with_context(&self, ctx: &EvaluateContext, game: &Game) -> Self::Value {
         match self {
-            CardReferences::Attached(card) => {
+            CardReferences::ArtTarget => {
+                CardReferences::Var(Var(VAR_ART_TARGET.into())).evaluate_with_context(ctx, game)
+            }
+            CardReferences::AttachedTo(card) => {
                 let card = card.evaluate_with_context(ctx, game);
                 game.board_for_card(card).attachments(card)
+            }
+            CardReferences::AttachTarget => {
+                CardReferences::Var(Var(VAR_ATTACH_TARGET.into())).evaluate_with_context(ctx, game)
             }
             CardReferences::EventOrigin => {
                 vec![game
@@ -418,9 +439,6 @@ impl EvaluateEffect for CardReferences {
             }
             CardReferences::Leftovers => {
                 CardReferences::Var(Var(VAR_LEFTOVERS.into())).evaluate_with_context(ctx, game)
-            }
-            CardReferences::Target => {
-                CardReferences::Var(Var(VAR_TARGET.into())).evaluate_with_context(ctx, game)
             }
             CardReferences::ThisCard => {
                 CardReferences::Var(Var(VAR_THIS_CARD.into())).evaluate_with_context(ctx, game)
@@ -532,7 +550,16 @@ impl EvaluateEffect for Condition {
                 let card = ctx.active_card.expect("there should be an active card");
                 game.lookup_card(card).is_named("Tokino Sora")
             }
-            Condition::IsNot(not_card) => {
+            Condition::IsNamedUsadaPekora => {
+                let card = ctx.active_card.expect("there should be an active card");
+                game.lookup_card(card).is_named("Usada Pekora")
+            }
+            Condition::IsCard(is_card) => {
+                let is_card = is_card.evaluate_with_context(ctx, game);
+                let card = ctx.active_card.expect("there should be an active card");
+                card == is_card
+            }
+            Condition::IsNotCard(not_card) => {
                 let not_card = not_card.evaluate_with_context(ctx, game);
                 let card = ctx.active_card.expect("there should be an active card");
                 card != not_card

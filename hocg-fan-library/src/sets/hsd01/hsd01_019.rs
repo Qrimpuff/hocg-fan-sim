@@ -14,7 +14,7 @@ pub fn card() -> Card {
                 ").parse_effect().expect("hSD01-019"),
             effect: (r"
                     let $mem = select_one from stage is_member and has_cheers
-                    let $cheer = select_one attached $mem is_cheer
+                    let $cheer = select_one attached_to $mem is_cheer
                     send_to archive $cheer
                     let $cond = ((is_level_first or is_level_second) and not is_attribute_buzz) 
                     let $choice = select_one from main_deck $cond

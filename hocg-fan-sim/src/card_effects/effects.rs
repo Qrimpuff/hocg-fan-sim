@@ -202,12 +202,15 @@ pub enum Action {
 #[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub enum CardReference {
     // TODO figure out the conversion with CardReferences, could panic
+    // art_target -> <[card_ref]>
+    #[hocg_fan_sim(token = "art_target")]
+    ArtTarget,
+    // attach_target -> <[card_ref]>
+    #[hocg_fan_sim(token = "attach_target")]
+    AttachTarget,
     // event_origin -> <card_ref>
     #[hocg_fan_sim(token = "event_origin")]
     EventOrigin,
-    // target -> <[card_ref]>
-    #[hocg_fan_sim(token = "target")]
-    Target,
     // this_card -> <card_ref>
     #[hocg_fan_sim(token = "this_card")]
     ThisCard,
@@ -218,9 +221,15 @@ pub enum CardReference {
 
 #[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub enum CardReferences {
-    // attached <card_ref> -> <[card_ref]>
-    #[hocg_fan_sim(token = "attached")]
-    Attached(CardReference),
+    // art_target -> <[card_ref]>
+    #[hocg_fan_sim(token = "art_target")]
+    ArtTarget,
+    // attached_to <card_ref> -> <[card_ref]>
+    #[hocg_fan_sim(token = "attached_to")]
+    AttachedTo(CardReference),
+    // attach_target -> <[card_ref]>
+    #[hocg_fan_sim(token = "attach_target")]
+    AttachTarget,
     // event_origin -> <[card_ref]>
     #[hocg_fan_sim(token = "event_origin")]
     EventOrigin,
@@ -233,9 +242,6 @@ pub enum CardReferences {
     // leftovers -> <[card_ref]>
     #[hocg_fan_sim(token = "leftovers")]
     Leftovers,
-    // target -> <[card_ref]>
-    #[hocg_fan_sim(token = "target")]
-    Target,
     // this_card -> <[card_ref]>
     #[hocg_fan_sim(token = "this_card")]
     ThisCard,
@@ -318,9 +324,15 @@ pub enum Condition {
     // is_named_tokino_sora -> <condition>
     #[hocg_fan_sim(token = "is_named_tokino_sora")]
     IsNamedTokinoSora,
-    // is_not <card_ref> -> <condition>
-    #[hocg_fan_sim(token = "is_not")]
-    IsNot(CardReference),
+    // is_named_usada_pekora -> <condition>
+    #[hocg_fan_sim(token = "is_named_usada_pekora")]
+    IsNamedUsadaPekora,
+    // is_card <card_ref> -> <condition>
+    #[hocg_fan_sim(token = "is_card")]
+    IsCard(CardReference),
+    // is_not_card <card_ref> -> <condition>
+    #[hocg_fan_sim(token = "is_not_card")]
+    IsNotCard(CardReference),
     // is_odd <value> -> <condition>
     #[hocg_fan_sim(token = "is_odd")]
     IsOdd(Number),
@@ -487,6 +499,7 @@ pub enum Trigger {
     Never,
     ActivateInMainStep,
     PlayFromHand,
+    Attach,
     OnStartTurn,
     OnEndTurn,
     OnEnterStep(Step),
@@ -503,6 +516,7 @@ impl Trigger {
             Trigger::Never => false,
             Trigger::ActivateInMainStep => false,
             Trigger::PlayFromHand => false,
+            Trigger::Attach => false, // TODO should be an event?
             Trigger::OnStartTurn => {
                 matches!(triggered_event, TriggeredEvent::After(Event::StartTurn(_)))
             }

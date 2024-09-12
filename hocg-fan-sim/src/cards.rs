@@ -444,7 +444,7 @@ impl HoloMemberCard {
             .condition
             .ctx()
             .with_card(card, &game.game)
-            .with_target(target_card)
+            .with_art_target(target_card)
             .evaluate(&game.game)
         // .evaluate_with_card(&game.game, card, false)
     }
@@ -651,12 +651,21 @@ impl SupportCard {
 
     pub fn can_attach_target(
         &self,
-        _card: CardRef,
-        _game: &GameDirector,
-        _target: (CardRef, &HoloMemberCard),
+        card: CardRef,
+        effect_idx: usize,
+        target: CardRef,
+        game: &GameDirector,
     ) -> bool {
-        // TODO fan can be attached. how to send the target card in the condition?
-        unimplemented!()
+        if self.limited && game.has_modifier(card, PreventLimitedSupport) {
+            return false;
+        }
+
+        self.effects[effect_idx]
+            .condition
+            .ctx()
+            .with_card(card, &game.game)
+            .with_attach_target(target)
+            .evaluate(&game.game)
     }
 
     pub fn can_use_effect(

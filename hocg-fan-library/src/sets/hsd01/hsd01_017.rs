@@ -10,7 +10,7 @@ pub fn card() -> Card {
         effects: vec![SupportEffect {
             triggers: vec![Trigger::PlayFromHand],
             condition: (r"
-                    1 <= count filter from hand is_not this_card
+                    1 <= count filter from hand is_not_card this_card
                 ").parse_effect().expect("hSD01-017"),
             effect: (r"
                     let $hand = from hand

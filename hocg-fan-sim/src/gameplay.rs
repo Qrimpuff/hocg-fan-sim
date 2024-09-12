@@ -486,6 +486,14 @@ impl GameDirector {
                     //   - otherwise unlimited
                     self.use_support_card(card, i).await?;
                 }
+                MainStepAction::AttachSupportCard(attach, i) => {
+                    info!("- action: Attach support card");
+                    // TODO request attach card target (intent)
+                    let card = self
+                        .prompt_for_attach(self.game.active_player(), attach, i)
+                        .await;
+                    self.attach_cards_to_card(vec![attach], card).await?;
+                }
                 MainStepAction::CollabMember(card) => {
                     info!("- action: Collab member");
                     // - put back stage member in collab
@@ -572,7 +580,7 @@ impl GameDirector {
                     target,
                 } => {
                     info!("- action: Use art");
-                    self.perform_art(card, art_idx, Some(target)).await?;
+                    self.perform_art(card, art_idx, target).await?;
                 }
                 PerformanceStepAction::Done => {
                     info!("- action: Done");
@@ -977,9 +985,21 @@ impl GameDirector {
                     .effects
                     .iter()
                     .enumerate()
-                    .filter(|(_, e)| e.triggers.iter().any(|t| *t == Trigger::PlayFromHand))
-                    .filter(|(i, _)| s.can_use_support(c, *i, self))
-                    .map(|(i, _)| MainStepAction::UseSupportCard(c, i))
+                    .filter_map(|(i, e)| {
+                        if e.triggers.iter().any(|t| *t == Trigger::PlayFromHand)
+                            && s.can_use_support(c, i, self)
+                        {
+                            Some(MainStepAction::UseSupportCard(c, i))
+                        } else if e.triggers.iter().any(|t| *t == Trigger::Attach) {
+                            let can_attach = self
+                                .board(player)
+                                .stage()
+                                .any(|target| s.can_attach_target(c, i, target, self));
+                            can_attach.then_some(MainStepAction::AttachSupportCard(c, i))
+                        } else {
+                            None
+                        }
+                    })
                     .next(),
                 Card::Cheer(_) => unreachable!("cheer cannot be in hand"),
             })
@@ -1095,6 +1115,53 @@ impl GameDirector {
 
         assert!(!stage.is_empty());
         // self.prompter.prompt_choice("choose for bloom:", stage).card
+        self.client(player)
+            .0
+            .send(ClientReceive::IntentRequest(
+                IntentRequest::SelectToAttach {
+                    player,
+                    zones: vec![], // TODO not sure if that's needed
+                    select_cards: stage.clone(),
+                },
+            ))
+            .await
+            .unwrap();
+        let ClientSend::IntentResponse(resp) = self.client(player).1.recv().await.unwrap();
+        let card = match resp {
+            IntentResponse::SelectToAttach {
+                player: resp_player,
+                select_card,
+            } => {
+                assert_eq!(player, resp_player);
+                select_card
+            }
+            error => {
+                error!("unexpected response: {:?}", error);
+                panic!("unexpected response")
+            }
+        };
+        assert!(stage.contains(&card));
+        card
+    }
+
+    pub async fn prompt_for_attach(
+        &mut self,
+        player: Player,
+        card: CardRef,
+        effect_idx: usize,
+    ) -> CardRef {
+        let attach = self
+            .lookup_support(card)
+            .expect("can only attach from support");
+
+        let stage: Vec<_> = self
+            .board(player)
+            .stage()
+            .filter(|target| attach.can_attach_target(card, effect_idx, *target, self))
+            .collect();
+
+        assert!(!stage.is_empty());
+        // self.prompter.prompt_choice("choose for attach:", stage).card
         self.client(player)
             .0
             .send(ClientReceive::IntentRequest(
@@ -1965,6 +2032,7 @@ pub enum MainStepAction {
     BackStageMember(CardRef),
     BloomMember(CardRef),
     UseSupportCard(CardRef, usize),
+    AttachSupportCard(CardRef, usize),
     CollabMember(CardRef),
     BatonPass(CardRef),
     UseOshiSkill(CardRef, usize),
@@ -1991,6 +2059,10 @@ impl MainStepActionDisplay {
             MainStepAction::UseSupportCard(card, _idx) => {
                 let display = CardDisplay::new(card, game);
                 format!("use support: {display}")
+            }
+            MainStepAction::AttachSupportCard(card, _idx) => {
+                let display = CardDisplay::new(card, game);
+                format!("attach support: {display}")
             }
             MainStepAction::CollabMember(card) => {
                 let display = CardDisplay::new(card, game);

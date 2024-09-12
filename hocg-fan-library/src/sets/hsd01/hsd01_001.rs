@@ -21,8 +21,8 @@ pub fn card() -> Card {
                 ").parse_effect().unwrap(),
                 effect: (r"
                     let $mem = select_one from stage is_member and has_cheers
-                    let $cheer = select_one attached $mem is_cheer
-                    let $to_mem = select_one from stage is_member and is_not $mem
+                    let $cheer = select_one attached_to $mem is_cheer
+                    let $to_mem = select_one from stage is_member and is_not_card $mem
                     attach_cards $cheer $to_mem
                 ").parse_effect().unwrap(),
             },

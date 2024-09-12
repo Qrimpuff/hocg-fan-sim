@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, sync::OnceLock};
+use std::{collections::HashMap, env};
 
 use crate::{
     cards::CardNumber, client::*, gameplay::*, library::load_library, modifiers::*,
@@ -7,11 +7,6 @@ use crate::{
 use rand::{rngs::StdRng, SeedableRng};
 use time::macros::format_description;
 use tracing_subscriber::{fmt::time::LocalTime, EnvFilter};
-
-pub fn rng<'a>() -> &'a StdRng {
-    static RNG: OnceLock<StdRng> = OnceLock::new();
-    RNG.get_or_init(|| StdRng::seed_from_u64(123456))
-}
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct TestGameBoard {
@@ -210,7 +205,7 @@ pub async fn setup_test_game(
         state.clone(),
         (p1_channel_1.0, p1_channel_2.1),
         (p2_channel_1.0, p2_channel_2.1),
-        rng().clone(),
+        StdRng::seed_from_u64(123456),
     )
     .await;
 
