@@ -4,6 +4,7 @@ use std::ops::Deref;
 use iter_tools::Itertools;
 
 use super::effects::*;
+use crate::cards::Color;
 use crate::cards::*;
 use crate::gameplay::Player;
 use crate::gameplay::Zone;
@@ -285,19 +286,15 @@ impl EvaluateEffectMut for Action {
                 let card = ctx.active_card.expect("there should be an active card");
                 let targets = targets.evaluate_with_context(ctx, &game.game);
                 let amount = amount.evaluate_with_context(ctx, &game.game);
-                for target in targets {
-                    game.deal_damage(card, target, DamageMarkers::from_hp(amount as u16), false)
-                        .await?;
-                }
+                game.deal_damage(card, targets, DamageMarkers::from_hp(amount as u16), false)
+                    .await?;
             }
             Action::DealSpecialDamage(targets, amount) => {
                 let card = ctx.active_card.expect("there should be an active card");
                 let targets = targets.evaluate_with_context(ctx, &game.game);
                 let amount = amount.evaluate_with_context(ctx, &game.game);
-                for target in targets {
-                    game.deal_damage(card, target, DamageMarkers::from_hp(amount as u16), true)
-                        .await?;
-                }
+                game.deal_damage(card, targets, DamageMarkers::from_hp(amount as u16), true)
+                    .await?;
             }
             Action::Draw(amount) => {
                 game.draw_from_main_deck(
@@ -509,17 +506,14 @@ impl EvaluateEffect for Condition {
                 game.lookup_card(card)
                     .is_attribute(HoloMemberExtraAttribute::Buzz)
             }
-            Condition::IsColorGreen => {
+            Condition::IsColor(color) => {
+                let color = color.evaluate_with_context(ctx, game);
                 let card = ctx.active_card.expect("there should be an active card");
-                game.lookup_card(card).is_color(Color::Green)
-            }
-            Condition::IsColorWhite => {
-                let card = ctx.active_card.expect("there should be an active card");
-                game.lookup_card(card).is_color(Color::White)
+                game.lookup_card(card).is_color(color, card, game)
             }
             Condition::IsCheer => {
                 let card = ctx.active_card.expect("there should be an active card");
-                game.lookup_card(card).is_cheer()
+                game.lookup_card(card).is_cheer(card, game)
             }
             Condition::IsEven(value) => {
                 let value = value.evaluate_with_context(ctx, game);
@@ -545,6 +539,10 @@ impl EvaluateEffect for Condition {
             Condition::IsNamedAzki => {
                 let card = ctx.active_card.expect("there should be an active card");
                 game.lookup_card(card).is_named("AZKi")
+            }
+            Condition::IsNamedOmaruPolka => {
+                let card = ctx.active_card.expect("there should be an active card");
+                game.lookup_card(card).is_named("Omaru Polka")
             }
             Condition::IsNamedTokinoSora => {
                 let card = ctx.active_card.expect("there should be an active card");
@@ -708,6 +706,10 @@ impl EvaluateEffect for super::LifeTime {
             super::LifeTime::ThisArt => LifeTime::ThisArt,
             super::LifeTime::ThisEffect => LifeTime::ThisEffect,
             super::LifeTime::UntilRemoved => LifeTime::UntilRemoved,
+            super::LifeTime::WhileAttached(card) => {
+                let card = card.evaluate_with_context(ctx, game);
+                LifeTime::WhileAttached(card)
+            }
         }
     }
 }
@@ -717,9 +719,31 @@ impl EvaluateEffect for Modifier {
 
     fn evaluate_with_context(&self, ctx: &EvaluateContext, game: &Game) -> Self::Value {
         match self {
-            Modifier::MoreDamage(amount) => {
+            Modifier::AsArtCost(amount, color) => {
                 let amount = amount.evaluate_with_context(ctx, game);
-                ModifierKind::MoreDamage(amount)
+                let color = color.evaluate_with_context(ctx, game);
+                ModifierKind::AsArtCost(color, amount)
+            }
+            Modifier::AsCheer(amount, color) => {
+                let amount = amount.evaluate_with_context(ctx, game);
+                let color = color.evaluate_with_context(ctx, game);
+                ModifierKind::AsCheer(color, amount)
+            }
+            Modifier::DealLessDamage(amount) => {
+                let amount = amount.evaluate_with_context(ctx, game);
+                ModifierKind::DealLessDamage(amount)
+            }
+            Modifier::DealMoreDamage(amount) => {
+                let amount = amount.evaluate_with_context(ctx, game);
+                ModifierKind::DealMoreDamage(amount)
+            }
+            Modifier::ReceiveLessDamage(amount) => {
+                let amount = amount.evaluate_with_context(ctx, game);
+                ModifierKind::ReceiveLessDamage(amount)
+            }
+            Modifier::ReceiveMoreDamage(amount) => {
+                let amount = amount.evaluate_with_context(ctx, game);
+                ModifierKind::ReceiveMoreDamage(amount)
             }
             Modifier::NextDiceRoll(number) => {
                 let number = number.evaluate_with_context(ctx, game);
@@ -810,6 +834,22 @@ impl EvaluateEffect for super::Zone {
             super::Zone::OpponentBackStage => (opponent, Zone::BackStage),
             super::Zone::OpponentCenterStage => (opponent, Zone::CenterStage),
             super::Zone::Stage => (player, Zone::Stage),
+        }
+    }
+}
+
+impl EvaluateEffect for super::Color {
+    type Value = Color;
+
+    fn evaluate_with_context(&self, _ctx: &EvaluateContext, _game: &Game) -> Self::Value {
+        match self {
+            super::Color::White => Color::White,
+            super::Color::Green => Color::Green,
+            super::Color::Red => Color::Red,
+            super::Color::Blue => Color::Blue,
+            super::Color::Purple => Color::Purple,
+            super::Color::Yellow => Color::Yellow,
+            super::Color::Colorless => Color::Colorless,
         }
     }
 }

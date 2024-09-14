@@ -34,7 +34,7 @@ pub fn card() -> Card {
                 condition: vec![],
                 effect: (r"
                     let $roll = roll_dice
-                    add_mod this_card more_dmg ($roll * 10) this_art
+                    add_mod this_card deal_more_dmg ($roll * 10) this_art
                 ").parse_effect().expect("hBP01-042"),
             },
         ],

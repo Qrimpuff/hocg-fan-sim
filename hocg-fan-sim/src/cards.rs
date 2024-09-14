@@ -6,17 +6,20 @@ use get_size::GetSize;
 use iter_tools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use crate::card_effects::{
-    effects::{
-        deserialize_actions, deserialize_conditions, serialize_actions, serialize_conditions,
-        skip_default_actions, skip_default_conditions,
-    },
-    *,
-};
 use crate::events::{Bloom, Collab, Event, TriggeredEvent};
 use crate::gameplay::Zone;
 use crate::gameplay::{CardRef, GameDirector};
-use crate::modifiers::ModifierKind::*;
+use crate::modifiers::ModifierKind::{self, *};
+use crate::{
+    card_effects::{
+        effects::{
+            deserialize_actions, deserialize_conditions, serialize_actions, serialize_conditions,
+            skip_default_actions, skip_default_conditions,
+        },
+        *,
+    },
+    gameplay::Game,
+};
 
 /*
  * Cards:
@@ -117,17 +120,26 @@ impl Card {
         }
     }
 
-    pub fn is_color(&self, color: Color) -> bool {
+    pub fn is_color(&self, color: Color, card: CardRef, game: &Game) -> bool {
         match self {
             Card::OshiHoloMember(o) => o.color == color,
             Card::HoloMember(m) => m.colors.contains(&color),
-            Card::Support(_s) => false,
+            Card::Support(_s) => game.has_modifier_with(card, |m| match m {
+                // mascots and fans can have colors
+                ModifierKind::AsCheer(c, _) => *c == color,
+                _ => false,
+            }),
             Card::Cheer(c) => c.color == color,
         }
     }
 
-    pub fn is_cheer(&self) -> bool {
+    pub fn is_cheer(&self, card: CardRef, game: &Game) -> bool {
         matches!(self, Card::Cheer(_))
+            || game.has_modifier_with(card, |m| match m {
+                // mascots and fans can be cheers
+                ModifierKind::AsCheer(..) => true,
+                _ => false,
+            })
     }
 
     pub fn is_level(&self, level: HoloMemberLevel) -> bool {
@@ -338,7 +350,7 @@ impl HoloMemberCard {
         let cost = std::iter::repeat(Color::Colorless)
             .take(self.baton_pass_cost as usize)
             .collect_vec();
-        if !game.required_attached_cheers(card, &cost) {
+        if !game.required_attached_cheers(card, &cost, false) {
             return false;
         }
 
@@ -371,7 +383,7 @@ impl HoloMemberCard {
             return false;
         }
 
-        //  cannot bloom if the damage is more the bloom hp, it would be defeated instantly
+        //  cannot bloom if the damage is more the bloom hp, it would be knocked out instantly
         if game.get_damage(target.0).to_hp() >= self.hp {
             return false;
         }
@@ -436,7 +448,7 @@ impl HoloMemberCard {
         }
 
         // need required attached cheers to attack
-        if !game.required_attached_cheers(card, &self.arts[art_idx].cost) {
+        if !game.required_attached_cheers(card, &self.arts[art_idx].cost, true) {
             return false;
         }
 

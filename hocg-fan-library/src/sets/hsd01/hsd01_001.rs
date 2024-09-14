@@ -41,7 +41,7 @@ pub fn card() -> Card {
                     let $center_mem = from opponent_center_stage
                     send_to opponent_back_stage $center_mem
                     send_to opponent_center_stage $back_mem
-                    add_zone_mod center_stage when is_color_white more_dmg 50 this_turn
+                    add_zone_mod center_stage when is_color white deal_more_dmg 50 this_turn
                 ").parse_effect().unwrap(),
             }],
             rarity: Rarity::OshiSuperRare,
@@ -53,7 +53,11 @@ pub fn card() -> Card {
 #[cfg(test)]
 mod tests {
     use hocg_fan_sim::{
-        card_effects::Condition, gameplay::*, modifiers::*, prompters::BufferedPrompter, tests::*,
+        card_effects::{self, Condition},
+        gameplay::*,
+        modifiers::*,
+        prompters::BufferedPrompter,
+        tests::*,
     };
     use pretty_assertions::assert_eq;
 
@@ -153,8 +157,8 @@ mod tests {
                 Modifier {
                     id: "m_0002".into(),
                     kind: ModifierKind::Conditional(
-                        Condition::IsColorWhite,
-                        Box::new(ModifierKind::MoreDamage(50)),
+                        Condition::IsColor(card_effects::Color::White),
+                        Box::new(ModifierKind::DealMoreDamage(50)),
                     ),
                     life_time: LifeTime::ThisTurn,
                 },

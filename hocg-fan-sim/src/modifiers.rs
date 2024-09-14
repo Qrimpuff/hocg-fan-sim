@@ -50,9 +50,14 @@ pub enum ModifierKind {
     PreventLimitedSupport,
     PreventBatonPass,
     SkipStep(Step),
-    MoreDamage(usize),
+    DealLessDamage(usize),
+    DealMoreDamage(usize),
+    ReceiveLessDamage(usize),
+    ReceiveMoreDamage(usize),
     NextDiceRoll(usize),
     NoLifeLoss,
+    AsArtCost(Color, usize),
+    AsCheer(Color, usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, GetSize, Encode, Decode)]
@@ -66,6 +71,8 @@ pub enum LifeTime {
     ThisEffect,
     /// stays until manually removed
     UntilRemoved,
+    /// as long as this card is attached
+    WhileAttached(CardRef),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
@@ -489,13 +496,20 @@ impl GameDirector {
         self.game.get_damage(card)
     }
 
-    pub async fn add_damage_markers(&mut self, card: CardRef, dmg: DamageMarkers) -> GameResult {
-        self.add_damage_markers_to_many_cards(vec![card], dmg).await
+    pub async fn add_damage_markers(
+        &mut self,
+        cards: Vec<CardRef>,
+        dmg: DamageMarkers,
+    ) -> GameResult {
+        self.add_damage_markers_to_many_cards(cards, dmg).await
     }
 
-    pub async fn remove_damage_markers(&mut self, card: CardRef, dmg: DamageMarkers) -> GameResult {
-        self.remove_damage_markers_from_many_cards(vec![card], dmg)
-            .await
+    pub async fn remove_damage_markers(
+        &mut self,
+        cards: Vec<CardRef>,
+        dmg: DamageMarkers,
+    ) -> GameResult {
+        self.remove_damage_markers_from_many_cards(cards, dmg).await
     }
 }
 

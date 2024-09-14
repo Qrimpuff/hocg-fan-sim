@@ -208,20 +208,12 @@ impl GlobalLibrary {
             .unwrap_or_else(|| panic!("should be in the library: {card_number}"))
     }
 
-    pub fn is_oshi(&self, card_number: &CardNumber) -> bool {
-        matches!(self.lookup_card(card_number), Card::OshiHoloMember(_))
-    }
-
     pub fn lookup_oshi(&self, card_number: &CardNumber) -> Option<&OshiHoloMemberCard> {
         if let Card::OshiHoloMember(o) = self.lookup_card(card_number) {
             Some(o)
         } else {
             None
         }
-    }
-
-    pub fn is_holo_member(&self, card_number: &CardNumber) -> bool {
-        matches!(self.lookup_card(card_number), Card::HoloMember(_))
     }
 
     pub fn lookup_holo_member(&self, card_number: &CardNumber) -> Option<&HoloMemberCard> {
@@ -232,20 +224,12 @@ impl GlobalLibrary {
         }
     }
 
-    pub fn is_support(&self, card_number: &CardNumber) -> bool {
-        matches!(self.lookup_card(card_number), Card::Support(_))
-    }
-
     pub fn lookup_support(&self, card_number: &CardNumber) -> Option<&SupportCard> {
         if let Card::Support(s) = self.lookup_card(card_number) {
             Some(s)
         } else {
             None
         }
-    }
-
-    pub fn is_cheer(&self, card_number: &CardNumber) -> bool {
-        matches!(self.lookup_card(card_number), Card::Cheer(_))
     }
 
     pub fn lookup_cheer(&self, card_number: &CardNumber) -> Option<&CheerCard> {

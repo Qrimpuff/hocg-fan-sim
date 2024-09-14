@@ -1,5 +1,5 @@
 use hocg_fan_sim::{
-    card_effects::*,
+    card_effects::ParseEffect,
     cards::{HoloMemberHashTag::*, *},
 };
 

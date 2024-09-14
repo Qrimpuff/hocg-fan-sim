@@ -11,8 +11,6 @@ use time::macros::format_description;
 use tracing::info;
 use tracing_subscriber::{fmt::time::LocalTime, EnvFilter};
 
-const TEST_TEXT: &str = "for active_holo buff more_def 1 next_turn";
-
 #[tokio::main]
 async fn main() {
     env::set_var("RUST_BACKTRACE", "1");

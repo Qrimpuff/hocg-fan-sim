@@ -1,5 +1,5 @@
 use hocg_fan_sim::{
-    card_effects::*,
+    card_effects::ParseEffect,
     cards::{HoloMemberHashTag::*, *},
 };
 
@@ -20,7 +20,7 @@ pub fn card() -> Card {
                 all from center_stage is_member
             ").parse_effect().expect("hSD01-012"),
             effect: (r"
-                let $cheer = select_one from archive is_cheer and (is_color_green or is_color_white)
+                let $cheer = select_one from archive is_cheer and ((is_color green) or (is_color white))
                 let $mem = filter from center_stage is_member
                 attach_cards $cheer $mem
             ").parse_effect().expect("hSD01-012"),

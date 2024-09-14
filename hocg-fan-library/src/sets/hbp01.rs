@@ -129,7 +129,7 @@ pub fn set() -> Vec<fn() -> Card> {
         hbp01_123::card,
         // hbp01_124::card,
         // hbp01_125::card,
-        // hbp01_126::card,
+        hbp01_126::card,
         // hbp01_127::card,
         // hbp01_128::card,
         // hbp01_129::card,

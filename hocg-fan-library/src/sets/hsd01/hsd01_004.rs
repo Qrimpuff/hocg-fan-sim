@@ -1,5 +1,5 @@
 use hocg_fan_sim::{
-    card_effects::*,
+    card_effects::ParseEffect,
     cards::{HoloMemberHashTag::*, *},
 };
 
@@ -18,7 +18,7 @@ pub fn card() -> Card {
             text: "Until end of turn, your Center position holomem gains +20 to their Arts.".into(),
             condition: vec![],
             effect: (r"
-                add_zone_mod center_stage more_dmg 20 this_turn
+                add_zone_mod center_stage deal_more_dmg 20 this_turn
             ")
             .parse_effect()
             .expect("hSD01-004"),
@@ -116,7 +116,7 @@ mod tests {
                     Zone::CenterStage,
                     Modifier {
                         id: "m_0002".into(),
-                        kind: ModifierKind::MoreDamage(20),
+                        kind: ModifierKind::DealMoreDamage(20),
                         life_time: LifeTime::ThisTurn,
                     },
                 ),

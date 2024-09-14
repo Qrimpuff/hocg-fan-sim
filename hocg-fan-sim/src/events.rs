@@ -1,5 +1,8 @@
 use crate::{
-    card_effects::evaluate::{EvaluateContext, EvaluateEffectMut},
+    card_effects::{
+        evaluate::{EvaluateContext, EvaluateEffectMut},
+        Trigger,
+    },
     cards::*,
     gameplay::{
         CardRef, GameContinue, GameDirector, GameOutcome, GameOverReason, GameResult, GameState,
@@ -103,7 +106,7 @@ pub enum Event {
     // Card effect events
     //...
     /// used by Pekora oshi skill, marker event before zone to zone
-    HoloMemberDefeated,
+    HoloMemberKnockedOut,
     /// used by Suisei oshi skill
     DealDamage,
     /// used by AZKi oshi skill
@@ -948,24 +951,35 @@ impl GameDirector {
     pub async fn deal_damage(
         &mut self,
         card: CardRef,
-        target: CardRef,
+        targets: Vec<CardRef>,
         dmg: DamageMarkers,
         is_special: bool,
     ) -> GameResult {
-        if dmg.0 < 1 {
+        if targets.is_empty() || dmg.0 < 1 {
             return Ok(GameContinue);
         }
 
         self.send_event(
             DealDamage {
                 card,
-                target,
+                targets,
                 dmg,
                 is_special,
             }
             .into(),
         )
         .await?;
+
+        Ok(GameContinue)
+    }
+
+    pub async fn knock_out_members(&mut self, cards: Vec<CardRef>) -> GameResult {
+        if cards.is_empty() {
+            return Ok(GameContinue);
+        }
+
+        self.send_event(HoloMemberKnockedOut { cards }.into())
+            .await?;
 
         Ok(GameContinue)
     }
@@ -1140,6 +1154,7 @@ impl GameDirector {
         art_idx: usize,
         target: CardRef,
     ) -> GameResult {
+        self.game.event_span.open_card_span(card);
         self.send_event(
             PerformArt {
                 card,
@@ -1149,6 +1164,7 @@ impl GameDirector {
             .into(),
         )
         .await?;
+        self.game.event_span.close_card_span(card);
 
         Ok(GameContinue)
     }
@@ -1760,14 +1776,14 @@ impl EvaluateEvent for AddDamageMarkers {
 
         for (player, cards) in game.group_by_player(&self.cards) {
             // verify that they are still alive
-            let defeated = cards
+            let knocked_out = cards
                 .iter()
                 .copied()
                 .filter(|card| game.remaining_hp(*card) == 0)
                 .collect_vec();
 
             // calculate life loss
-            let life_loss = defeated
+            let life_loss = knocked_out
                 .iter()
                 .filter(|c| !game.has_modifier(**c, NoLifeLoss))
                 .filter_map(|c| game.lookup_holo_member(*c))
@@ -1782,8 +1798,7 @@ impl EvaluateEvent for AddDamageMarkers {
                 .sum();
 
             // send member to archive, from attack
-            game.send_event(HoloMemberDefeated { cards: defeated }.into())
-                .await?;
+            game.knock_out_members(knocked_out).await?;
 
             // TODO do we need a untracked span here?
             game.lose_lives(player, life_loss).await?;
@@ -1899,6 +1914,12 @@ impl EvaluateEvent for SendToZone {
             }
         }
 
+        // end any attachment
+        for card in self.cards.iter().copied() {
+            game.remove_expiring_modifiers(LifeTime::WhileAttached(card))
+                .await?;
+        }
+
         self.apply_state_change(&mut game.game.state);
 
         game.game.event_span.open_untracked_span();
@@ -1947,7 +1968,43 @@ impl EvaluateEvent for AttachToCard {
             return Ok(GameContinue);
         }
 
+        // end any attachment
+        for attachment in self.attachments.iter().copied() {
+            game.remove_expiring_modifiers(LifeTime::WhileAttached(attachment))
+                .await?;
+        }
+
         self.apply_state_change(&mut game.game.state);
+
+        // apply attachment effects
+        for attachment in self.attachments.iter().copied() {
+            if let Card::Support(support) = game.lookup_card(attachment) {
+                let effect = support
+                    .effects
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, e)| {
+                        if e.triggers.iter().any(|t| *t == Trigger::Attach) {
+                            let can_attach =
+                                support.can_attach_target(attachment, i, self.card, game);
+                            can_attach.then_some(e)
+                        } else {
+                            None
+                        }
+                    })
+                    .next();
+                if let Some(effect) = effect {
+                    let effect = effect.effect.clone();
+
+                    effect
+                        .ctx()
+                        .with_card(attachment, &game.game)
+                        .with_attach_target(self.card)
+                        .evaluate_mut(game)
+                        .await?;
+                }
+            }
+        }
 
         Ok(GameContinue)
     }
@@ -2363,7 +2420,7 @@ impl EvaluateEvent for PerformArt {
         // - can choose target (center, collab)
         // - need required attached cheers to attack
         // - apply damage and effects
-        // - remove member if defeated
+        // - remove member if knocked out
         //   - lose 1 life
         //   - attach lost life (cheer)
         let art = &mem.arts[self.art_idx];
@@ -2388,13 +2445,25 @@ impl EvaluateEvent for PerformArt {
         };
         // apply damage modifiers
         for m in game.find_modifiers(self.card) {
-            if let ModifierKind::MoreDamage(more_dmg_hp) = m.kind {
+            if let ModifierKind::DealLessDamage(more_dmg_hp) = m.kind {
+                dmg -= DamageMarkers::from_hp(more_dmg_hp as u16);
+            }
+            if let ModifierKind::DealMoreDamage(more_dmg_hp) = m.kind {
                 dmg += DamageMarkers::from_hp(more_dmg_hp as u16);
+            }
+        }
+        for m in game.find_modifiers(self.target) {
+            if let ModifierKind::ReceiveMoreDamage(more_dmg_hp) = m.kind {
+                dmg += DamageMarkers::from_hp(more_dmg_hp as u16);
+            }
+            if let ModifierKind::ReceiveLessDamage(more_dmg_hp) = m.kind {
+                dmg -= DamageMarkers::from_hp(more_dmg_hp as u16);
             }
         }
 
         // deal damage if there is a target. if any other damage is done, it will be in the effect
-        game.deal_damage(self.card, self.target, dmg, false).await?;
+        game.deal_damage(self.card, vec![self.target], dmg, false)
+            .await?;
 
         game.game.event_span.open_untracked_span();
         game.remove_expiring_modifiers(LifeTime::ThisArt).await?;
@@ -2427,10 +2496,10 @@ impl EvaluateEvent for WaitingForPlayerIntent {
 //...
 /// used by Pekora oshi skill, marker event before zone to zone
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
-pub struct HoloMemberDefeated {
+pub struct HoloMemberKnockedOut {
     pub cards: Vec<CardRef>,
 }
-impl EvaluateEvent for HoloMemberDefeated {
+impl EvaluateEvent for HoloMemberKnockedOut {
     fn apply_state_change(&self, _state: &mut GameState) {
         // no state change
     }
@@ -2445,7 +2514,7 @@ impl EvaluateEvent for HoloMemberDefeated {
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct DealDamage {
     pub card: CardRef,
-    pub target: CardRef,
+    pub targets: Vec<CardRef>,
     pub dmg: DamageMarkers,
     pub is_special: bool,
 }
@@ -2455,7 +2524,8 @@ impl EvaluateEvent for DealDamage {
     }
 
     async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
-        game.add_damage_markers(self.target, self.dmg).await?;
+        game.add_damage_markers(self.targets.clone(), self.dmg)
+            .await?;
 
         Ok(GameContinue)
     }

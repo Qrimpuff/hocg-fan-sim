@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::fmt::Display;
+use std::iter;
 use std::num::NonZeroU16;
 use std::{collections::HashMap, fmt::Debug};
 
@@ -228,8 +229,14 @@ impl GameDirector {
     pub fn attached_cheers(&self, card: CardRef) -> impl Iterator<Item = CardRef> + '_ {
         self.game.attached_cheers(card)
     }
-    pub fn required_attached_cheers(&self, card: CardRef, cheers: &[Color]) -> bool {
-        self.game.required_attached_cheers(card, cheers)
+    pub fn required_attached_cheers(
+        &self,
+        card: CardRef,
+        cheers: &[Color],
+        for_art_cost: bool,
+    ) -> bool {
+        self.game
+            .required_attached_cheers(card, cheers, for_art_cost)
     }
 
     pub fn need_mulligan(&self, player: &GameBoard) -> bool {
@@ -553,7 +560,7 @@ impl GameDirector {
             // - can choose target (center, collab)
             // - need required attached cheers to attack
             // - apply damage and effects
-            // - remove member if defeated
+            // - remove member if knocked out
             //   - lose 1 life
             //   - attach lost life (cheer)
             // let op = self.state.active_player.opponent();
@@ -2396,7 +2403,7 @@ impl Game {
     }
 
     pub fn is_cheer(&self, card: CardRef) -> bool {
-        matches!(self.lookup_card(card), Card::Cheer(_))
+        self.lookup_card(card).is_cheer(card, self)
     }
 
     pub fn lookup_cheer(&self, card: CardRef) -> Option<&CheerCard> {
@@ -2414,7 +2421,12 @@ impl Game {
         self.attachments(card).filter(|a| self.is_cheer(*a))
     }
 
-    pub fn required_attached_cheers(&self, card: CardRef, cheers: &[Color]) -> bool {
+    pub fn required_attached_cheers(
+        &self,
+        card: CardRef,
+        cheers: &[Color],
+        for_art_cost: bool,
+    ) -> bool {
         // TODO modify if there is ever a double cheer
         // count the cheers
         let mut required = cheers.iter().fold(HashMap::new(), |mut acc, c| {
@@ -2422,15 +2434,39 @@ impl Game {
             acc
         });
 
+        // mascot and fans can count as cheers
+        let mut colors = vec![];
+        for att in self.attachments(card) {
+            if let Some(cheer) = self.lookup_cheer(att) {
+                colors.push(cheer.color);
+            } else {
+                for m in self.find_modifiers(att) {
+                    if let Modifier {
+                        kind: ModifierKind::AsCheer(color, amount),
+                        ..
+                    } = m
+                    {
+                        colors.extend(iter::repeat(color).take(*amount));
+                    }
+                    if for_art_cost {
+                        if let Modifier {
+                            kind: ModifierKind::AsArtCost(color, amount),
+                            ..
+                        } = m
+                        {
+                            colors.extend(iter::repeat(color).take(*amount));
+                        }
+                    }
+                }
+            }
+        }
+
         // remove the required cheers
-        for at_cheer in self
-            .attached_cheers(card)
-            .filter_map(|c| self.lookup_cheer(c))
-        {
-            if let Some(v) = required.get_mut(&at_cheer.color) {
+        for color in colors {
+            if let Some(v) = required.get_mut(&color) {
                 *v -= 1;
                 if *v == 0 {
-                    required.remove(&at_cheer.color);
+                    required.remove(&color);
                 }
             } else if let Some(v) = required.get_mut(&Color::Colorless) {
                 *v -= 1;

@@ -1,4 +1,4 @@
-use hocg_fan_sim::{card_effects::*, cards::*};
+use hocg_fan_sim::{card_effects::ParseEffect, card_effects::Trigger, cards::*};
 
 pub fn card() -> Card {
     Card::OshiHoloMember(OshiHoloMemberCard {
@@ -29,11 +29,11 @@ pub fn card() -> Card {
             text: "[Once per game] Attach any number of Cheer cards from your Archive to one of your Green holomem.".into(),
             triggers: vec![Trigger::ActivateInMainStep],
             condition: (r"
-                 any from stage is_member and is_color_green
+                 any from stage is_member and is_color green
             ").parse_effect().expect("hSD01-002"),
             effect: (r"
                 let $cheers = select_any from archive is_cheer
-                let $mem = select_one from stage is_member and is_color_green
+                let $mem = select_one from stage is_member and is_color green
                 attach_cards $cheers $mem
             ").parse_effect().expect("hSD01-002"),
         }],

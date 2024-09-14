@@ -1,5 +1,5 @@
 use hocg_fan_sim::{
-    card_effects::*,
+    card_effects::ParseEffect,
     cards::{HoloMemberHashTag::*, *},
 };
 
@@ -39,10 +39,10 @@ pub fn card() -> Card {
             effect: (r"
                 let $roll = roll_dice
                 if is_odd $roll (
-                    add_mod this_card more_dmg 50 this_art
+                    add_mod this_card deal_more_dmg 50 this_art
                 )
                 if $roll == 1 (
-                    add_mod this_card more_dmg 50 this_art
+                    add_mod this_card deal_more_dmg 50 this_art
                 )
             ").parse_effect().expect("hSD01-011"),
         }],

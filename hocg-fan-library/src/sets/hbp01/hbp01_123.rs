@@ -1,4 +1,4 @@
-use hocg_fan_sim::{card_effects::*, cards::*};
+use hocg_fan_sim::{card_effects::ParseEffect, card_effects::Trigger, cards::*};
 
 pub fn card() -> Card {
     Card::Support(SupportCard {
@@ -41,7 +41,7 @@ mod tests {
 
     #[tokio::test]
     async fn hbp01_123() {
-        let _guard = setup_test_logs();
+        // let _guard = setup_test_logs();
 
         let p1 = TestGameBoard {
             oshi: Some("hSD01-001".into()),

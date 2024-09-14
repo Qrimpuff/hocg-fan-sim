@@ -33,7 +33,7 @@ pub fn card() -> Card {
                 if $option (
                     let $choice = select_one from hand anything
                     send_to archive $choice
-                    add_mod this_card more_dmg 20 this_art
+                    add_mod this_card deal_more_dmg 20 this_art
                 )
             ")
             .parse_effect()

@@ -26,7 +26,7 @@ pub fn card() -> Card {
             effect: (r"
                 let $roll = roll_dice
                 if is_even $roll (
-                    add_mod this_card more_dmg 20 this_art
+                    add_mod this_card deal_more_dmg 20 this_art
                 )
             ")
             .parse_effect()

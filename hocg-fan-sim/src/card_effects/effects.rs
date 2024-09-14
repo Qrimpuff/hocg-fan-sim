@@ -1,27 +1,28 @@
 /* examples:
 
     hSD01-001 - Tokino Sora
-        let $back_mem = select_one back_stage_members opponent's
-        let $center_mem = center_members opponent's
+        let $back_mem = select_one from opponent_back_stage is_member
+        let $center_mem = from opponent_center_stage
         send_to opponent_back_stage $center_mem
         send_to opponent_center_stage $back_mem
+        add_zone_mod center_stage when is_color white deal_more_dmg 50 this_turn
 
     hSD01-011 - AZKi
-        roll_dice
-        if is_odd $_dice_value (
-            add_mod this_card more_dmg 50 this_art
+        let $roll = roll_dice
+        if is_odd $roll (
+            add_mod this_card deal_more_dmg 50 this_art
         )
-        if $_dice_value == 1 (
-            add_mod this_card more_dmg 50 this_art
+        if $roll == 1 (
+            add_mod this_card deal_more_dmg 50 this_art
         )
 
     hSD01-015 - Hakui Koyori
-        let $center_mem = from_zone center_stage where is_member
-        if $center_mem any name_tokino_sora (
+        let $center_mem = filter from center_stage is_member
+        if all $center_mem is_named_tokino_sora (
             draw 1
         )
-        if $center_mem any name_azki (
-            let $cheer = from_zone_top 1 cheer_deck
+        if all $center_mem is_named_azki (
+            let $cheer = from_top 1 cheer_deck
             reveal $cheer
             attach_cards $cheer $center_mem
         )
@@ -41,8 +42,6 @@ use crate::{
 };
 
 use super::*;
-
-// TODO clean up this file after the list of effect is finalized
 
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub struct Var(pub String);
@@ -99,7 +98,7 @@ impl ParseTokens for NumberLiteral {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
-/// let <var> = <value> | <player> | <target>
+// let <$var> = <value> | <player> | <target>
 pub struct Let<T>(pub Var, pub T);
 
 impl<T> From<Let<T>> for Tokens
@@ -294,12 +293,9 @@ pub enum Condition {
     // is_attribute_buzz -> <condition>
     #[hocg_fan_sim(token = "is_attribute_buzz")]
     IsAttributeBuzz,
-    // is_color_green -> <condition>
-    #[hocg_fan_sim(token = "is_color_green")]
-    IsColorGreen,
-    // is_color_white -> <condition>
-    #[hocg_fan_sim(token = "is_color_white")]
-    IsColorWhite,
+    // is_color <color> -> <condition>
+    #[hocg_fan_sim(token = "is_color")]
+    IsColor(Color),
     // is_cheer -> <condition>
     #[hocg_fan_sim(token = "is_cheer")]
     IsCheer,
@@ -321,6 +317,9 @@ pub enum Condition {
     // is_named_azki -> <condition>
     #[hocg_fan_sim(token = "is_named_azki")]
     IsNamedAzki,
+    // is_named_omaru_polka -> <condition>
+    #[hocg_fan_sim(token = "is_named_omaru_polka")]
+    IsNamedOmaruPolka,
     // is_named_tokino_sora -> <condition>
     #[hocg_fan_sim(token = "is_named_tokino_sora")]
     IsNamedTokinoSora,
@@ -404,13 +403,31 @@ pub enum LifeTime {
     // until_removed -> <life_time>
     #[hocg_fan_sim(token = "until_removed")]
     UntilRemoved,
+    // while_attached <card_ref> -> <life_time>
+    #[hocg_fan_sim(token = "while_attached")]
+    WhileAttached(CardReference),
 }
 
 #[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub enum Modifier {
-    // more_dmg <value> -> <mod>
-    #[hocg_fan_sim(token = "more_dmg")]
-    MoreDamage(Number),
+    // as_art_cost <number> <color> -> <mod>
+    #[hocg_fan_sim(token = "as_art_cost")]
+    AsArtCost(Number, Color),
+    // as_cheer <number> <color> -> <mod>
+    #[hocg_fan_sim(token = "as_cheer")]
+    AsCheer(Number, Color),
+    // deal_less_dmg <value> -> <mod>
+    #[hocg_fan_sim(token = "deal_less_dmg")]
+    DealLessDamage(Number),
+    // deal_more_dmg <value> -> <mod>
+    #[hocg_fan_sim(token = "deal_more_dmg")]
+    DealMoreDamage(Number),
+    // recv_less_dmg <value> -> <mod>
+    #[hocg_fan_sim(token = "recv_less_dmg")]
+    ReceiveLessDamage(Number),
+    // recv_more_dmg <value> -> <mod>
+    #[hocg_fan_sim(token = "recv_more_dmg")]
+    ReceiveMoreDamage(Number),
     // next_dice_roll <value> -> <mod>
     #[hocg_fan_sim(token = "next_dice_roll")]
     NextDiceRoll(Number),
@@ -489,6 +506,31 @@ pub enum Zone {
     // stage -> <zone>
     #[hocg_fan_sim(token = "stage")]
     Stage,
+}
+
+#[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
+pub enum Color {
+    // white -> <color>
+    #[hocg_fan_sim(token = "white")]
+    White,
+    // green -> <color>
+    #[hocg_fan_sim(token = "green")]
+    Green,
+    // red -> <color>
+    #[hocg_fan_sim(token = "red")]
+    Red,
+    // blue -> <color>
+    #[hocg_fan_sim(token = "blue")]
+    Blue,
+    // purple -> <color>
+    #[hocg_fan_sim(token = "purple")]
+    Purple,
+    // yellow -> <color>
+    #[hocg_fan_sim(token = "yellow")]
+    Yellow,
+    // colorless -> <color>
+    #[hocg_fan_sim(token = "colorless")]
+    Colorless,
 }
 
 //////////////////////////////////////

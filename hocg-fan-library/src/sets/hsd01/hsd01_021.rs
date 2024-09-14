@@ -1,4 +1,4 @@
-use hocg_fan_sim::{card_effects::*, cards::*};
+use hocg_fan_sim::{card_effects::ParseEffect, card_effects::Trigger, cards::*};
 
 pub fn card() -> Card {
     Card::Support(SupportCard {
