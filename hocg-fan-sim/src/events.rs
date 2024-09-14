@@ -1774,35 +1774,16 @@ impl EvaluateEvent for AddDamageMarkers {
 
         self.apply_state_change(&mut game.game.state);
 
-        for (player, cards) in game.group_by_player(&self.cards) {
-            // verify that they are still alive
-            let knocked_out = cards
-                .iter()
-                .copied()
-                .filter(|card| game.remaining_hp(*card) == 0)
-                .collect_vec();
+        // verify that they are still alive
+        let knocked_out = self
+            .cards
+            .iter()
+            .copied()
+            .filter(|card| game.remaining_hp(*card) == 0)
+            .collect_vec();
 
-            // calculate life loss
-            let life_loss = knocked_out
-                .iter()
-                .filter(|c| !game.has_modifier(**c, NoLifeLoss))
-                .filter_map(|c| game.lookup_holo_member(*c))
-                .map(|m| {
-                    // buzz members loses 2 lives
-                    if m.attributes.contains(&HoloMemberExtraAttribute::Buzz) {
-                        2
-                    } else {
-                        1
-                    }
-                })
-                .sum();
-
-            // send member to archive, from attack
-            game.knock_out_members(knocked_out).await?;
-
-            // TODO do we need a untracked span here?
-            game.lose_lives(player, life_loss).await?;
-        }
+        // send member to archive, from attack
+        game.knock_out_members(knocked_out).await?;
 
         Ok(GameContinue)
     }
@@ -2505,7 +2486,27 @@ impl EvaluateEvent for HoloMemberKnockedOut {
     }
 
     async fn evaluate_event(&self, game: &mut GameDirector) -> GameResult {
-        game.send_to_archive(self.cards.clone()).await?;
+        // calculate life loss
+        for (player, cards) in game.group_by_player(&self.cards) {
+            let life_loss = cards
+                .iter()
+                .filter(|c| !game.has_modifier(**c, NoLifeLoss))
+                .filter_map(|c| game.lookup_holo_member(*c))
+                .map(|m| {
+                    // buzz members loses 2 lives
+                    if m.attributes.contains(&HoloMemberExtraAttribute::Buzz) {
+                        2
+                    } else {
+                        1
+                    }
+                })
+                .sum();
+
+            // life calc needs to happen before sending to archive, because the modifiers will be lost
+            game.send_to_archive(cards).await?;
+
+            game.lose_lives(player, life_loss).await?;
+        }
 
         Ok(GameContinue)
     }

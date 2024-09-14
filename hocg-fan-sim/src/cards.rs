@@ -503,6 +503,7 @@ pub enum HoloMemberHashTag {
     // misc
     Alcohol,
     AnimalEars,
+    Art,
     Bird,
     Drawing,
     Song,

@@ -309,6 +309,10 @@ impl EvaluateEffectMut for Action {
                     Box::pin(actions.evaluate_with_context_mut(ctx, game)).await?;
                 }
             }
+            Action::KnockOut(cards) => {
+                let cards = cards.evaluate_with_context(ctx, &game.game);
+                game.knock_out_members(cards).await?;
+            }
             Action::LetCardReferences(let_card) => {
                 let value =
                     LetValue::CardReferences(let_card.1.evaluate_with_context(ctx, &game.game));
@@ -807,6 +811,14 @@ impl EvaluateEffect for Number {
                     LetValue::Number(value) => *value,
                     _ => panic!("wrong value: {:?} - ctx: {:?}", var, ctx),
                 }
+            }
+            Number::DamageAmount => {
+                let card = ctx.active_card.expect("there should be an active card");
+                game.get_damage(card).to_hp() as usize
+            }
+            Number::HealthPointAmount => {
+                let card = ctx.active_card.expect("there should be an active card");
+                game.remaining_hp(card) as usize
             }
         }
     }

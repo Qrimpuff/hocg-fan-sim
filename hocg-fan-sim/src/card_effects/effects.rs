@@ -166,6 +166,9 @@ pub enum Action {
     // if <condition> <[action]> -> <action>
     #[hocg_fan_sim(token = "if")]
     If(Condition, Vec<Action>),
+    // knock_out <[card_ref]> -> <action>
+    #[hocg_fan_sim(token = "knock_out")]
+    KnockOut(CardReferences),
     // let <$var> = <[card_ref]> -> <action>
     #[hocg_fan_sim(transparent)]
     LetCardReferences(Let<CardReferences>),
@@ -287,55 +290,55 @@ pub enum Condition {
     // <value> >= <value> -> <condition>
     #[hocg_fan_sim(infix = ">=")]
     GreaterThanEquals(Number, Number),
-    // has_cheers -> <condition>
+    // [active_card] has_cheers -> <condition>
     #[hocg_fan_sim(token = "has_cheers")]
     HasCheers,
-    // is_attribute_buzz -> <condition>
+    // [active_card] is_attribute_buzz -> <condition>
     #[hocg_fan_sim(token = "is_attribute_buzz")]
     IsAttributeBuzz,
-    // is_color <color> -> <condition>
+    // [active_card] is_color <color> -> <condition>
     #[hocg_fan_sim(token = "is_color")]
     IsColor(Color),
-    // is_cheer -> <condition>
+    // [active_card] is_cheer -> <condition>
     #[hocg_fan_sim(token = "is_cheer")]
     IsCheer,
     // is_even <value> -> <condition>
     #[hocg_fan_sim(token = "is_even")]
     IsEven(Number),
-    // is_in_zone <zone> -> <condition>
+    // [active_card] is_in_zone <zone> -> <condition>
     #[hocg_fan_sim(token = "is_in_zone")]
     IsInZone(Zone),
-    // is_level_first -> <condition>
+    // [active_card] is_level_first -> <condition>
     #[hocg_fan_sim(token = "is_level_first")]
     IsLevelFirst,
-    // is_level_second -> <condition>
+    // [active_card] is_level_second -> <condition>
     #[hocg_fan_sim(token = "is_level_second")]
     IsLevelSecond,
-    // is_member -> <condition>
+    // [active_card] is_member -> <condition>
     #[hocg_fan_sim(token = "is_member")]
     IsMember,
-    // is_named_azki -> <condition>
+    // [active_card] is_named_azki -> <condition>
     #[hocg_fan_sim(token = "is_named_azki")]
     IsNamedAzki,
-    // is_named_omaru_polka -> <condition>
+    // [active_card] is_named_omaru_polka -> <condition>
     #[hocg_fan_sim(token = "is_named_omaru_polka")]
     IsNamedOmaruPolka,
-    // is_named_tokino_sora -> <condition>
+    // [active_card] is_named_tokino_sora -> <condition>
     #[hocg_fan_sim(token = "is_named_tokino_sora")]
     IsNamedTokinoSora,
-    // is_named_usada_pekora -> <condition>
+    // [active_card] is_named_usada_pekora -> <condition>
     #[hocg_fan_sim(token = "is_named_usada_pekora")]
     IsNamedUsadaPekora,
-    // is_card <card_ref> -> <condition>
+    // [active_card] is_card <card_ref> -> <condition>
     #[hocg_fan_sim(token = "is_card")]
     IsCard(CardReference),
-    // is_not_card <card_ref> -> <condition>
+    // [active_card] is_not_card <card_ref> -> <condition>
     #[hocg_fan_sim(token = "is_not_card")]
     IsNotCard(CardReference),
     // is_odd <value> -> <condition>
     #[hocg_fan_sim(token = "is_odd")]
     IsOdd(Number),
-    // is_support_limited -> <condition>
+    // [active_card] is_support_limited -> <condition>
     #[hocg_fan_sim(token = "is_support_limited")]
     IsSupportLimited,
     // <value> <= <value> -> <condition>
@@ -469,6 +472,13 @@ pub enum Number {
     // <$var> -> <value>
     #[hocg_fan_sim(transparent)]
     Var(Var),
+
+    // [active_card] dmg_amount -> <value>
+    #[hocg_fan_sim(token = "dmg_amount")]
+    DamageAmount,
+    // [active_card] hp_amount -> <value>
+    #[hocg_fan_sim(token = "hp_amount")]
+    HealthPointAmount,
 }
 
 #[derive(HocgFanSimCardEffect, Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
