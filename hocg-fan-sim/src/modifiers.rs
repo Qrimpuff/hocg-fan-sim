@@ -35,7 +35,7 @@ impl From<&str> for ModifierRef {
 
 #[derive(Debug, Clone, PartialEq, Eq, GetSize, Encode, Decode)]
 pub enum ModifierKind {
-    Conditional(Condition, Box<ModifierKind>),
+    Conditional(Box<Condition>, Box<ModifierKind>),
     // attributes
     // buff
     // debuff
@@ -206,7 +206,7 @@ impl GameState {
 }
 
 impl Game {
-    pub fn find_modifiers(&self, card: CardRef) -> impl Iterator<Item = &Modifier> + '_ {
+    pub fn find_modifiers(&self, card: CardRef) -> impl Iterator<Item = Modifier> + '_ {
         let player = self.player_for_card(card);
         let zone = self.board(player).find_card_zone(card).unwrap_or(Zone::All);
 
@@ -224,8 +224,22 @@ impl Game {
                     .filter(move |(z, _)| z.includes(zone))
                     .map(|(_, b)| b),
             )
+            .filter(|m| m.is_active())
+            .cloned()
+            .filter_map(move |mut m| {
+                if let ModifierKind::Conditional(c, k) = m.kind {
+                    if c.ctx().with_card(card, self).evaluate(self) {
+                        m.kind = *k;
+                        Some(m)
+                    } else {
+                        None
+                    }
+                } else {
+                    Some(m)
+                }
+            })
     }
-    pub fn find_player_modifiers(&self, player: Player) -> impl Iterator<Item = &Modifier> + '_ {
+    pub fn find_player_modifiers(&self, player: Player) -> impl Iterator<Item = Modifier> + '_ {
         // need to look for any card, oshi is always there
         let oshi = self
             .board(player)
@@ -237,12 +251,12 @@ impl Game {
 
     /// is used with Zone::All
     pub fn player_has_modifier(&self, player: Player, kind: ModifierKind) -> bool {
-        self.player_has_modifier_with(player, |m| *m == kind)
+        self.player_has_modifier_with(player, |m| m == kind)
     }
     pub fn player_has_modifier_with(
         &self,
         player: Player,
-        filter_fn: impl FnMut(&ModifierKind) -> bool,
+        filter_fn: impl FnMut(ModifierKind) -> bool,
     ) -> bool {
         // need to look for any card, oshi is always there
         let oshi = self
@@ -254,24 +268,14 @@ impl Game {
     }
 
     pub fn has_modifier(&self, card: CardRef, kind: ModifierKind) -> bool {
-        self.has_modifier_with(card, |m| *m == kind)
+        self.has_modifier_with(card, |m| m == kind)
     }
     pub fn has_modifier_with(
         &self,
         card: CardRef,
-        filter_fn: impl FnMut(&ModifierKind) -> bool,
+        filter_fn: impl FnMut(ModifierKind) -> bool,
     ) -> bool {
-        self.find_modifiers(card)
-            .filter(|m| m.is_active())
-            .filter_map(|m| match &m.kind {
-                ModifierKind::Conditional(c, k) => c
-                    .ctx()
-                    .with_card(card, self)
-                    .evaluate(self)
-                    .then_some(k.as_ref()),
-                _ => Some(&m.kind),
-            })
-            .any(filter_fn)
+        self.find_modifiers(card).map(|m| m.kind).any(filter_fn)
     }
 
     // damage markers
@@ -302,10 +306,10 @@ impl Game {
 }
 
 impl GameDirector {
-    pub fn find_modifiers(&self, card: CardRef) -> impl Iterator<Item = &Modifier> + '_ {
+    pub fn find_modifiers(&self, card: CardRef) -> impl Iterator<Item = Modifier> + '_ {
         self.game.find_modifiers(card)
     }
-    pub fn find_player_modifiers(&self, player: Player) -> impl Iterator<Item = &Modifier> + '_ {
+    pub fn find_player_modifiers(&self, player: Player) -> impl Iterator<Item = Modifier> + '_ {
         self.game.find_player_modifiers(player)
     }
 
@@ -316,7 +320,7 @@ impl GameDirector {
     pub fn player_has_modifier_with(
         &self,
         player: Player,
-        filter_fn: impl FnMut(&ModifierKind) -> bool,
+        filter_fn: impl FnMut(ModifierKind) -> bool,
     ) -> bool {
         self.game.player_has_modifier_with(player, filter_fn)
     }
@@ -326,7 +330,7 @@ impl GameDirector {
     pub fn has_modifier_with(
         &self,
         card: CardRef,
-        filter_fn: impl FnMut(&ModifierKind) -> bool,
+        filter_fn: impl FnMut(ModifierKind) -> bool,
     ) -> bool {
         self.game.has_modifier_with(card, filter_fn)
     }

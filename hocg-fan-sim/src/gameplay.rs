@@ -2033,7 +2033,7 @@ impl Display for Rps {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Encode, Decode)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Encode, Decode)]
 
 pub enum MainStepAction {
     BackStageMember(CardRef),
@@ -2153,7 +2153,7 @@ impl Display for CardDisplay {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Encode, Decode)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Encode, Decode)]
 
 pub enum PerformanceStepAction {
     UseArt {
@@ -2446,7 +2446,7 @@ impl Game {
                         ..
                     } = m
                     {
-                        colors.extend(iter::repeat(color).take(*amount));
+                        colors.extend(iter::repeat(color).take(amount));
                     }
                     if for_art_cost {
                         if let Modifier {
@@ -2454,7 +2454,7 @@ impl Game {
                             ..
                         } = m
                         {
-                            colors.extend(iter::repeat(color).take(*amount));
+                            colors.extend(iter::repeat(color).take(amount));
                         }
                     }
                 }

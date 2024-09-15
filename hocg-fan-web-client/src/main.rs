@@ -9,13 +9,17 @@ use futures::future;
 use gloo_timers::future::TimeoutFuture;
 use hocg_fan_sim::{
     cards::Card,
-    client::{Client, DefaultEventHandler, EventHandler},
-    events::{Event, Shuffle},
-    gameplay::{CardRef, Game, GameDirector, Player, Zone},
+    client::{Client, DefaultEventHandler, EventHandler, IntentRequestHandler},
+    events::{Event, IntentRequest, IntentResponse, Shuffle},
+    gameplay::{
+        CardDisplay, CardRef, Game, GameDirector, MainStepActionDisplay,
+        PerformanceStepActionDisplay, Player, Zone,
+    },
     library::{load_library, Loadout},
     modifiers::ModifierKind,
     prompters::PreferFirstPrompter,
 };
+use iter_tools::Itertools;
 
 #[derive(Clone, Routable, Debug, PartialEq)]
 enum Route {
@@ -132,6 +136,9 @@ static GAME: GlobalSignal<Game> = Signal::global(Game::default);
 static EVENT: GlobalSignal<Option<Event>> = Signal::global(|| None);
 static ANIM_LOCK: GlobalSignal<Option<async_oneshot::Sender<()>>> = Signal::global(|| None);
 static ANIM_COUNT: GlobalSignal<u32> = Signal::global(|| 0);
+static INTENT_REQUEST: GlobalSignal<Option<IntentRequest>> = Signal::global(|| None);
+static INTENT_RESPONSE: GlobalSignal<Option<async_oneshot::Sender<IntentResponse>>> =
+    Signal::global(|| None);
 
 #[derive(Default)]
 pub struct WebGameEventHandler {}
@@ -165,6 +172,157 @@ impl EventHandler for WebGameEventHandler {
 
         // yield
         TimeoutFuture::new(1).await;
+    }
+}
+
+#[derive(Default)]
+pub struct WebGameIntentHandler {}
+impl WebGameIntentHandler {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+impl IntentRequestHandler for WebGameIntentHandler {
+    async fn handle_intent_request(&mut self, _game: &Game, req: IntentRequest) -> IntentResponse {
+        let (s, r) = oneshot::<IntentResponse>();
+        *INTENT_RESPONSE.write() = Some(s);
+        *INTENT_REQUEST.write() = Some(req.clone());
+        let resp = r.await.expect("should not be closed");
+        *INTENT_RESPONSE.write() = None;
+        *INTENT_REQUEST.write() = None;
+
+        resp
+
+        // match req {
+        //     IntentRequest::Rps { player, select_rps } => {
+        //         let rps = self.prompt_choice("choose rock, paper or scissor:", select_rps);
+        //         IntentResponse::Rps {
+        //             player,
+        //             select_rps: rps,
+        //         }
+        //     }
+        //     IntentRequest::Mulligan { player, .. } => {
+        //         let mulligan =
+        //             self.prompt_choice("do you want to mulligan?", vec!["Yes", "No"]) == "Yes";
+        //         IntentResponse::Mulligan {
+        //             player,
+        //             select_yes_no: mulligan,
+        //         }
+        //     }
+        //     IntentRequest::ActivateEffect { player, .. } => {
+        //         let activate = self
+        //             .prompt_choice("do you want to activate the effect?", vec!["Yes", "No"])
+        //             == "Yes";
+        //         IntentResponse::ActivateEffect {
+        //             player,
+        //             select_yes_no: activate,
+        //         }
+        //     }
+        //     IntentRequest::LookSelectZoneToZone {
+        //         player,
+        //         select_cards,
+        //         min_amount,
+        //         max_amount,
+        //         ..
+        //     } => {
+        //         let select_cards = select_cards
+        //             .into_iter()
+        //             .map(|c| CardDisplay::new(c, game))
+        //             .collect_vec();
+        //         let selected = self
+        //             .prompt_multi_choices("choose cards:", select_cards, min_amount, max_amount)
+        //             .into_iter()
+        //             .map(|c| c.card)
+        //             .collect();
+        //         IntentResponse::LookSelectZoneToZone {
+        //             player,
+        //             select_cards: selected,
+        //         }
+        //     }
+        //     IntentRequest::SelectToAttach {
+        //         player,
+        //         select_cards,
+        //         ..
+        //     } => {
+        //         let select_cards = select_cards
+        //             .into_iter()
+        //             .map(|c| CardDisplay::new(c, game))
+        //             .collect_vec();
+        //         let selected = self.prompt_choice("choose card:", select_cards).card;
+        //         IntentResponse::SelectToAttach {
+        //             player,
+        //             select_card: selected,
+        //         }
+        //     }
+        //     IntentRequest::MainStepAction {
+        //         player,
+        //         select_actions,
+        //     } => {
+        //         let select_actions = select_actions
+        //             .into_iter()
+        //             .map(|a| MainStepActionDisplay::new(a, game))
+        //             .collect_vec();
+        //         let selected = self
+        //             .prompt_choice("main step action:", select_actions)
+        //             .action;
+        //         IntentResponse::MainStepAction {
+        //             player,
+        //             select_action: selected,
+        //         }
+        //     }
+        //     IntentRequest::SelectAttachments {
+        //         player,
+        //         select_attachments,
+        //         min_amount,
+        //         max_amount,
+        //         ..
+        //     } => {
+        //         let select_attachments = select_attachments
+        //             .into_iter()
+        //             .map(|c| CardDisplay::new(c, game))
+        //             .collect_vec();
+        //         let selected = self
+        //             .prompt_multi_choices(
+        //                 "choose attachments:",
+        //                 select_attachments,
+        //                 min_amount,
+        //                 max_amount,
+        //             )
+        //             .into_iter()
+        //             .map(|c| c.card)
+        //             .collect();
+        //         IntentResponse::SelectAttachments {
+        //             player,
+        //             select_attachments: selected,
+        //         }
+        //     }
+        //     IntentRequest::PerformanceStepAction {
+        //         player,
+        //         select_actions,
+        //     } => {
+        //         let select_actions = select_actions
+        //             .into_iter()
+        //             .map(|a| PerformanceStepActionDisplay::new(a, game))
+        //             .collect_vec();
+        //         let selected = self
+        //             .prompt_choice("performance step action:", select_actions)
+        //             .action;
+        //         IntentResponse::PerformanceStepAction {
+        //             player,
+        //             select_action: selected,
+        //         }
+        //     }
+        //     IntentRequest::SelectNumber {
+        //         player,
+        //         select_numbers,
+        //     } => {
+        //         let number = self.prompt_choice("choose a number:", select_numbers);
+        //         IntentResponse::SelectNumber {
+        //             player,
+        //             select_number: number,
+        //         }
+        //     }
+        // }
     }
 }
 
@@ -248,7 +406,7 @@ fn Home() -> Element {
         let p1_client = Client::new(
             (p1_channel_2.0, p1_channel_1.1),
             WebGameEventHandler::new(),
-            PreferFirstPrompter::new(),
+            WebGameIntentHandler::new(),
         )
         .await;
 
@@ -327,6 +485,9 @@ fn Home() -> Element {
                     Board { mat: rel_mat, player: Player::One }
                 }
             }
+        }
+        div {
+            Intent { player: Player::One }
         }
     }
 }
@@ -741,5 +902,287 @@ fn Hand(mat: Signal<Mat>, player: Player) -> Element {
             class: "flex justify-center",
             {cards}
         }
+    }
+}
+
+#[component]
+fn Intent(player: Player) -> Element {
+    let game = GAME.read();
+
+    if let Some(ref req) = *INTENT_REQUEST.read() {
+        let options = match req {
+            IntentRequest::Rps { player, select_rps } => select_rps
+                .iter()
+                .map(|rps| {
+                    let player = *player;
+                    let select_rps = *rps;
+                    rsx! {
+                        button {
+                            onclick: move |_event| {
+                                INTENT_RESPONSE
+                                    .write()
+                                    .as_mut()
+                                    .unwrap()
+                                    .send(IntentResponse::Rps {
+                                        player,
+                                        select_rps,
+                                    })
+                                    .expect("should send correctly");
+                            },
+                            class: "btn btn-neutral",
+                            "{select_rps}"
+                        }
+                    }
+                })
+                .collect_vec(),
+            IntentRequest::Mulligan {
+                player,
+                select_yes_no,
+            } => select_yes_no
+                .iter()
+                .map(|yes_no| {
+                    let player = *player;
+                    let select_yes_no = *yes_no;
+                    rsx! {
+                        button {
+                            onclick: move |_event| {
+                                INTENT_RESPONSE
+                                    .write()
+                                    .as_mut()
+                                    .unwrap()
+                                    .send(IntentResponse::Mulligan {
+                                        player,
+                                        select_yes_no,
+                                    })
+                                    .expect("should send correctly");
+                            },
+                            class: "btn btn-neutral",
+                            if select_yes_no {
+                                "Yes"
+                            } else {
+                                "No"
+                            }
+                        }
+                    }
+                })
+                .collect_vec(),
+            IntentRequest::ActivateEffect {
+                player,
+                select_yes_no,
+            } => select_yes_no
+                .iter()
+                .map(|yes_no| {
+                    let player = *player;
+                    let select_yes_no = *yes_no;
+                    rsx! {
+                        button {
+                            onclick: move |_event| {
+                                INTENT_RESPONSE
+                                    .write()
+                                    .as_mut()
+                                    .unwrap()
+                                    .send(IntentResponse::ActivateEffect {
+                                        player,
+                                        select_yes_no,
+                                    })
+                                    .expect("should send correctly");
+                            },
+                            class: "btn btn-neutral",
+                            if select_yes_no {
+                                "Yes"
+                            } else {
+                                "No"
+                            }
+                        }
+                    }
+                })
+                .collect_vec(),
+            IntentRequest::LookSelectZoneToZone {
+                player,
+                from_zone,
+                to_zone,
+                look_cards,
+                select_cards,
+                min_amount,
+                max_amount,
+            } => select_cards
+                .iter()
+                .map(|card| {
+                    let player = *player;
+                    let select_card = *card;
+                    let card_display = CardDisplay::new(*card, &game);
+                    rsx! {
+                        button {
+                            onclick: move |_event| {
+                                INTENT_RESPONSE
+                                    .write()
+                                    .as_mut()
+                                    .unwrap()
+                                    .send(IntentResponse::LookSelectZoneToZone {
+                                        player,
+                                        select_cards: vec![select_card],
+                                    })
+                                    .expect("should send correctly");
+                            },
+                            class: "btn btn-neutral",
+                            "{card_display}"
+                        }
+                    }
+                })
+                .collect_vec(),
+            IntentRequest::SelectToAttach {
+                player,
+                zones,
+                select_cards,
+            } => select_cards
+                .iter()
+                .map(|card| {
+                    let player = *player;
+                    let select_card = *card;
+                    let card_display = CardDisplay::new(*card, &game);
+                    rsx! {
+                        button {
+                            onclick: move |_event| {
+                                INTENT_RESPONSE
+                                    .write()
+                                    .as_mut()
+                                    .unwrap()
+                                    .send(IntentResponse::SelectToAttach {
+                                        player,
+                                        select_card,
+                                    })
+                                    .expect("should send correctly");
+                            },
+                            class: "btn btn-neutral",
+                            "{card_display}"
+                        }
+                    }
+                })
+                .collect_vec(),
+            IntentRequest::MainStepAction {
+                player,
+                select_actions,
+            } => select_actions
+                .iter()
+                .map(|action| {
+                    let player = *player;
+                    let select_action = *action;
+                    let action_display = MainStepActionDisplay::new(*action, &game);
+                    rsx! {
+                        button {
+                            onclick: move |_event| {
+                                INTENT_RESPONSE
+                                    .write()
+                                    .as_mut()
+                                    .unwrap()
+                                    .send(IntentResponse::MainStepAction {
+                                        player,
+                                        select_action,
+                                    })
+                                    .expect("should send correctly");
+                            },
+                            class: "btn btn-neutral",
+                            "{action_display}"
+                        }
+                    }
+                })
+                .collect_vec(),
+            IntentRequest::SelectAttachments {
+                player,
+                card,
+                select_attachments,
+                min_amount,
+                max_amount,
+            } => select_attachments
+                .iter()
+                .map(|attachment| {
+                    let player = *player;
+                    let select_attachment = *attachment;
+                    let attachment_display = CardDisplay::new(*attachment, &game);
+                    rsx! {
+                        button {
+                            onclick: move |_event| {
+                                INTENT_RESPONSE
+                                    .write()
+                                    .as_mut()
+                                    .unwrap()
+                                    .send(IntentResponse::SelectAttachments {
+                                        player,
+                                        select_attachments: vec![select_attachment],
+                                    })
+                                    .expect("should send correctly");
+                            },
+                            class: "btn btn-neutral",
+                            "{attachment_display}"
+                        }
+                    }
+                })
+                .collect_vec(),
+            IntentRequest::PerformanceStepAction {
+                player,
+                select_actions,
+            } => select_actions
+                .iter()
+                .map(|action| {
+                    let player = *player;
+                    let select_action = *action;
+                    let action_display = PerformanceStepActionDisplay::new(*action, &game);
+                    rsx! {
+                        button {
+                            onclick: move |_event| {
+                                INTENT_RESPONSE
+                                    .write()
+                                    .as_mut()
+                                    .unwrap()
+                                    .send(IntentResponse::PerformanceStepAction {
+                                        player,
+                                        select_action,
+                                    })
+                                    .expect("should send correctly");
+                            },
+                            class: "btn btn-neutral",
+                            "{action_display}"
+                        }
+                    }
+                })
+                .collect_vec(),
+            IntentRequest::SelectNumber {
+                player,
+                select_numbers,
+            } => select_numbers
+                .iter()
+                .map(|number| {
+                    let player = *player;
+                    let select_number = *number;
+                    rsx! {
+                        button {
+                            onclick: move |_event| {
+                                INTENT_RESPONSE
+                                    .write()
+                                    .as_mut()
+                                    .unwrap()
+                                    .send(IntentResponse::SelectNumber {
+                                        player,
+                                        select_number,
+                                    })
+                                    .expect("should send correctly");
+                            },
+                            class: "btn btn-neutral",
+                            "{select_number}"
+                        }
+                    }
+                })
+                .collect_vec(),
+        };
+        let buttons = options.into_iter().map(|o| {
+            rsx! {
+                div { {o} }
+            }
+        });
+        rsx! {
+            div { class: "flex flex-col", {buttons} }
+        }
+    } else {
+        None
     }
 }

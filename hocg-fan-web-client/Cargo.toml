@@ -6,6 +6,7 @@ version.workspace = true
 [dependencies]
 hocg-fan-sim = { workspace = true }
 async-channel = { workspace = true }
+iter_tools = { workspace = true }
 
 dioxus = { version = "0.5", features = ["web", "router"] }
 gloo-timers = { version = "0.3.0", features = ["futures"] }

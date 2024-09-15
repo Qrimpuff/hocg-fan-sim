@@ -756,7 +756,7 @@ impl EvaluateEffect for Modifier {
             Modifier::NoLifeLoss => ModifierKind::NoLifeLoss,
             Modifier::When(condition, modifier) => {
                 let modifier = modifier.evaluate_with_context(ctx, game);
-                ModifierKind::Conditional(condition.clone(), Box::new(modifier))
+                ModifierKind::Conditional(Box::new(condition.clone()), Box::new(modifier))
             }
         }
     }

@@ -157,7 +157,7 @@ mod tests {
                 Modifier {
                     id: "m_0002".into(),
                     kind: ModifierKind::Conditional(
-                        Condition::IsColor(card_effects::Color::White),
+                        Box::new(Condition::IsColor(card_effects::Color::White)),
                         Box::new(ModifierKind::DealMoreDamage(50)),
                     ),
                     life_time: LifeTime::ThisTurn,

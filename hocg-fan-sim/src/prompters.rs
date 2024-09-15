@@ -214,7 +214,7 @@ pub trait Prompter: Debug {
 }
 
 impl<P: Prompter> IntentRequestHandler for P {
-    fn handle_intent_request(&mut self, game: &Game, req: IntentRequest) -> IntentResponse {
+    async fn handle_intent_request(&mut self, game: &Game, req: IntentRequest) -> IntentResponse {
         match req {
             IntentRequest::Rps { player, select_rps } => {
                 let rps = self.prompt_choice("choose rock, paper or scissor:", select_rps);

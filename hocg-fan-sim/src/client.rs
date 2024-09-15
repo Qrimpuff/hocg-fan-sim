@@ -54,7 +54,10 @@ where
             }
             ClientReceive::IntentRequest(req) => {
                 debug!("RECEIVED INTENT = {:?}", req);
-                let resp = self.intent_handler.handle_intent_request(&self.game, req);
+                let resp = self
+                    .intent_handler
+                    .handle_intent_request(&self.game, req)
+                    .await;
                 debug!("SENT INTENT = {:?}", resp);
                 self.send
                     .send(ClientSend::IntentResponse(resp))
@@ -79,8 +82,9 @@ where
 pub trait EventHandler {
     async fn handle_event(&mut self, game: &Game, event: Event);
 }
+#[allow(async_fn_in_trait)]
 pub trait IntentRequestHandler {
-    fn handle_intent_request(&mut self, game: &Game, req: IntentRequest) -> IntentResponse;
+    async fn handle_intent_request(&mut self, game: &Game, req: IntentRequest) -> IntentResponse;
 }
 
 #[derive(Default)]

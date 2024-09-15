@@ -126,7 +126,7 @@ impl Card {
             Card::HoloMember(m) => m.colors.contains(&color),
             Card::Support(_s) => game.has_modifier_with(card, |m| match m {
                 // mascots and fans can have colors
-                ModifierKind::AsCheer(c, _) => *c == color,
+                ModifierKind::AsCheer(c, _) => c == color,
                 _ => false,
             }),
             Card::Cheer(c) => c.color == color,

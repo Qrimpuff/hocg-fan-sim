@@ -1456,6 +1456,7 @@ dependencies = [
  "futures",
  "gloo-timers 0.3.0",
  "hocg-fan-sim",
+ "iter_tools",
 ]
 
 [[package]]
