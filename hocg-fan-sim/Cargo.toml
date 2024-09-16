@@ -29,3 +29,4 @@ async-rwlock = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
+hocg-fan-sim = { workspace = true, features = ["test"] }

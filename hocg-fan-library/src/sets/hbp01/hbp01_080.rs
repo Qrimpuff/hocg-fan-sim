@@ -79,12 +79,12 @@ mod tests {
 
         let p1_p = BufferedPrompter::new(&[
             // collab
-            &[1],
+            &[3],
             &[0],
             &[0],
             &[0],
             // done
-            &[1],
+            &[3],
         ]);
         let p2_p = BufferedPrompter::new(&[]);
 

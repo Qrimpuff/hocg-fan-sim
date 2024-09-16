@@ -9,6 +9,8 @@ use pretty_assertions::assert_eq;
 #[tokio::test]
 /// Goes through setup and multiple simple turns
 async fn step_transitions() {
+    // let _guard = setup_test_logs();
+
     let p1 = TestGameBoard {
         oshi: Some("hSD01-001".into()),
         center_stage: None,
@@ -76,7 +78,7 @@ async fn step_transitions() {
         // cheer - AZKi (Debut)
         &[0],
         // main action - done
-        &[9],
+        &[10],
         // performance action - done
         &[1],
     ]);

@@ -81,7 +81,6 @@ mod tests {
 
         let p1_p = BufferedPrompter::new(&[
             // bloom
-            &[0],
             &[1],
             &[0],
             // done

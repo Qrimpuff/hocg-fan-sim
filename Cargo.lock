@@ -1421,6 +1421,7 @@ dependencies = [
  "flate2",
  "get-size",
  "getrandom",
+ "hocg-fan-sim",
  "hocg-fan-sim-derive",
  "iter_tools",
  "pretty_assertions",

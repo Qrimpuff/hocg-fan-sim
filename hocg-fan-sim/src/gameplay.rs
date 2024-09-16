@@ -475,16 +475,13 @@ impl GameDirector {
                     // TODO maybe register for any abilities that could trigger?
                     // TODO remove the registration once they leave the board?
                 }
-                MainStepAction::BloomMember(bloom) => {
+                MainStepAction::BloomMember(bloom, target) => {
                     info!("- action: Bloom member");
                     // - bloom member (evolve e.g. debut -> 1st )
                     //   - bloom effect
                     //   - can't bloom on same turn as placed
                     // TODO request bloom target (intent)
-                    let card = self
-                        .prompt_for_bloom(self.game.active_player(), bloom)
-                        .await;
-                    self.bloom_holo_member(bloom, card).await?;
+                    self.bloom_holo_member(bloom, target).await?;
                 }
                 MainStepAction::UseSupportCard(card, i) => {
                     info!("- action: Use support card");
@@ -966,7 +963,7 @@ impl GameDirector {
         let mut actions: Vec<_> = self
             .board(player)
             .hand()
-            .filter_map(|c| match self.lookup_card(c) {
+            .flat_map(|c| match self.lookup_card(c) {
                 Card::OshiHoloMember(_) => unreachable!("oshi cannot be in hand"),
                 Card::HoloMember(m) => match m.level {
                     HoloMemberLevel::Debut | HoloMemberLevel::Spot => {
@@ -976,16 +973,19 @@ impl GameDirector {
                             .stage()
                             .filter(|c| self.game.is_holo_member(*c))
                             .count();
-                        (count < MAX_MEMBERS_ON_STAGE).then_some(MainStepAction::BackStageMember(c))
+                        if count < MAX_MEMBERS_ON_STAGE {
+                            vec![MainStepAction::BackStageMember(c)]
+                        } else {
+                            vec![]
+                        }
                     }
-                    HoloMemberLevel::First | HoloMemberLevel::Second => {
-                        let can_bloom = self
-                            .board(player)
-                            .stage()
-                            .filter_map(|s| self.lookup_holo_member(s).map(|m| (s, m)))
-                            .any(|target| m.can_bloom_target(c, self, target));
-                        can_bloom.then_some(MainStepAction::BloomMember(c))
-                    }
+                    HoloMemberLevel::First | HoloMemberLevel::Second => self
+                        .board(player)
+                        .stage()
+                        .filter_map(|s| self.lookup_holo_member(s).map(|m| (s, m)))
+                        .filter(|target| m.can_bloom_target(c, self, *target))
+                        .map(|target| MainStepAction::BloomMember(c, target.0))
+                        .collect_vec(),
                 },
                 // check condition to play support
                 Card::Support(s) => s
@@ -1007,7 +1007,7 @@ impl GameDirector {
                             None
                         }
                     })
-                    .next(),
+                    .collect_vec(),
                 Card::Cheer(_) => unreachable!("cheer cannot be in hand"),
             })
             // .map(|a| MainStepActionDisplay::new(a, self))
@@ -2037,7 +2037,7 @@ impl Display for Rps {
 
 pub enum MainStepAction {
     BackStageMember(CardRef),
-    BloomMember(CardRef),
+    BloomMember(CardRef, CardRef),
     UseSupportCard(CardRef, usize),
     AttachSupportCard(CardRef, usize),
     CollabMember(CardRef),
@@ -2059,9 +2059,10 @@ impl MainStepActionDisplay {
                 let display = CardDisplay::new(card, game);
                 format!("put on back stage: {display}")
             }
-            MainStepAction::BloomMember(card) => {
-                let display = CardDisplay::new(card, game);
-                format!("bloom member with: {display}")
+            MainStepAction::BloomMember(bloom, target) => {
+                let bloom_display = CardDisplay::new(bloom, game);
+                let target_display = CardDisplay::new(target, game);
+                format!("bloom member: {bloom_display} -> {target_display}")
             }
             MainStepAction::UseSupportCard(card, _idx) => {
                 let display = CardDisplay::new(card, game);
@@ -2108,6 +2109,7 @@ pub struct CardDisplay {
 
 impl CardDisplay {
     pub fn new(card: CardRef, game: &Game) -> CardDisplay {
+        let board = game.board_for_card(card);
         let text = match game.lookup_card(card) {
             Card::OshiHoloMember(o) => {
                 // let life_remaining = game.board_for_card(card).life.count();
@@ -2119,7 +2121,7 @@ impl CardDisplay {
             }
             Card::HoloMember(m) => {
                 format!(
-                    "{} ({:?}) ({}/{}){} ({}) {}",
+                    "{} ({:?}) ({}/{}){} ({}) ({}) {}",
                     m.name,
                     m.level,
                     game.remaining_hp(card),
@@ -2129,12 +2131,24 @@ impl CardDisplay {
                             " (cheers: {})",
                             game.attached_cheers(card)
                                 .filter_map(|c| game.lookup_cheer(c))
-                                .map(|c| format!("{:?}", c.color))
+                                .map(|c| c.color.to_icon())
                                 .collect_vec()
                                 .join(", ")
                         )
                     } else {
                         "".into()
+                    },
+                    {
+                        match board.find_card_zone(card) {
+                            Some(z) => format!("{z:?}"),
+                            None => {
+                                if board.is_attached(card) {
+                                    "attached".into()
+                                } else {
+                                    "".into()
+                                }
+                            }
+                        }
                     },
                     m.card_number,
                     card,

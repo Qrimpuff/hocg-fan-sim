@@ -216,6 +216,20 @@ pub enum Color {
     Colorless,
 }
 
+impl Color {
+    pub fn to_icon(&self) -> &str {
+        match self {
+            Color::White => "{W}",
+            Color::Green => "{G}",
+            Color::Red => "{R}",
+            Color::Blue => "{U}",
+            Color::Purple => "{P}",
+            Color::Yellow => "{Y}",
+            Color::Colorless => "{C}",
+        }
+    }
+}
+
 pub type CardNumber = String;
 pub type IllustrationUrl = String;
 pub type OshiLife = u8;
