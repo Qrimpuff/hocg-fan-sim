@@ -38,7 +38,7 @@ pub fn card() -> Card {
             ").parse_effect().expect("hSD01-002"),
         }],
         rarity: Rarity::OshiSuperRare,
-        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-002.webp".into(),
+        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-002_OSR.webp".into(),
         artist: "Hachi".into(),
     })
 }

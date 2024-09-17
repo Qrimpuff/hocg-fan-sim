@@ -42,7 +42,7 @@ pub fn card() -> Card {
         ],
         attributes: vec![HoloMemberExtraAttribute::Buzz],
         rarity: Rarity::DoubleRare,
-        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-006.webp"
+        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-006_RR.webp"
             .into(),
         artist: "I☆LA".into(),
     })

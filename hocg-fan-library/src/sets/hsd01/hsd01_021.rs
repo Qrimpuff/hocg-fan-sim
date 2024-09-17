@@ -21,7 +21,7 @@ pub fn card() -> Card {
                 ").parse_effect().expect("hSD01-021"),
         }],
         rarity: Rarity::Common,
-        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-021.webp".into(),
+        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-021_C.webp".into(),
         artist: "TODO".into(),
     })
 }

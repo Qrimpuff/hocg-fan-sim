@@ -21,7 +21,7 @@ pub fn card() -> Card {
         }],
         attributes: vec![],
         rarity: Rarity::Uncommon,
-        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-010.webp"
+        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-010_U.webp"
             .into(),
         artist: "TODO".into(),
     })

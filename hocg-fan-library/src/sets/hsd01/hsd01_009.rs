@@ -44,7 +44,7 @@ pub fn card() -> Card {
         }],
         attributes: vec![],
         rarity: Rarity::Rare,
-        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-009.webp".into(),
+        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hSD01/hSD01-009_R.webp".into(),
         artist: "TODO".into(),
     })
 }

@@ -7,7 +7,7 @@ pub fn card() -> Card {
         color: Color::Green,
         text: "⯀ When a holomem leaves the stage, archive all Cheer cards attached to them.\n⯀ When a holomem Baton Passes, archive a number of Cheer cards attached to them equal to the Baton Pass cost.".into(),
         rarity: Rarity::Common,
-        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/hY02/hY02-001.webp".into(),
+        illustration_url: "https://qrimpuff.github.io/hocg-fan-sim-assets/img/COMMON/hY02-001_C.webp".into(),
         artist: "はずき".into(),
     })
 }
